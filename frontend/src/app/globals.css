@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #FDFDFD;
+    color: #111827;
+    line-height: 1.5;
+  }
+
+  /* Smooth interactive element transitions */
+  button, a, input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
+  /* Clean focus outline for accessibility */
+  :focus-visible {
+    outline: 2px solid #6b7280;
+    outline-offset: 2px;
+  }
+
+  /* Remove default focus outline on mouse click */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Better text selection */
+  ::selection {
+    background-color: #e5e7eb;
+    color: #111827;
+  }
+
+  /* Polished scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #d1d5db;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Prevent layout shift on table cells */
+  td, th {
+    vertical-align: middle;
+  }
+}
+

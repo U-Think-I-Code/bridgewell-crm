@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Next.js Build Output
+.next/
+*/.next/
+out/
+*/out/
+build/
+*/build/
+
+# Environment Secrets (DO NOT COMMIT)
+.env
+.env*.local
+.env.local
+.env.production
+.env.development
+*.env.local
+*/.env
+*/.env.local
+*/.env*.local
+!.env.example
+!*/.env.example
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Turbopack & TS
+*.tsbuildinfo
+next-env.d.ts

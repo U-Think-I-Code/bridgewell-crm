@@ -1,0 +1,478 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import { 
+  Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
+  Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle
+} from 'lucide-react'
+import { useAuth } from '@/components/AuthWrapper'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+
+export default function SettingsPage() {
+  const { user } = useAuth()
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta'>('pipeline')
+  const [stages, setStages] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newStageName, setNewStageName] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+  const [savingId, setSavingId] = useState<string | null>(null)
+
+  // Meta Integration State
+  const [copiedUrl, setCopiedUrl] = useState(false)
+  const [copiedToken, setCopiedToken] = useState(false)
+  const [testName, setTestName] = useState('Rahul Sharma')
+  const [testPhone, setTestPhone] = useState('+91 98765 43210')
+  const [testCourse, setTestCourse] = useState('MBA International Business')
+  const [testCountry, setTestCountry] = useState('USA')
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<any>(null)
+
+  const verifyToken = process.env.NEXT_PUBLIC_META_VERIFY_TOKEN || 'bridgewell_meta_webhook_2026'
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+  const webhookUrl = `${origin}/api/webhooks/meta`
+
+  useEffect(() => {
+    if (user && user.role !== 'manager') {
+      router.push('/')
+      return
+    }
+    fetchStages()
+
+    // Realtime listener for pipeline stages
+    const channel = supabase
+      .channel('settings-stages-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stages' }, () => {
+        fetchStages()
+      })
+      .subscribe()
+
+    const interval = setInterval(fetchStages, 15000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
+  }, [user])
+
+  const fetchStages = async () => {
+    const { data } = await supabase.from('stages').select('*').order('stage_order', { ascending: true })
+    setStages(data || [])
+    setLoading(false)
+  }
+
+  const handleAddStage = async () => {
+    if (!newStageName.trim()) return
+    setIsAdding(true)
+    const newOrder = stages.length > 0 ? Math.max(...stages.map(s => s.stage_order)) + 1 : 1
+    
+    await supabase.from('stages').insert([
+      { name: newStageName.trim(), stage_order: newOrder, is_exit_stage: false }
+    ])
+    
+    setNewStageName('')
+    await fetchStages()
+    setIsAdding(false)
+  }
+
+  const handleDeleteStage = async (id: string) => {
+    if (confirm('Are you sure you want to delete this stage? Leads in this stage may not display correctly until reassigned.')) {
+      setSavingId(id)
+      await supabase.from('stages').delete().eq('id', id)
+      await fetchStages()
+      setSavingId(null)
+    }
+  }
+
+  const handleRename = async (id: string, newName: string) => {
+    if (!newName.trim()) return
+    setSavingId(id)
+    await supabase.from('stages').update({ name: newName.trim() }).eq('id', id)
+    await fetchStages()
+    setSavingId(null)
+  }
+
+  const copyToClipboard = (text: string, type: 'url' | 'token') => {
+    navigator.clipboard.writeText(text)
+    if (type === 'url') {
+      setCopiedUrl(true)
+      setTimeout(() => setCopiedUrl(false), 2000)
+    } else {
+      setCopiedToken(true)
+      setTimeout(() => setCopiedToken(false), 2000)
+    }
+  }
+
+  const handleSendTestLead = async () => {
+    setIsTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/webhooks/meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: testName,
+          phone: testPhone,
+          email: `${testName.toLowerCase().replace(/\s+/g, '')}@example.com`,
+          course: testCourse,
+          country: testCountry,
+          campaign_name: `${testCountry} Ad Campaign`,
+          source: `Meta Ads - ${testCountry}`,
+        }),
+      })
+
+      const data = await res.json()
+      setTestResult(data)
+    } catch (err: any) {
+      setTestResult({ error: err.message || 'Failed to send test lead' })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  if (loading) return <div className="p-8 h-full flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div></div>
+
+  return (
+    <div className="flex-1 overflow-auto bg-[#FDFDFD] p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">CRM Settings</h1>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Live Realtime Sync
+          </span>
+        </div>
+        <p className="text-gray-500 text-sm mb-6">Manage pipeline stages, lead automations, and Meta Ads integrations.</p>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 border-b border-gray-200 mb-8">
+          <button
+            onClick={() => setActiveTab('pipeline')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'pipeline'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Layers size={16} />
+            <span>Pipeline Stages</span>
+            <span className="ml-1 px-2 py-0.5 text-xs bg-gray-100 rounded-full text-gray-600 font-medium">
+              {stages.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('meta')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'meta'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Share2 size={16} className="text-blue-600" />
+            <span>Meta Ads (Facebook / Instagram)</span>
+            <span className="ml-1 px-2 py-0.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-bold">
+              Auto-Sync
+            </span>
+          </button>
+        </div>
+
+        {/* Tab 1: Pipeline Stages */}
+        {activeTab === 'pipeline' && (
+          <section className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Pipeline Stages</h2>
+            <p className="text-gray-500 text-sm mb-6">Customize the stages that a lead goes through in your pipeline. The Kanban board will reflect this order.</p>
+
+            <div className="space-y-3 mb-6">
+              {stages.map((stage) => (
+                <div key={stage.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3 group">
+                  <div className="text-gray-400 cursor-grab active:cursor-grabbing">
+                    <GripVertical size={16} />
+                  </div>
+                  <div className="flex-1 flex items-center gap-4">
+                    <input 
+                      type="text" 
+                      defaultValue={stage.name}
+                      onBlur={(e) => {
+                        if (e.target.value !== stage.name) handleRename(stage.id, e.target.value)
+                      }}
+                      className="flex-1 bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-300 focus:bg-white rounded px-2 py-1 outline-none text-sm font-medium text-gray-900 transition-colors"
+                    />
+                    {stage.is_exit_stage && (
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400 bg-gray-200/50 px-2 py-0.5 rounded">Exit Stage</span>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => handleDeleteStage(stage.id)}
+                    disabled={savingId === stage.id}
+                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1.5 rounded-md hover:bg-red-50"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 bg-white border border-dashed border-gray-300 rounded-lg p-3 focus-within:border-black focus-within:ring-4 focus-within:ring-gray-100 transition-all">
+              <Plus size={16} className="text-gray-400" />
+              <input 
+                type="text" 
+                value={newStageName}
+                onChange={e => setNewStageName(e.target.value)}
+                placeholder="Add a new stage..."
+                className="flex-1 outline-none text-sm font-medium text-gray-900 bg-transparent"
+                onKeyDown={(e) => e.key === 'Enter' && handleAddStage()}
+              />
+              {newStageName && (
+                <button 
+                  onClick={handleAddStage}
+                  disabled={isAdding}
+                  className="bg-black text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm hover:bg-gray-800 transition-colors"
+                >
+                  Add
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Tab 2: Meta Ads Integration */}
+        {activeTab === 'meta' && (
+          <div className="space-y-6">
+            {/* Meta Banner */}
+            <div className="bg-gradient-to-r from-blue-900 to-indigo-950 text-white rounded-2xl p-6 shadow-sm border border-blue-800">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-200 border border-blue-400/30 mb-3">
+                    <Sparkles size={12} />
+                    <span>Real-Time Lead Ingestion</span>
+                  </div>
+                  <h2 className="text-xl font-bold tracking-tight mb-1">
+                    Meta Ads (Facebook & Instagram) Direct Integration
+                  </h2>
+                  <p className="text-blue-100/80 text-sm max-w-2xl leading-relaxed">
+                    Whenever a student fills your Facebook or Instagram Lead Form, they land in Bridgewell CRM automatically in real-time.
+                  </p>
+                </div>
+              </div>
+
+              {/* Assignment Notice */}
+              <div className="mt-5 p-3.5 bg-white/10 rounded-xl border border-white/10 flex items-center gap-3">
+                <Shield size={20} className="text-amber-300 shrink-0" />
+                <p className="text-xs text-blue-50 font-medium">
+                  <span className="font-bold text-amber-300">Admin Control Guaranteed:</span> Incoming Meta leads are strictly marked as <span className="underline font-bold">Unassigned</span> (`owner_id = null`). Only the Admin manually assigns them to counselors via the Reassignment board.
+                </p>
+              </div>
+            </div>
+
+            {/* Webhook Connection Details */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Webhook Credentials</h3>
+              <p className="text-gray-500 text-xs mb-5">Use these details in your Facebook Developer Portal or Zapier/Make.com webhook trigger.</p>
+
+              <div className="space-y-4">
+                {/* Webhook URL */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                    Webhook Callback URL
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={webhookUrl}
+                      className="flex-1 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-800 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(webhookUrl, 'url')}
+                      className="px-4 py-2.5 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      {copiedUrl ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      <span>{copiedUrl ? 'Copied!' : 'Copy URL'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Verify Token */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                    Verify Token (hub.verify_token)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={verifyToken}
+                      className="flex-1 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-800 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(verifyToken, 'token')}
+                      className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-300 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      {copiedToken ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      <span>{copiedToken ? 'Copied!' : 'Copy Token'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Test Simulation Card */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 mb-0.5">Test Lead Ingestion</h3>
+                  <p className="text-gray-500 text-xs">Simulate a Meta Ad lead to verify real-time ingestion, notification, and Unassigned state.</p>
+                </div>
+                <Link
+                  href="/reassign"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  <span>Go to Reassign Board</span>
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1">Target Ad Country</label>
+                  <select
+                    value={testCountry}
+                    onChange={(e) => setTestCountry(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-900 outline-none"
+                  >
+                    <option value="USA">🇺🇸 USA Ad</option>
+                    <option value="UK">🇬🇧 UK Ad</option>
+                    <option value="Canada">🇨🇦 Canada Ad</option>
+                    <option value="Australia">🇦🇺 Australia Ad</option>
+                    <option value="Germany">🇩🇪 Germany Ad</option>
+                    <option value="Ireland">🇮🇪 Ireland Ad</option>
+                    <option value="UAE">🇦🇪 UAE Ad</option>
+                    <option value="India">🇮🇳 India Ad</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1">Student Name</label>
+                  <input
+                    type="text"
+                    value={testName}
+                    onChange={(e) => setTestName(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                    placeholder="Student Name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                    placeholder="+1 or +44 number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1">Course Interest</label>
+                  <input
+                    type="text"
+                    value={testCourse}
+                    onChange={(e) => setTestCourse(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                    placeholder="MBA, BSc, etc."
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleSendTestLead}
+                disabled={isTesting}
+                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs"
+              >
+                {isTesting ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send size={13} />
+                )}
+                <span>{isTesting ? 'Sending...' : 'Send Test Meta Lead'}</span>
+              </button>
+
+              {testResult && (
+                <div
+                  className={`mt-4 p-4 rounded-xl border text-xs ${
+                    testResult.success
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <div className="flex items-start gap-2.5">
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold mb-0.5">Test Lead Ingested Successfully!</p>
+                        <p className="text-emerald-700 leading-relaxed">
+                          Lead ID: <span className="font-mono font-semibold">{testResult.leadId}</span>. Status is strictly <strong>Unassigned</strong>. Check your top notification bell and the Reassignment Board to assign them.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="font-semibold">Error: {testResult.error}</p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* Step-by-Step Setup Guide */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Setup Instructions (2 Easy Ways)</h3>
+              <p className="text-gray-500 text-xs mb-5">Choose whichever method fits your technical preference:</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Method 1: Zapier / Make / Pabbly */}
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[11px] font-bold">
+                      Option 1 (Recommended - 2 Min Setup)
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">Via Zapier / Make.com / Pabbly</h4>
+                  <ol className="text-xs text-gray-600 space-y-2 list-decimal list-inside leading-relaxed">
+                    <li>Create a new Zap or Scenario.</li>
+                    <li><strong>Trigger:</strong> Choose <em>Facebook Lead Ads</em> &rarr; <em>New Lead</em>. Connect your FB Page & Form.</li>
+                    <li><strong>Action:</strong> Choose <em>Webhooks</em> &rarr; <em>POST</em>.</li>
+                    <li><strong>URL:</strong> Paste the Webhook URL above.</li>
+                    <li><strong>Data Fields:</strong> Map <code>name</code>, <code>phone</code>, <code>email</code>, <code>course</code>.</li>
+                    <li>Done! All leads will arrive live in CRM without counselor auto-assignment.</li>
+                  </ol>
+                </div>
+
+                {/* Method 2: Direct Meta Webhooks */}
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[11px] font-bold">
+                      Option 2 (Direct Meta App)
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">Via Meta Developer Portal</h4>
+                  <ol className="text-xs text-gray-600 space-y-2 list-decimal list-inside leading-relaxed">
+                    <li>Go to <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="text-blue-600 underline">developers.facebook.com</a> &rarr; Your App.</li>
+                    <li>Add the <strong>Webhooks</strong> product &rarr; Select <strong>Page</strong>.</li>
+                    <li>Click <strong>Subscribe to this object</strong>:
+                      <ul className="list-disc list-inside pl-2 text-gray-500 mt-1">
+                        <li>Callback URL: Webhook Callback URL above</li>
+                        <li>Verify Token: <code>{verifyToken}</code></li>
+                      </ul>
+                    </li>
+                    <li>Subscribe to the <strong>leadgen</strong> field.</li>
+                    <li>Add <code>META_PAGE_ACCESS_TOKEN</code> in your CRM's <code>.env.local</code>.</li>
+                  </ol>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
