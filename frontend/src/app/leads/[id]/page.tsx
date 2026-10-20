@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles } from 'lucide-react'
+import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -26,6 +26,9 @@ export default function LeadProfile() {
   const [loading, setLoading] = useState(true)
 
   const [note, setNote] = useState('')
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false)
+  const isEditingNoteRef = useRef(false)
   const [followUpDate, setFollowUpDate] = useState('')
   const [savingFollowUp, setSavingFollowUp] = useState(false)
   const [followUpSavedSuccess, setFollowUpSavedSuccess] = useState(false)
@@ -114,6 +117,15 @@ export default function LeadProfile() {
         setFollowUpDate(toLocalDatetimeString(leadData.next_follow_up))
       } else {
         setFollowUpDate('')
+      }
+    }
+    
+        // Load permanently saved student details into note if not actively editing
+    if (!isEditingNoteRef.current) {
+      if (leadData?.metadata?.student_profile) {
+        setNote(leadData.metadata.student_profile)
+      } else if (leadData?.notes) {
+        setNote(leadData.notes)
       }
     }
     
@@ -217,6 +229,101 @@ export default function LeadProfile() {
       alert('Failed to clear follow-up: ' + (err.message || 'Unknown error'))
     } finally {
       setSavingFollowUp(false)
+    }
+  }
+
+  const handleSaveStudentDetails = async () => {
+    if (!note.trim()) return
+    setSavingDetails(true)
+
+    try {
+      // 1. Parse structured key-value lines from the note
+      const parsed: Record<string, string> = {}
+      const lines = note.split('\n')
+      for (const line of lines) {
+        const colonIdx = line.indexOf(':')
+        if (colonIdx > -1) {
+          const key = line.slice(0, colonIdx).trim()
+          const val = line.slice(colonIdx + 1).trim()
+          if (key && val) {
+            parsed[key] = val
+          }
+        }
+      }
+
+      // 2. Prepare merged metadata
+      const currentMetadata = (lead?.metadata && typeof lead.metadata === 'object') ? lead.metadata : {}
+      const updatedMetadata: Record<string, any> = {
+        ...currentMetadata,
+        student_profile: note,
+      }
+
+      if (parsed['Address']) updatedMetadata.address = parsed['Address']
+      if (parsed['Qualification']) updatedMetadata.qualification = parsed['Qualification']
+      if (parsed['GPA']) updatedMetadata.gpa = parsed['GPA']
+      if (parsed['Preferred Country']) updatedMetadata.preferred_country = parsed['Preferred Country']
+      if (parsed['Intake']) updatedMetadata.intake = parsed['Intake']
+      if (parsed['Budget']) updatedMetadata.budget = parsed['Budget']
+      if (parsed['Sponsor']) updatedMetadata.sponsor = parsed['Sponsor']
+
+      // 3. Build lead update payload
+      const updatePayload: any = {
+        metadata: updatedMetadata,
+      }
+
+      if (parsed['Name']) updatePayload.name = parsed['Name']
+      if (parsed['Email']) updatePayload.email = parsed['Email']
+      if (parsed['Country']) updatePayload.country = parsed['Country']
+      if (parsed['Course']) updatePayload.course = parsed['Course']
+      if (parsed['Qualification']) updatePayload.highest_qualification = parsed['Qualification']
+      if (parsed['Budget']) updatePayload.budget_range = parsed['Budget']
+
+      // 4. Save to Supabase
+      const { error } = await supabase
+        .from('leads')
+        .update(updatePayload)
+        .eq('id', id)
+
+      if (error) throw error
+
+      // 5. Insert activity record on timeline
+      await supabase.from('activities').insert([
+        {
+          lead: id,
+          user_id: currentUser?.id || lead?.owner_id,
+          type: 'note',
+          text: `Student details saved permanently:\n\n${note}`,
+          time: new Date().toISOString()
+        }
+      ])
+
+      // 6. Log audit trail
+      await logAuditTrail({
+        leadId: id,
+        userId: currentUser?.id,
+        action: 'UPDATE',
+        fieldName: 'student_profile',
+        oldValue: lead?.metadata?.student_profile || 'None',
+        newValue: note,
+        summary: `Student details saved permanently`
+      })
+
+      // 7. Update local state
+      isEditingNoteRef.current = false
+      setLead((prev: any) => ({
+        ...prev,
+        ...updatePayload,
+        metadata: updatedMetadata
+      }))
+
+      setDetailsSavedSuccess(true)
+      setTimeout(() => setDetailsSavedSuccess(false), 3500)
+      fetchLeadAndActivities()
+    } catch (err: any) {
+      console.error('Error saving student details:', err)
+      alert('Failed to save student details: ' + (err.message || 'Unknown error'))
+    } finally {
+      setSavingDetails(false)
     }
   }
 
@@ -918,6 +1025,30 @@ export default function LeadProfile() {
                  <span>+ Student Details Template</span>
                </button>
 
+                {/* Save Details Permanently Button */}
+                <button
+                  type="button"
+                  onClick={handleSaveStudentDetails}
+                  disabled={savingDetails || !note.trim()}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer active:scale-95 ${
+                    note.trim()
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 font-bold'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                  }`}
+                  title="Save student details permanently to the lead profile"
+                >
+                  <Save size={13} />
+                  <span>{savingDetails ? 'Saving...' : 'Save Details'}</span>
+                </button>
+
+                {/* Success feedback */}
+                {detailsSavedSuccess && (
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 animate-fade-in">
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    <span>Saved Permanently!</span>
+                  </span>
+                )}
+
                {note && (
                  <button
                    type="button"
@@ -937,7 +1068,11 @@ export default function LeadProfile() {
 
            <textarea 
              value={note}
-             onChange={e => setNote(e.target.value)}
+             onFocus={() => { isEditingNoteRef.current = true }}
+             onChange={e => {
+               isEditingNoteRef.current = true
+               setNote(e.target.value)
+             }}
              placeholder="Click '+ Student Details Template' above or type notes about the call..." 
              className={`w-full bg-white border border-gray-200 rounded-xl text-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all shadow-sm leading-relaxed mb-4 ${
                note.includes('Name:') ? 'min-h-[250px] font-mono text-xs resize-y' : 'min-h-[75px] resize-y'
