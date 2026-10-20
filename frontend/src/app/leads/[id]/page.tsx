@@ -1,11 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap } from 'lucide-react'
+import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
-import { calculateAutoFollowUp } from '@/lib/followupRules'
+import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge } from '@/lib/countryHelper'
@@ -27,6 +27,9 @@ export default function LeadProfile() {
 
   const [note, setNote] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
+  const [savingFollowUp, setSavingFollowUp] = useState(false)
+  const [followUpSavedSuccess, setFollowUpSavedSuccess] = useState(false)
+  const isEditingFollowUpRef = useRef(false)
   const [savingAction, setSavingAction] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
@@ -105,14 +108,116 @@ export default function LeadProfile() {
     setActivities(actsData || [])
     setAuditLogs(enrichedAudit)
     
-    // Only set follow-up date if already scheduled on this lead; never auto-assign
-    if (leadData?.next_follow_up) {
-      setFollowUpDate(new Date(leadData.next_follow_up).toISOString().slice(0, 16))
-    } else {
-      setFollowUpDate('')
+    // Only set follow-up date if user is not actively editing in input
+    if (!isEditingFollowUpRef.current) {
+      if (leadData?.next_follow_up) {
+        setFollowUpDate(toLocalDatetimeString(leadData.next_follow_up))
+      } else {
+        setFollowUpDate('')
+      }
     }
     
     setLoading(false)
+  }
+
+  const handleSaveFollowUp = async (customDate?: string) => {
+    const targetDate = customDate !== undefined ? customDate : followUpDate
+    if (!targetDate) return
+
+    setSavingFollowUp(true)
+    try {
+      const isoString = new Date(targetDate).toISOString()
+      
+      const { error } = await supabase
+        .from('leads')
+        .update({ next_follow_up: isoString })
+        .eq('id', id)
+        
+      if (error) throw error
+
+      const formattedDate = new Date(isoString).toLocaleString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+      
+      await supabase.from('activities').insert([
+        {
+          lead: id,
+          user_id: currentUser?.id || lead?.owner_id,
+          type: 'followup_scheduled',
+          text: `Follow-up scheduled for ${formattedDate}`,
+          time: new Date().toISOString()
+        }
+      ])
+
+      await logAuditTrail({
+        leadId: id,
+        userId: currentUser?.id,
+        action: 'UPDATE',
+        fieldName: 'next_follow_up',
+        oldValue: lead?.next_follow_up || 'None',
+        newValue: isoString,
+        summary: `Next follow-up set to ${formattedDate}`
+      })
+
+      isEditingFollowUpRef.current = false
+      setLead((prev: any) => ({ ...prev, next_follow_up: isoString }))
+      setFollowUpDate(toLocalDatetimeString(isoString))
+      setFollowUpSavedSuccess(true)
+      setTimeout(() => setFollowUpSavedSuccess(false), 3000)
+      fetchLeadAndActivities()
+    } catch (err: any) {
+      console.error('Error saving follow-up:', err)
+      alert('Failed to save follow-up date: ' + (err.message || 'Unknown error'))
+    } finally {
+      setSavingFollowUp(false)
+    }
+  }
+
+  const handleClearFollowUp = async () => {
+    setSavingFollowUp(true)
+    try {
+      const oldFollowUp = lead?.next_follow_up
+      const { error } = await supabase.from('leads').update({ next_follow_up: null }).eq('id', id)
+      if (error) throw error
+      
+      if (oldFollowUp) {
+        await supabase.from('activities').insert([
+          {
+            lead: id,
+            user_id: currentUser?.id || lead?.owner_id,
+            type: 'followup_cleared',
+            text: `Follow-up date cleared`,
+            time: new Date().toISOString()
+          }
+        ])
+
+        await logAuditTrail({
+          leadId: id,
+          userId: currentUser?.id,
+          action: 'UPDATE',
+          fieldName: 'next_follow_up',
+          oldValue: oldFollowUp,
+          newValue: 'None',
+          summary: `Follow-up date cleared`
+        })
+      }
+
+      isEditingFollowUpRef.current = false
+      setLead((prev: any) => ({ ...prev, next_follow_up: null }))
+      setFollowUpDate('')
+      setFollowUpSavedSuccess(false)
+      fetchLeadAndActivities()
+    } catch (err: any) {
+      console.error('Error clearing follow-up:', err)
+      alert('Failed to clear follow-up: ' + (err.message || 'Unknown error'))
+    } finally {
+      setSavingFollowUp(false)
+    }
   }
 
   const logActivity = async (type: string, text: string) => {
@@ -124,13 +229,11 @@ export default function LeadProfile() {
     ])
     
     // Only update follow-up date if user explicitly entered or changed one
-    const updatePayload: any = {}
     if (followUpDate) {
-      updatePayload.next_follow_up = new Date(followUpDate).toISOString()
-    } else {
-      updatePayload.next_follow_up = null
+      await supabase.from('leads').update({
+        next_follow_up: new Date(followUpDate).toISOString()
+      }).eq('id', id)
     }
-    await supabase.from('leads').update(updatePayload).eq('id', id)
     
     setNote('')
     fetchLeadAndActivities()
@@ -781,42 +884,67 @@ export default function LeadProfile() {
                 <Calendar size={15} className="text-gray-500" />
                 <span>Next Follow-up:</span>
               </label>
+              
               <input 
                 type="datetime-local" 
                 value={followUpDate}
-                onChange={e => setFollowUpDate(e.target.value)}
-                className="bg-white border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-black shadow-2xs font-medium"
+                onFocus={() => { isEditingFollowUpRef.current = true }}
+                onChange={e => {
+                  isEditingFollowUpRef.current = true
+                  setFollowUpDate(e.target.value)
+                }}
+                className="bg-white border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 shadow-2xs font-medium"
               />
-              {followUpDate ? (
+
+              {/* Direct Save Follow-up button */}
+              <button
+                type="button"
+                onClick={() => handleSaveFollowUp()}
+                disabled={savingFollowUp || !followUpDate}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                  followUpDate
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                }`}
+                title="Save selected follow-up date and time"
+              >
+                <Check size={13} />
+                <span>{savingFollowUp ? 'Saving...' : 'Save Follow-up'}</span>
+              </button>
+
+              {/* Clear button when date is selected or lead has follow-up */}
+              {(lead?.next_follow_up || followUpDate) && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    setFollowUpDate('')
-                    await supabase.from('leads').update({ next_follow_up: null }).eq('id', id)
-                    setLead((prev: any) => ({ ...prev, next_follow_up: null }))
-                  }}
+                  onClick={handleClearFollowUp}
+                  disabled={savingFollowUp}
                   className="text-xs text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-lg transition-colors font-semibold flex items-center gap-1 cursor-pointer shadow-2xs"
-                  title="Remove follow-up date completely"
+                  title="Remove follow-up date"
                 >
                   <X size={12} />
-                  <span>Clear Date</span>
+                  <span>Clear</span>
                 </button>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-gray-400 italic">No follow-up set (Manual only)</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const tom = new Date()
-                      tom.setDate(tom.getDate() + 1)
-                      tom.setHours(10, 0, 0, 0)
-                      setFollowUpDate(tom.toISOString().slice(0, 16))
-                    }}
-                    className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded-md transition-colors cursor-pointer"
-                  >
-                    +Tomorrow 10 AM
-                  </button>
-                </div>
+              )}
+
+              {/* Success Badge */}
+              {followUpSavedSuccess && (
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 animate-fade-in">
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span>Saved!</span>
+                </span>
+              )}
+
+              {/* Scheduled info badge */}
+              {lead?.next_follow_up && !followUpSavedSuccess && (
+                <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                  <span>Scheduled: {new Date(lead.next_follow_up).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}</span>
+                </span>
               )}
            </div>
 

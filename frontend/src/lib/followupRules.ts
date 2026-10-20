@@ -109,3 +109,15 @@ export function getFollowUpStatus(dateStr: string) {
   const days = Math.round(diffMins / (60 * 24))
   return { status: 'upcoming', label: `In ${days}d`, isDueSoon: false, diffMins }
 }
+
+/**
+ * Convert any date string / Date to YYYY-MM-DDTHH:mm formatted for datetime-local input
+ * in local timezone, preserving local user time without UTC shifts.
+ */
+export function toLocalDatetimeString(dateInput: Date | string | null | undefined): string {
+  if (!dateInput) return ''
+  const d = new Date(dateInput)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}

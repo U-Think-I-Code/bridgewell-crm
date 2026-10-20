@@ -15,6 +15,7 @@ import {
   getFollowUpStatus,
   DEFAULT_FOLLOWUP_CONFIG,
   FollowUpRuleConfig,
+  toLocalDatetimeString,
 } from '@/lib/followupRules'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 
@@ -241,8 +242,8 @@ export default function RemindersPage() {
     setCallOutcome('Connected')
     setCallNote('')
 
-    // Manual only: keep empty unless lead already has a follow-up scheduled
-    setCustomNextDate(lead.next_follow_up ? new Date(lead.next_follow_up).toISOString().slice(0, 16) : '')
+    // Set custom next date using local timezone helper
+    setCustomNextDate(toLocalDatetimeString(lead.next_follow_up))
   }
 
   // Outcome change
