@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap } from 'lucide-react'
+import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -220,6 +220,33 @@ export default function LeadProfile() {
     }
   }
 
+  const handleInsertTemplate = () => {
+    const template = [
+      `Name: ${lead?.name || ''}`,
+      `Phone / WhatsApp: ${lead?.phone || ''}`,
+      `Email: ${lead?.email || ''}`,
+      `Address: `,
+      `Country: ${lead?.country || ''}`,
+      `Qualification: `,
+      `GPA: `,
+      `Course: ${lead?.course || ''}`,
+      `Preferred Country: `,
+      `Intake: `,
+      `Budget: `,
+      `Sponsor: `
+    ].join('\n')
+
+    if (!note.trim()) {
+      setNote(template)
+    } else if (!note.includes('Name:') && !note.includes('Qualification:')) {
+      setNote(note.trim() + '\n\n' + template)
+    } else {
+      if (confirm('Replace current note with a fresh Student Profile template?')) {
+        setNote(template)
+      }
+    }
+  }
+
   const logActivity = async (type: string, text: string) => {
     if (!text.trim() && type !== 'stage change' && type !== 'assignment') return
     setSavingAction(true)
@@ -251,7 +278,9 @@ export default function LeadProfile() {
         user_id: currentUser?.id || lead?.owner_id, 
         type: 'call', 
         outcome: outcome,
-        text: `Call logged. Outcome: ${outcome}. ${note ? `Notes: ${note}` : ''}`, 
+        text: note 
+          ? `Call logged (${outcome}).\n\n--- Call Notes ---\n${note}`
+          : `Call logged. Outcome: ${outcome}.`, 
         time: new Date().toISOString() 
       }
     ])
@@ -805,7 +834,7 @@ export default function LeadProfile() {
                     </div>
                     <div className="bg-white border border-gray-200 p-4 rounded-xl flex-1 shadow-sm">
                       <p className="text-sm font-semibold text-gray-900 mb-1 capitalize">{act.type}</p>
-                      <p className="text-sm text-gray-600 mb-2">{act.text}</p>
+                      <p className="text-sm text-gray-700 mb-2 whitespace-pre-wrap leading-relaxed">{act.text}</p>
                       <p className="text-xs text-gray-400 font-medium">{new Date(act.time).toLocaleString()}</p>
                     </div>
                   </div>
@@ -872,11 +901,47 @@ export default function LeadProfile() {
 
         {/* Input box for notes and follow-up */}
         <div className="p-6 bg-gray-50 border-t border-gray-200 shrink-0">
+           {/* Quick template toolbar */}
+           <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
+             <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+               <FileText size={13} className="text-gray-400" />
+               <span>Call Notes & Student Details</span>
+             </div>
+             <div className="flex items-center gap-2">
+               <button
+                 type="button"
+                 onClick={handleInsertTemplate}
+                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                 title="Insert Student Profile Template (Qualification, GPA, Intake, Budget, Sponsor, etc.)"
+               >
+                 <Sparkles size={13} className="text-blue-600" />
+                 <span>+ Student Details Template</span>
+               </button>
+
+               {note && (
+                 <button
+                   type="button"
+                   onClick={() => {
+                     if (confirm('Clear note content?')) {
+                       setNote('')
+                     }
+                   }}
+                   className="text-xs text-gray-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded transition-colors cursor-pointer"
+                   title="Clear note text"
+                 >
+                   Clear
+                 </button>
+               )}
+             </div>
+           </div>
+
            <textarea 
              value={note}
              onChange={e => setNote(e.target.value)}
-             placeholder="Notes about the call or follow-up plan..." 
-             className="w-full bg-white border border-gray-200 rounded-xl text-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-gray-100 focus:border-gray-400 transition-all resize-none h-16 mb-4 shadow-sm"
+             placeholder="Click '+ Student Details Template' above or type notes about the call..." 
+             className={`w-full bg-white border border-gray-200 rounded-xl text-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all shadow-sm leading-relaxed mb-4 ${
+               note.includes('Name:') ? 'min-h-[250px] font-mono text-xs resize-y' : 'min-h-[75px] resize-y'
+             }`}
            />
            
            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200 flex-wrap">
