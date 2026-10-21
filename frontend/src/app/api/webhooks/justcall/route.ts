@@ -28,8 +28,40 @@ export async function GET() {
     status: 'active',
     service: 'Bridgewell CRM - JustCall Automatic Call Logger Webhook',
     timestamp: new Date().toISOString(),
-    supported_events: ['call.completed', 'call_ended', 'call.logged'],
+    supported_events: ['call.completed', 'call_ended', 'call.logged', 'sd.call_completed'],
     instructions: 'Set this endpoint URL as your Webhook URL in JustCall Dashboard > Integrations > Webhooks.'
+  }, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    }
+  })
+}
+
+/**
+ * HEAD Handler: Some webhook validators use HEAD to check URL reachability
+ */
+export async function HEAD() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    }
+  })
+}
+
+/**
+ * OPTIONS Handler: CORS preflight
+ */
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Allow': 'GET, POST, HEAD, OPTIONS',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    }
   })
 }
 
@@ -118,10 +150,17 @@ export async function POST(request: NextRequest) {
     const formattedDuration = formatCallDuration(durationSeconds)
 
     if (!rawPhone) {
-      return NextResponse.json(
-        { success: false, message: 'No contact_number provided in JustCall payload' },
-        { status: 400 }
-      )
+      // JustCall initial validation ping test (doesn't send a phone number)
+      return NextResponse.json({
+        success: true,
+        message: 'Endpoint is accessible and verified. Bridgewell CRM JustCall webhook is active.',
+        received: payload
+      }, {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+        }
+      })
     }
 
     // 3. Find matching lead in Supabase
@@ -301,7 +340,12 @@ export async function POST(request: NextRequest) {
     console.error('[JustCall Webhook] Internal server error:', error)
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
-      { status: 500 }
+      {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+        }
+      }
     )
   }
 }
