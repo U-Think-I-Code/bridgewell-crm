@@ -207,20 +207,54 @@ export async function POST(request: NextRequest) {
 
     const activityText = activityLines.join('\n')
 
-    // 6. Insert call activity into lead timeline
-    const { error: actError } = await supabase.from('activities').insert([
-      {
-        lead: matchingLead.id,
-        user_id: counselorUserId,
-        type: 'call',
-        outcome: outcome,
-        text: activityText,
-        time: new Date().toISOString()
-      }
-    ])
+    // 6. Check if an "Initiated phone call" activity was logged recently (within last 1 hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { data: recentActs } = await supabase
+      .from('activities')
+      .select('id, text, type, outcome, time')
+      .eq('lead', matchingLead.id)
+      .eq('type', 'call')
+      .gte('time', oneHourAgo)
+      .order('time', { ascending: false })
+      .limit(5)
 
-    if (actError) {
-      console.error('[JustCall Webhook] Failed to insert activity:', actError)
+    const pendingCallAct = recentActs?.find(a => 
+      a.text?.includes('Initiated phone call') || 
+      a.text?.includes('In Progress') || 
+      a.outcome === 'Calling' || 
+      a.outcome === 'In Progress'
+    )
+
+    if (pendingCallAct) {
+      // UPDATE that exact activity card directly so it reflects Connected and duration!
+      const { error: updateActErr } = await supabase
+        .from('activities')
+        .update({
+          outcome: outcome,
+          text: activityText,
+          time: new Date().toISOString()
+        })
+        .eq('id', pendingCallAct.id)
+
+      if (updateActErr) {
+        console.error('[JustCall Webhook] Failed to update existing activity:', updateActErr)
+      }
+    } else {
+      // Insert new call activity into lead timeline
+      const { error: actError } = await supabase.from('activities').insert([
+        {
+          lead: matchingLead.id,
+          user_id: counselorUserId,
+          type: 'call',
+          outcome: outcome,
+          text: activityText,
+          time: new Date().toISOString()
+        }
+      ])
+
+      if (actError) {
+        console.error('[JustCall Webhook] Failed to insert activity:', actError)
+      }
     }
 
     // 7. Update Lead stats (attempts, last_call_outcome, metadata)

@@ -10,6 +10,15 @@ import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge } from '@/lib/countryHelper'
 
+function formatCallDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '0s'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  if (mins === 0) return `${secs}s`
+  if (secs === 0) return `${mins}m`
+  return `${mins}m ${secs}s`
+}
+
 function extractCallDuration(text?: string): string {
   if (!text) return 'Logged'
   const match = text.match(/Duration:\s*([^\n(]+)/i)
@@ -38,6 +47,9 @@ export default function LeadProfile() {
   const [loading, setLoading] = useState(true)
 
   const [note, setNote] = useState('')
+  const [activeCallTimer, setActiveCallTimer] = useState<number | null>(null)
+  const callStartTimeRef = useRef<number | null>(null)
+  const activeCallActIdRef = useRef<string | null>(null)
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false)
   const [isNotesOpen, setIsNotesOpen] = useState(true)
@@ -50,6 +62,17 @@ export default function LeadProfile() {
   const [savingAction, setSavingAction] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
+
+  // Live timer tick for active call
+  useEffect(() => {
+    if (activeCallTimer === null) return
+    const interval = setInterval(() => {
+      if (callStartTimeRef.current) {
+        setActiveCallTimer(Math.round((Date.now() - callStartTimeRef.current) / 1000))
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [activeCallTimer !== null])
 
   useEffect(() => {
     if (!id) return
@@ -401,6 +424,115 @@ export default function LeadProfile() {
     setNote('')
     fetchLeadAndActivities()
     setSavingAction(false)
+  }
+
+  const handleStartCall = async (e?: React.MouseEvent) => {
+    if (e) {
+      if ('preventDefault' in e && typeof e.preventDefault === 'function') {
+        e.preventDefault()
+      }
+    }
+    if (!lead?.phone) return
+
+    const now = Date.now()
+    callStartTimeRef.current = now
+    setActiveCallTimer(0)
+
+    // Open JustCall dialer popup
+    const popup = openJustCallDialer(lead.phone, e)
+
+    try {
+      const { data: actData } = await supabase
+        .from('activities')
+        .insert([
+          {
+            lead: id,
+            user_id: currentUser?.id || lead?.owner_id,
+            type: 'call',
+            outcome: 'Calling',
+            text: '📞 Calling via JustCall... (Call in progress)',
+            time: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single()
+
+      if (actData?.id) {
+        activeCallActIdRef.current = actData.id
+      }
+      fetchLeadAndActivities()
+    } catch (err) {
+      console.error('Error logging call initiation:', err)
+    }
+
+    if (popup) {
+      const checkClosed = setInterval(() => {
+        try {
+          if (popup.closed) {
+            clearInterval(checkClosed)
+            handleCallEnded()
+          }
+        } catch {
+          clearInterval(checkClosed)
+        }
+      }, 1000)
+    }
+  }
+
+  const handleCallEnded = async (explicitOutcome?: string) => {
+    if (!callStartTimeRef.current) return
+    const elapsedSecs = Math.max(1, Math.round((Date.now() - callStartTimeRef.current) / 1000))
+    const formattedDuration = formatCallDuration(elapsedSecs)
+    const outcome = explicitOutcome || (elapsedSecs >= 8 ? 'Connected' : 'No Answer')
+    const actId = activeCallActIdRef.current
+
+    callStartTimeRef.current = null
+    activeCallActIdRef.current = null
+    setActiveCallTimer(null)
+
+    try {
+      const newText = `📞 JustCall Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
+
+      if (actId) {
+        await supabase
+          .from('activities')
+          .update({
+            outcome,
+            text: newText,
+            time: new Date().toISOString()
+          })
+          .eq('id', actId)
+      } else {
+        await supabase.from('activities').insert([
+          {
+            lead: id,
+            user_id: currentUser?.id || lead?.owner_id,
+            type: 'call',
+            outcome,
+            text: newText,
+            time: new Date().toISOString()
+          }
+        ])
+      }
+
+      await supabase
+        .from('leads')
+        .update({
+          last_call_outcome: outcome,
+          metadata: {
+            ...(lead?.metadata || {}),
+            last_call_duration: formattedDuration,
+            last_call_outcome: outcome,
+            last_call_at: new Date().toISOString()
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+
+      fetchLeadAndActivities()
+    } catch (err) {
+      console.error('Error ending call tracking:', err)
+    }
   }
 
   const logCallOutcome = async (outcome: string) => {
@@ -801,18 +933,15 @@ export default function LeadProfile() {
 
           {/* Quick Action Buttons */}
           <div className="grid grid-cols-3 gap-2 pt-1">
-             <a 
-               href={getJustCallDialerUrl(lead.phone)} 
-               onClick={(e) => {
-                 logActivity('call', 'Initiated phone call via JustCall')
-                 openJustCallDialer(lead.phone, e)
-               }} 
+             <button 
+               type="button"
+               onClick={handleStartCall}
                className="flex justify-center items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-               title="Call via JustCall"
+               title="Call via JustCall (Auto Duration & Status Tracker)"
              >
                 <Phone size={13} className="text-gray-500 shrink-0" />
                 <span>Call</span>
-             </a>
+             </button>
 
              <a 
                target="_blank" 
@@ -992,10 +1121,16 @@ export default function LeadProfile() {
                           )}
                           {act.type === 'call' && (
                             <>
-                              {(act.outcome === 'Connected' || act.text?.includes('(Connected)')) && (
+                              {(act.outcome === 'Connected' || act.text?.includes('(Connected)') || act.text?.includes('Call Connected')) && (
                                 <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                   Connected
+                                </span>
+                              )}
+                              {(act.outcome === 'Calling' || act.outcome === 'In Progress' || act.text?.includes('Calling via JustCall...')) && (
+                                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping" />
+                                  Calling {activeCallTimer !== null ? `(${formatCallDuration(activeCallTimer)})` : '...'}
                                 </span>
                               )}
                               {(act.outcome === 'Busy' || act.text?.includes('(Busy)')) && (
@@ -1013,6 +1148,19 @@ export default function LeadProfile() {
                                   <Clock size={10} className="text-gray-500" />
                                   {extractCallDuration(act.text)}
                                 </span>
+                              )}
+                              {/* Fallback for historical 'Initiated phone call' card (as shown in user screenshot) */}
+                              {act.text?.includes('Initiated phone call via JustCall') && !act.text?.includes('Duration:') && (
+                                <>
+                                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    {lead?.last_call_outcome || 'Connected'}
+                                  </span>
+                                  <span className="text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Clock size={10} className="text-gray-500" />
+                                    {lead?.metadata?.last_call_duration || 'Duration Logged'}
+                                  </span>
+                                </>
                               )}
                             </>
                           )}

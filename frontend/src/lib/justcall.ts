@@ -19,14 +19,14 @@ export function getJustCallDialerUrl(phone: string): string {
   return `https://app.justcall.io/dialer?numbers=${encodeURIComponent(cleanPhone)}`
 }
 
-export function openJustCallDialer(phone: string, e?: React.MouseEvent | Event) {
+export function openJustCallDialer(phone: string, e?: React.MouseEvent | Event): Window | null {
   if (e) {
     if ('preventDefault' in e && typeof e.preventDefault === 'function') {
       e.preventDefault()
     }
   }
 
-  if (!phone) return
+  if (!phone) return null
 
   const url = getJustCallDialerUrl(phone)
 
@@ -40,10 +40,11 @@ export function openJustCallDialer(phone: string, e?: React.MouseEvent | Event) 
     left = window.screenLeft !== undefined ? Math.max(0, window.screenLeft + (window.outerWidth - width) / 2) : 100
     top = window.screenTop !== undefined ? Math.max(0, window.screenTop + (window.outerHeight - height) / 2) : 100
 
-    window.open(
+    return window.open(
       url,
       'JustCallDialer',
       `width=${width},height=${height},top=${top},left=${left},location=no,menubar=no,toolbar=no,status=no,scrollbars=no,resizable=yes`
     )
   }
+  return null
 }
