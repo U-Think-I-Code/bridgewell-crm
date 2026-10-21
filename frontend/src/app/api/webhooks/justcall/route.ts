@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
  * Format duration in seconds into human-readable text (e.g. "3m 45s" or "45s")
  */
 function formatCallDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) return '0s (Not Connected)'
+  if (!seconds || seconds <= 0) return '0s (Not Answered)'
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   if (mins === 0) return `${secs}s`
@@ -103,12 +103,20 @@ export async function POST(request: NextRequest) {
                      payload.contact_phone || 
                      ''
 
-    const durationRaw = payload.call_info?.duration ?? 
-                        payload.duration ?? 
-                        payload.call_duration ?? 
-                        payload.call_duration_seconds ?? 
-                        0
-    const durationSeconds = typeof durationRaw === 'number' ? durationRaw : parseInt(durationRaw, 10) || 0
+    // Extract duration from all possible JustCall payload structures
+    let durationSeconds = 0
+    if (typeof payload.call_info?.duration === 'number') {
+      durationSeconds = payload.call_info.duration
+    } else if (typeof payload.call_duration === 'number') {
+      durationSeconds = payload.call_duration
+    } else if (payload.call_duration && typeof payload.call_duration === 'object') {
+      // JustCall V2 standard webhook nests conversation_time or total_duration
+      durationSeconds = Number(payload.call_duration.conversation_time ?? payload.call_duration.total_duration ?? 0) || 0
+    } else if (payload.duration !== undefined) {
+      durationSeconds = parseInt(String(payload.duration), 10) || 0
+    } else if (payload.call_duration_seconds !== undefined) {
+      durationSeconds = parseInt(String(payload.call_duration_seconds), 10) || 0
+    }
 
     const rawCallType = payload.call_info?.type || 
                         payload.call_type || 
@@ -130,8 +138,10 @@ export async function POST(request: NextRequest) {
     const disposition = payload.disposition || payload.call_disposition || ''
 
     // 2. Determine Call Outcome (Connected vs No Answer vs Busy)
+    // CRITICAL: A call is ONLY "Connected" if the student actually answered and conversation duration > 0!
+    // If duration is 0 seconds (or student didn't pick up / hung up), outcome is strictly "No Answer".
     const normalizedType = String(rawCallType).toLowerCase()
-    let outcome = 'Connected'
+    let outcome = 'No Answer'
     
     if (normalizedType.includes('busy')) {
       outcome = 'Busy'
@@ -140,10 +150,12 @@ export async function POST(request: NextRequest) {
       normalizedType.includes('unanswered') || 
       normalizedType.includes('cancel') || 
       normalizedType.includes('fail') || 
-      (durationSeconds === 0 && !normalizedType.includes('answered'))
+      normalizedType.includes('voicemail') ||
+      durationSeconds <= 0
     ) {
       outcome = 'No Answer'
-    } else if (durationSeconds > 0 || normalizedType.includes('answered') || normalizedType.includes('completed')) {
+    } else if (durationSeconds > 0) {
+      // Actual conversation took place
       outcome = 'Connected'
     }
 

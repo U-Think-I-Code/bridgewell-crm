@@ -642,7 +642,7 @@ export default function LeadProfile() {
     if (!callStartTimeRef.current) return
     const elapsedSecs = Math.max(1, Math.round((Date.now() - callStartTimeRef.current) / 1000))
     const formattedDuration = formatCallDuration(elapsedSecs)
-    const outcome = explicitOutcome || (elapsedSecs >= 8 ? 'Connected' : 'No Answer')
+    const outcome = explicitOutcome || 'No Answer'
     const actId = activeCallActIdRef.current
 
     callStartTimeRef.current = null
