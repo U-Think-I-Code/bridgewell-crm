@@ -37,10 +37,16 @@ function cleanHeaderTitle(raw: string): string {
     .replace(/\b\w/g, c => c.toUpperCase())
 }
 
-// Format values nicely
+// Format values nicely and prevent CSV formula injection
 function formatFieldValue(val: any): string {
   if (val === null || val === undefined) return ''
-  const str = String(val).trim()
+  let str = String(val).trim()
+  
+  // Security: prevent CSV formula injection (=, +, -, @)
+  if (/^[=+\-@\t\r]/.test(str) && !/^\+?\d+$/.test(str)) {
+    str = `'` + str
+  }
+
   if (str.toLowerCase() === 'on_campus') return 'On Campus'
   if (str.toLowerCase() === 'both') return 'Both (Online & Campus)'
   if (str.toLowerCase() === 'online') return 'Online'

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { 
   ClipboardList, 
   Search, 
@@ -33,6 +34,7 @@ import { AuditLogItem } from '@/lib/auditLogger'
 
 export default function AuditTrailPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const [logs, setLogs] = useState<AuditLogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [usersMap, setUsersMap] = useState<Record<string, { name: string; email: string; role: string }>>({})
@@ -93,6 +95,10 @@ export default function AuditTrailPage() {
   }
 
   useEffect(() => {
+    if (user && user.role !== 'manager') {
+      router.push('/')
+      return
+    }
     fetchAuditData()
 
     // Realtime subscription on audit_logs

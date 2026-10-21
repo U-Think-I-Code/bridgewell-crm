@@ -50,6 +50,9 @@ function detectTargetCountry(data: {
     if (c === 'AUS' || c === 'AUSTRALIA') return 'Australia'
     if (c === 'GERMANY' || c === 'DE') return 'Germany'
     if (c === 'IRELAND' || c === 'IE') return 'Ireland'
+    if (c === 'SA' || c === 'SAUDI' || c === 'SAUDI ARABIA' || c === 'KSA') return 'Saudi Arabia'
+    if (c === 'ZA' || c === 'SOUTH AFRICA' || c === 'RSA') return 'South Africa'
+    if (c === 'EU' || c === 'EUROPE') return 'Europe'
     if (c === 'UAE' || c === 'DUBAI') return 'UAE'
     if (c === 'INDIA' || c === 'IN') return 'India'
     // Capitalize first letter
@@ -71,6 +74,9 @@ function detectTargetCountry(data: {
   if (/\b(AUSTRALIA|AUST|SYDNEY|MELBOURNE)\b/.test(haystack)) return 'Australia'
   if (/\b(GERMANY|DEUTSCHLAND|BERLIN)\b/.test(haystack)) return 'Germany'
   if (/\b(IRELAND|DUBLIN)\b/.test(haystack)) return 'Ireland'
+  if (/\b(SAUDI|KSA|RIYADH|JEDDAH)\b/.test(haystack)) return 'Saudi Arabia'
+  if (/\b(SOUTH AFRICA|JOHANNESBURG|CAPE TOWN|RSA)\b/.test(haystack)) return 'South Africa'
+  if (/\b(EUROPE|EUROPEAN|EU AD)\b/.test(haystack)) return 'Europe'
   if (/\b(DUBAI|UAE|EMIRATES)\b/.test(haystack)) return 'UAE'
   if (/\b(INDIA|DELHI|MUMBAI)\b/.test(haystack)) return 'India'
 
@@ -81,6 +87,8 @@ function detectTargetCountry(data: {
   if (phone.startsWith('+61')) return 'Australia'
   if (phone.startsWith('+49')) return 'Germany'
   if (phone.startsWith('+353')) return 'Ireland'
+  if (phone.startsWith('+966')) return 'Saudi Arabia'
+  if (phone.startsWith('+27')) return 'South Africa'
   if (phone.startsWith('+971')) return 'UAE'
   if (phone.startsWith('+91')) return 'India'
 

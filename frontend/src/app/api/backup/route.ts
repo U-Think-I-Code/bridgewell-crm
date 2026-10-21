@@ -74,7 +74,9 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json',
           'Content-Disposition': `attachment; filename="${filename}"`,
-          'Cache-Control': 'no-store',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Robots-Tag': 'noindex, nofollow',
         },
       })
     }
@@ -82,7 +84,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(backupData, {
       status: 200,
       headers: {
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Robots-Tag': 'noindex, nofollow',
       },
     })
   } catch (error: any) {
