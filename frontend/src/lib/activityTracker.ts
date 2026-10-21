@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { notifyCounselorLogin } from '@/lib/notifications'
 
 export interface ActivityLogItem {
   id: string
@@ -47,8 +48,17 @@ let isUserIdle = false
 let currentSessionId: string | null = null
 
 // Initialize User Session & Heartbeat Presence
-export function startUserActivityTracking(userId: string) {
+export function startUserActivityTracking(
+  userOrId: string | { id: string; name?: string; email?: string; role?: string }
+) {
   if (typeof window === 'undefined') return
+
+  const userId = typeof userOrId === 'string' ? userOrId : userOrId.id
+  let userName = typeof userOrId === 'object' ? userOrId.name || '' : ''
+  let userEmail = typeof userOrId === 'object' ? userOrId.email || '' : ''
+  let userRole = typeof userOrId === 'object' ? userOrId.role || '' : ''
+
+  if (!userId) return
 
   if (!currentSessionId) {
     currentSessionId = sessionStorage.getItem('bw_session_id')
@@ -58,12 +68,41 @@ export function startUserActivityTracking(userId: string) {
     }
   }
 
-  const nowIso = new Date().toISOString()
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const todayDateStr = nowIso.split('T')[0]
   const userAgent = navigator.userAgent.substring(0, 150)
+
+  // Format exact time for Indian Standard Time / display
+  const formattedTime = now.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+  const formattedDate = now.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 
   // 1. Record / Update session in database
   const recordSession = async () => {
     try {
+      // If user details were not passed, fetch them
+      if (!userName || !userRole) {
+        const { data: u } = await supabase
+          .from('users')
+          .select('name, email, role')
+          .eq('id', userId)
+          .maybeSingle()
+        if (u) {
+          userName = u.name || userName
+          userEmail = u.email || userEmail
+          userRole = u.role || userRole
+        }
+      }
+
       // Check if session exists in user_sessions
       const { data: existing } = await supabase
         .from('user_sessions')
@@ -83,21 +122,46 @@ export function startUserActivityTracking(userId: string) {
           is_active: true
         }])
 
-        // Also record a login activity in activities
+        // Record a precise login activity in activities
         await supabase.from('activities').insert([{
           user_id: userId,
           type: 'login',
-          text: 'User logged in and started session',
+          text: `${userName || 'Staff'} logged in at ${formattedTime} (${formattedDate})`,
           time: nowIso
         }])
       }
 
+      // Daily login alert key in sessionStorage
+      const alertKey = `bw_login_alert_${userId}_${todayDateStr}`
+      const alreadyNotified = sessionStorage.getItem(alertKey)
+
+      // If user is a counselor or non-manager and hasn't notified admin today in this session:
+      if (userRole && userRole !== 'manager' && !alreadyNotified) {
+        sessionStorage.setItem(alertKey, formattedTime)
+        notifyCounselorLogin({
+          counselorId: userId,
+          counselorName: userName || 'Counselor',
+          counselorEmail: userEmail || '',
+          loginTime: formattedTime,
+          loginDate: formattedDate,
+        }).catch(err => {
+          console.warn('Failed to dispatch counselor login alert to admin:', err)
+        })
+      }
+
       // Update user presence in users table
-      await supabase.from('users').update({
-        last_login_at: nowIso,
-        last_active_at: nowIso,
-        status: 'online'
-      }).eq('id', userId)
+      try {
+        await supabase.from('users').update({
+          last_login_at: nowIso,
+          last_active_at: nowIso,
+          status: 'online'
+        }).eq('id', userId)
+      } catch {
+        await supabase.from('users').update({
+          last_active_at: nowIso,
+          status: 'online'
+        }).eq('id', userId)
+      }
     } catch (err) {
       console.warn('Activity tracker session init error:', err)
     }
@@ -232,6 +296,11 @@ export async function endUserSession(userId: string) {
         is_active: false
       }).eq('session_id', sessId).eq('user_id', userId)
       sessionStorage.removeItem('bw_session_id')
+    }
+
+    if (typeof window !== 'undefined') {
+      const todayDateStr = nowIso.split('T')[0]
+      sessionStorage.removeItem(`bw_login_alert_${userId}_${todayDateStr}`)
     }
 
     await supabase.from('users').update({

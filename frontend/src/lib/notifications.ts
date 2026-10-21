@@ -290,3 +290,53 @@ export async function notifyLeadEnrolled({
     link: `/leads/${leadId}`,
   })
 }
+
+/**
+ * Trigger an automated notification to Admins/Managers when a counselor logs in
+ */
+export async function notifyCounselorLogin({
+  counselorId,
+  counselorName,
+  counselorEmail,
+  loginTime,
+  loginDate,
+}: {
+  counselorId: string
+  counselorName: string
+  counselorEmail: string
+  loginTime: string
+  loginDate?: string
+}) {
+  try {
+    // Find all manager and admin users
+    const { data: managers, error } = await supabase
+      .from('users')
+      .select('id, role')
+      .in('role', ['manager', 'admin'])
+
+    if (error) {
+      console.warn('Error fetching managers for login notification:', error)
+      return
+    }
+
+    const recipientIds = (managers || [])
+      .map(m => m.id)
+      .filter(id => id !== counselorId)
+
+    if (recipientIds.length === 0) return
+
+    return sendInAppAlert({
+      recipientIds,
+      senderId: counselorId,
+      senderName: counselorName,
+      title: `🟢 Counselor Logged In: ${counselorName}`,
+      message: `${counselorName} (${counselorEmail}) logged in today at ${loginTime}${loginDate ? ` (${loginDate})` : ''}. Exact clock-in recorded.`,
+      type: 'system',
+      priority: 'high',
+      link: '/team?tab=attendance',
+    })
+  } catch (err) {
+    console.warn('notifyCounselorLogin error:', err)
+  }
+}
+

@@ -84,11 +84,11 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   // Track session, heartbeats, and online presence
   useEffect(() => {
     if (!profile?.id) return
-    const cleanup = startUserActivityTracking(profile.id)
+    const cleanup = startUserActivityTracking(profile)
     return () => {
       cleanup?.()
     }
-  }, [profile?.id])
+  }, [profile?.id, profile?.name, profile?.email, profile?.role])
 
   const fetchProfile = async (authId: string) => {
     // Try to find user by auth_id first, then by email

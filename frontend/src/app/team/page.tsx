@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
   Users, UserPlus, KeyRound, Trash2, CheckCircle2, 
   XCircle, Shield, Mail, User, Lock, Copy, Check, X,
-  PhoneCall, ShieldAlert, Sparkles, Trophy, ArrowLeftRight
+  PhoneCall, ShieldAlert, Sparkles, Trophy, ArrowLeftRight,
+  Clock, Calendar, Filter, Search, ArrowUpRight, Activity, AlertCircle
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
@@ -19,6 +20,22 @@ interface Employee {
   active: boolean
   auth_id: string | null
   leads_count?: number
+  last_active_at?: string | null
+  last_login_at?: string | null
+  status?: string
+  today_login_time?: string | null
+  first_login_today_iso?: string | null
+  effective_status: 'online' | 'idle' | 'offline'
+}
+
+interface LoginLogItem {
+  id: string
+  user_id: string
+  time: string
+  text?: string | null
+  user_name?: string
+  user_email?: string
+  user_role?: string
 }
 
 export default function TeamPage() {
@@ -27,7 +44,11 @@ export default function TeamPage() {
   
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [teamTab, setTeamTab] = useState<'members' | 'leaderboard'>('members')
+  const [teamTab, setTeamTab] = useState<'members' | 'attendance' | 'leaderboard'>('members')
+  const [loginLogs, setLoginLogs] = useState<LoginLogItem[]>([])
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days' | 'all'>('today')
+  const [selectedCounselorFilter, setSelectedCounselorFilter] = useState<string>('all')
+  const [attendanceSearch, setAttendanceSearch] = useState<string>('')
   
   // Add Employee Modal State
   const [showAddModal, setShowAddModal] = useState(false)
@@ -48,6 +69,18 @@ export default function TeamPage() {
   const [resetError, setResetError] = useState('')
   const [resetSuccess, setResetSuccess] = useState(false)
 
+  // Sync tab with URL search params on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const tabParam = params.get('tab')
+      if (tabParam === 'attendance') setTeamTab('attendance')
+      else if (tabParam === 'leaderboard') setTeamTab('leaderboard')
+      const counselorParam = params.get('counselor')
+      if (counselorParam) setSelectedCounselorFilter(counselorParam)
+    }
+  }, [])
+
   useEffect(() => {
     if (user && user.role !== 'manager') {
       router.push('/')
@@ -55,13 +88,16 @@ export default function TeamPage() {
     }
     fetchEmployees()
 
-    // Realtime listener for employee accounts and lead assignments
+    // Realtime listener for employee accounts, logins, and lead assignments
     const channel = supabase
       .channel('team-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         fetchEmployees()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchEmployees()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
         fetchEmployees()
       })
       .subscribe()
@@ -76,37 +112,105 @@ export default function TeamPage() {
 
   const fetchEmployees = async () => {
     setLoading(true)
-    // Fetch users
-    const { data: usersData, error } = await supabase
-      .from('users')
-      .select('*')
-      .order('role', { ascending: false })
+    try {
+      // 1. Fetch users
+      const { data: usersData, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('role', { ascending: false })
 
-    if (error) {
-      console.error('Error fetching employees:', error)
-      setLoading(false)
-      return
-    }
-
-    // Fetch lead counts for each user
-    const { data: leadsData } = await supabase
-      .from('leads')
-      .select('owner_id')
-
-    const leadCountMap: Record<string, number> = {}
-    leadsData?.forEach((lead: any) => {
-      if (lead.owner_id) {
-        leadCountMap[lead.owner_id] = (leadCountMap[lead.owner_id] || 0) + 1
+      if (error) {
+        console.error('Error fetching employees:', error)
+        setLoading(false)
+        return
       }
-    })
 
-    const enriched = (usersData || []).map((u: any) => ({
-      ...u,
-      leads_count: leadCountMap[u.id] || 0
-    }))
+      // 2. Fetch lead counts for each user
+      const { data: leadsData } = await supabase
+        .from('leads')
+        .select('owner_id')
 
-    setEmployees(enriched)
-    setLoading(false)
+      const leadCountMap: Record<string, number> = {}
+      leadsData?.forEach((lead: any) => {
+        if (lead.owner_id) {
+          leadCountMap[lead.owner_id] = (leadCountMap[lead.owner_id] || 0) + 1
+        }
+      })
+
+      // 3. Fetch login activities
+      const { data: loginActs } = await supabase
+        .from('activities')
+        .select('id, user_id, type, text, time')
+        .eq('type', 'login')
+        .order('time', { ascending: false })
+        .limit(500)
+
+      const userMap: Record<string, any> = {}
+      ;(usersData || []).forEach(u => {
+        userMap[u.id] = u
+      })
+
+      const todayStr = new Date().toISOString().split('T')[0]
+
+      // Enrich employees with today's login time & presence
+      const enriched = (usersData || []).map((u: any) => {
+        // Find today's logins for this user
+        const userLoginsToday = (loginActs || [])
+          .filter(a => a.user_id === u.id && a.time && a.time.startsWith(todayStr))
+          .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+
+        const earliestLoginIso = userLoginsToday[0]?.time || (u.last_login_at?.startsWith(todayStr) ? u.last_login_at : null)
+
+        let todayLoginFormatted: string | null = null
+        if (earliestLoginIso) {
+          try {
+            todayLoginFormatted = new Date(earliestLoginIso).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true
+            })
+          } catch {}
+        }
+
+        let effectiveStatus: 'online' | 'idle' | 'offline' = u.status || 'offline'
+        if (u.last_active_at) {
+          const diffMins = (Date.now() - new Date(u.last_active_at).getTime()) / (1000 * 60)
+          if (diffMins > 20) {
+            effectiveStatus = 'offline'
+          } else if (diffMins > 5) {
+            effectiveStatus = 'idle'
+          } else {
+            effectiveStatus = 'online'
+          }
+        }
+
+        return {
+          ...u,
+          leads_count: leadCountMap[u.id] || 0,
+          today_login_time: todayLoginFormatted,
+          first_login_today_iso: earliestLoginIso,
+          effective_status: effectiveStatus
+        }
+      })
+
+      setEmployees(enriched)
+
+      // Map enriched login activities
+      const enrichedLogs: LoginLogItem[] = (loginActs || []).map(a => ({
+        id: a.id,
+        user_id: a.user_id,
+        time: a.time,
+        text: a.text,
+        user_name: a.user_id && userMap[a.user_id] ? userMap[a.user_id].name : 'Counselor',
+        user_email: a.user_id && userMap[a.user_id] ? userMap[a.user_id].email : '',
+        user_role: a.user_id && userMap[a.user_id] ? userMap[a.user_id].role : 'counselor'
+      }))
+
+      setLoginLogs(enrichedLogs)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleAddEmployee = async (e: React.FormEvent) => {
@@ -233,8 +337,81 @@ export default function TeamPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const totalCounselorsCount = employees.filter(e => e.role !== 'manager').length
   const activeCounselorsCount = employees.filter(e => e.role === 'counselor' && e.active).length
   const managersCount = employees.filter(e => e.role === 'manager').length
+  const todayDateStr = new Date().toISOString().split('T')[0]
+  
+  const counselorIdsLoggedInToday = useMemo(() => {
+    const ids = new Set<string>()
+    loginLogs.forEach(l => {
+      if (l.time && l.time.startsWith(todayDateStr)) {
+        ids.add(l.user_id)
+      }
+    })
+    return ids
+  }, [loginLogs, todayDateStr])
+
+  const counselorsPresentTodayCount = employees.filter(
+    e => e.role !== 'manager' && (counselorIdsLoggedInToday.has(e.id) || e.today_login_time)
+  ).length
+
+  const activeOnlineCount = employees.filter(e => e.effective_status === 'online').length
+
+  const pendingCounselorsToday = employees.filter(
+    e => e.role !== 'manager' && e.active && !counselorIdsLoggedInToday.has(e.id) && !e.today_login_time
+  )
+
+  const earliestClockIn = useMemo(() => {
+    const todayActs = loginLogs
+      .filter(l => l.time && l.time.startsWith(todayDateStr))
+      .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+    if (todayActs.length === 0) return null
+    const first = todayActs[0]
+    try {
+      const timeStr = new Date(first.time).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      })
+      return { time: timeStr, counselorName: first.user_name || 'Counselor' }
+    } catch {
+      return null
+    }
+  }, [loginLogs, todayDateStr])
+
+  const filteredLoginLogs = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const yesterdayDate = new Date()
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+    const yesterdayStr = yesterdayDate.toISOString().split('T')[0]
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+    return loginLogs.filter(log => {
+      if (selectedCounselorFilter !== 'all' && log.user_id !== selectedCounselorFilter) {
+        return false
+      }
+
+      if (attendanceDateFilter !== 'all' && log.time) {
+        if (attendanceDateFilter === 'today' && !log.time.startsWith(todayStr)) return false
+        if (attendanceDateFilter === 'yesterday' && !log.time.startsWith(yesterdayStr)) return false
+        if (attendanceDateFilter === '7days' && new Date(log.time) < sevenDaysAgo) return false
+        if (attendanceDateFilter === '30days' && new Date(log.time) < thirtyDaysAgo) return false
+      }
+
+      if (attendanceSearch.trim()) {
+        const q = attendanceSearch.toLowerCase()
+        const nameMatch = log.user_name?.toLowerCase().includes(q)
+        const emailMatch = log.user_email?.toLowerCase().includes(q)
+        const textMatch = log.text?.toLowerCase().includes(q)
+        if (!nameMatch && !emailMatch && !textMatch) return false
+      }
+
+      return true
+    })
+  }, [loginLogs, selectedCounselorFilter, attendanceDateFilter, attendanceSearch])
 
   return (
     <div className="flex-1 overflow-auto bg-[#FDFDFD] p-8">
@@ -253,7 +430,7 @@ export default function TeamPage() {
               </span>
             </h1>
             <p className="text-gray-500 text-sm mt-1">
-              Create unique login accounts for employees, assign roles, and manage access credentials.
+              Create unique login accounts for employees, monitor daily counselor login timings, and manage access.
             </p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -282,10 +459,10 @@ export default function TeamPage() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-200 mb-8 gap-6">
+        <div className="flex border-b border-gray-200 mb-8 gap-6 overflow-x-auto">
           <button
             onClick={() => setTeamTab('members')}
-            className={`pb-3.5 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${
+            className={`pb-3.5 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
               teamTab === 'members'
                 ? 'border-black text-black'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -294,9 +471,27 @@ export default function TeamPage() {
             <Users size={16} />
             <span>Employee Accounts ({employees.length})</span>
           </button>
+
+          <button
+            onClick={() => setTeamTab('attendance')}
+            className={`pb-3.5 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+              teamTab === 'attendance'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Clock size={16} className="text-emerald-600" />
+            <span>Daily Attendance & Timings</span>
+            {counselorsPresentTodayCount > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {counselorsPresentTodayCount} Present Today
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setTeamTab('leaderboard')}
-            className={`pb-3.5 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${
+            className={`pb-3.5 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
               teamTab === 'leaderboard'
                 ? 'border-black text-black'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -307,9 +502,254 @@ export default function TeamPage() {
           </button>
         </div>
 
-        {teamTab === 'leaderboard' ? (
-          <LeaderboardSection />
-        ) : (
+        {teamTab === 'leaderboard' && <LeaderboardSection />}
+
+        {/* Attendance Tab View */}
+        {teamTab === 'attendance' && (
+          <div className="space-y-6">
+            {/* Top Stat Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              {/* 1. Present Today */}
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Present Today</h3>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {counselorsPresentTodayCount} <span className="text-sm font-normal text-gray-500">/ {totalCounselorsCount}</span>
+                </p>
+                <p className="text-xs text-emerald-600 font-medium mt-1">
+                  {totalCounselorsCount > 0 ? Math.round((counselorsPresentTodayCount / totalCounselorsCount) * 100) : 0}% Counselors Logged In
+                </p>
+              </div>
+
+              {/* 2. Active Now */}
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                    <Activity size={16} />
+                  </div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Right Now</h3>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{activeOnlineCount}</p>
+                <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Online heartbeats active
+                </p>
+              </div>
+
+              {/* 3. Earliest Clock-In */}
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                    <Clock size={16} />
+                  </div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Earliest Clock-In</h3>
+                </div>
+                <p className="text-xl font-bold text-gray-900 truncate">
+                  {earliestClockIn ? earliestClockIn.time : 'None yet'}
+                </p>
+                <p className="text-xs text-gray-500 truncate mt-1">
+                  {earliestClockIn ? earliestClockIn.counselorName : 'No logins recorded today'}
+                </p>
+              </div>
+
+              {/* 4. Yet to Clock-In */}
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-600">
+                    <AlertCircle size={16} />
+                  </div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Yet to Clock-In</h3>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{pendingCounselorsToday.length}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {pendingCounselorsToday.length === 0 ? 'All counselors active!' : 'Staff pending login'}
+                </p>
+              </div>
+            </div>
+
+            {/* Filter Toolbar */}
+            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+              {/* Date Pill Filters */}
+              <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
+                {(['today', 'yesterday', '7days', '30days', 'all'] as const).map((filterKey) => {
+                  const labels: Record<string, string> = {
+                    today: 'Today',
+                    yesterday: 'Yesterday',
+                    '7days': 'Last 7 Days',
+                    '30days': 'Last 30 Days',
+                    all: 'All Time'
+                  }
+                  const active = attendanceDateFilter === filterKey
+                  return (
+                    <button
+                      key={filterKey}
+                      onClick={() => setAttendanceDateFilter(filterKey)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
+                        active ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      {labels[filterKey]}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                {/* Counselor Selector */}
+                <div className="relative min-w-[200px]">
+                  <select
+                    value={selectedCounselorFilter}
+                    onChange={(e) => setSelectedCounselorFilter(e.target.value)}
+                    className="w-full appearance-none bg-white border border-gray-200 text-gray-800 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-black outline-none"
+                  >
+                    <option value="all">All Counselors & Staff</option>
+                    {employees.map(e => (
+                      <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search counselor..."
+                    value={attendanceSearch}
+                    onChange={(e) => setAttendanceSearch(e.target.value)}
+                    className="w-48 bg-white border border-gray-200 text-gray-800 rounded-lg pl-8 pr-3 py-2 text-xs focus:ring-2 focus:ring-black outline-none"
+                  />
+                  <Search size={13} className="absolute left-2.5 top-2.5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+
+            {/* Attendance Table */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Counselor Daily Login Timings</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Exact clock-in timestamps recorded whenever a counselor logs in</p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+                  {filteredLoginLogs.length} Records Found
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50/80 text-gray-500 font-semibold border-b border-gray-100">
+                    <tr>
+                      <th className="py-3 px-6">Counselor / Staff</th>
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Exact Clock-In Time</th>
+                      <th className="py-3 px-4">Live Status</th>
+                      <th className="py-3 px-4">Activity Note</th>
+                      <th className="py-3 px-6 text-right">Audit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredLoginLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-gray-400">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Clock size={28} className="text-gray-300" />
+                            <span>No login records match the selected date or counselor filter.</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLoginLogs.map((log) => {
+                        const dateObj = new Date(log.time)
+                        const dateStr = dateObj.toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })
+                        const timeStr = dateObj.toLocaleTimeString('en-IN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        })
+
+                        const emp = employees.find(e => e.id === log.user_id)
+                        const status = emp?.effective_status || 'offline'
+
+                        return (
+                          <tr key={log.id} className="hover:bg-gray-50/70 transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
+                                  {log.user_name ? log.user_name.slice(0, 2).toUpperCase() : 'ST'}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-gray-900">{log.user_name}</div>
+                                  <div className="text-[11px] text-gray-400">{log.user_email} • <span className="capitalize">{log.user_role}</span></div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-4 font-medium text-gray-700 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar size={13} className="text-gray-400" />
+                                <span>{dateStr}</span>
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                <Clock size={13} className="text-emerald-600" />
+                                <span>{timeStr}</span>
+                              </span>
+                            </td>
+
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                                status === 'online'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : status === 'idle'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-gray-100 text-gray-600 border border-gray-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  status === 'online' ? 'bg-emerald-500 animate-pulse' : status === 'idle' ? 'bg-amber-500' : 'bg-gray-400'
+                                }`}></span>
+                                {status === 'online' ? 'Active Now' : status === 'idle' ? 'Idle (5m+)' : 'Offline'}
+                              </span>
+                            </td>
+
+                            <td className="py-4 px-4 text-gray-600 max-w-sm truncate" title={log.text || ''}>
+                              <span className="bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-md text-[11px]">
+                                {log.text || `User logged in at ${timeStr}`}
+                              </span>
+                            </td>
+
+                            <td className="py-4 px-6 text-right whitespace-nowrap">
+                              <Link
+                                href={`/activity?counselor=${log.user_id}`}
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-black hover:underline"
+                              >
+                                <span>Timeline</span>
+                                <ArrowUpRight size={12} />
+                              </Link>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Members Tab View */}
+        {teamTab === 'members' && (
           <>
           {/* Stats Row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -347,7 +787,10 @@ export default function TeamPage() {
         {/* Employee List Table */}
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-900">All Employees & Logins</h2>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">All Employees & Logins</h2>
+              <span className="text-xs text-gray-400">Live work status and daily clock-in times for all team members</span>
+            </div>
             <span className="text-xs text-gray-400">Each employee uses their personal email to login</span>
           </div>
 
@@ -379,7 +822,7 @@ export default function TeamPage() {
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm font-semibold text-gray-900">{emp.name}</h3>
                           {isPrimaryAdmin && (
                             <span className="text-[10px] uppercase font-bold tracking-wider bg-gray-900 text-white px-2 py-0.5 rounded">
@@ -398,20 +841,65 @@ export default function TeamPage() {
                               Inactive
                             </span>
                           )}
+
+                          {/* Live Presence Status Pill */}
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            emp.effective_status === 'online'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : emp.effective_status === 'idle'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-gray-100 text-gray-500 border border-gray-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              emp.effective_status === 'online'
+                                ? 'bg-emerald-500 animate-pulse'
+                                : emp.effective_status === 'idle'
+                                ? 'bg-amber-500'
+                                : 'bg-gray-400'
+                            }`}></span>
+                            {emp.effective_status === 'online' ? 'Active Now' : emp.effective_status === 'idle' ? 'Idle' : 'Offline'}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+
+                        <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
                             <Mail size={12} className="text-gray-400" />
                             <strong className="text-gray-700 font-medium">{emp.email}</strong>
                           </span>
                           <span>•</span>
                           <span>{emp.leads_count || 0} leads assigned</span>
+                          <span>•</span>
+
+                          {/* Today's Exact Clock-In Time */}
+                          {emp.today_login_time ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              <Clock size={11} className="text-emerald-600" />
+                              <span>Login Today: <strong>{emp.today_login_time}</strong></span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md border border-gray-200">
+                              <Clock size={11} className="text-gray-400" />
+                              <span>Not logged in today</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 self-end sm:self-center">
+                    <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+                      <button
+                        onClick={() => {
+                          setSelectedCounselorFilter(emp.id)
+                          setTeamTab('attendance')
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+                        title="View Daily Attendance & Exact Login Timings"
+                      >
+                        <Clock size={13} className="text-indigo-600" />
+                        <span>Attendance Log</span>
+                      </button>
+
                       {!isPrimaryAdmin && (
                         <button
                           onClick={() => handleToggleStatus(emp)}
@@ -453,6 +941,7 @@ export default function TeamPage() {
         </div>
         </>
       )}
+
       </div>
 
       {/* Add Employee Modal */}

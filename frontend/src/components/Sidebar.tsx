@@ -25,7 +25,7 @@ export default function Sidebar() {
     { name: 'Audit Trail', href: '/audit', icon: ClipboardList, managerOnly: true },
     { name: 'Reassignment', href: '/reassign', icon: ArrowLeftRight, managerOnly: true },
     { name: 'Analytics', href: '/analytics', icon: BarChart3, managerOnly: true },
-    { name: 'Team', href: '/team', icon: UserCheck, managerOnly: true },
+    { name: 'Team & Attendance', href: '/team', icon: UserCheck, managerOnly: true },
     { name: 'Settings', href: '/settings', icon: Settings, managerOnly: true },
   ]
 
