@@ -400,6 +400,7 @@ export default function LeadProfile() {
 
       // 3. Build lead update payload
       const updatePayload: any = {
+        notes: note,
         metadata: updatedMetadata,
       }
 
@@ -451,8 +452,7 @@ export default function LeadProfile() {
       setDetailsSavedSuccess(true)
       setTimeout(() => {
         setDetailsSavedSuccess(false)
-        setIsNotesOpen(false)
-      }, 1600)
+      }, 3000)
       fetchLeadAndActivities()
     } catch (err: any) {
       console.error('Error saving student details:', err)
@@ -544,14 +544,33 @@ export default function LeadProfile() {
       { lead: id, user_id: currentUser?.id || lead?.owner_id, type, text, time: new Date().toISOString() }
     ])
     
-    // Only update follow-up date if user explicitly entered or changed one
+    const updatePayload: any = {}
     if (followUpDate) {
-      await supabase.from('leads').update({
-        next_follow_up: new Date(followUpDate).toISOString()
-      }).eq('id', id)
+      updatePayload.next_follow_up = new Date(followUpDate).toISOString()
+    }
+    if (type === 'note' && text.trim()) {
+      updatePayload.notes = text
+      const currentMetadata = (lead?.metadata && typeof lead.metadata === 'object') ? lead.metadata : {}
+      updatePayload.metadata = {
+        ...currentMetadata,
+        student_profile: text
+      }
+    }
+
+    if (Object.keys(updatePayload).length > 0) {
+      await supabase.from('leads').update(updatePayload).eq('id', id)
+      setLead((prev: any) => ({
+        ...prev,
+        ...updatePayload
+      }))
     }
     
-    setNote('')
+    if (type === 'note') {
+      isEditingNoteRef.current = false
+      setDetailsSavedSuccess(true)
+      setTimeout(() => setDetailsSavedSuccess(false), 3000)
+    }
+
     fetchLeadAndActivities()
     setSavingAction(false)
   }
@@ -1472,6 +1491,76 @@ export default function LeadProfile() {
               </section>
             )
           })()}
+
+          {/* Permanent Student Profile & Saved Counselor Notes Card */}
+          {(lead?.metadata?.student_profile || lead?.notes || lead?.metadata?.address || lead?.metadata?.gpa || lead?.metadata?.preferred_country || lead?.metadata?.intake || lead?.metadata?.sponsor) && (
+            <section className="bg-white border border-emerald-300 rounded-2xl p-5 shadow-xs relative overflow-hidden animate-fade-in">
+               <div className="flex items-center justify-between mb-3">
+                 <h3 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                   <CheckCircle2 size={13} className="text-emerald-600" />
+                   <span>Saved Student Details &amp; Notes</span>
+                 </h3>
+                 <button
+                   type="button"
+                   onClick={() => handleOpenNotes(lead?.metadata?.student_profile || lead?.notes)}
+                   className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer shadow-2xs hover:shadow-xs"
+                   title="Click to edit or add more details in the notes editor"
+                 >
+                   <Edit3 size={11} />
+                   <span>Edit Notes</span>
+                 </button>
+               </div>
+
+               <div className="space-y-2 text-xs">
+                 {lead?.metadata?.address && (
+                   <div className="flex justify-between items-start py-1 border-b border-gray-100 last:border-0 gap-2">
+                     <span className="text-gray-400 font-medium shrink-0">Address</span>
+                     <span className="text-gray-900 font-semibold text-right">{lead.metadata.address}</span>
+                   </div>
+                 )}
+                 {lead?.metadata?.gpa && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">GPA / Academic Score</span>
+                     <span className="text-gray-900 font-bold bg-gray-100 px-2 py-0.5 rounded text-xs">{lead.metadata.gpa}</span>
+                   </div>
+                 )}
+                 {lead?.metadata?.preferred_country && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">Preferred Country</span>
+                     <span className="text-gray-900 font-semibold">{lead.metadata.preferred_country}</span>
+                   </div>
+                 )}
+                 {lead?.metadata?.intake && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">Target Intake</span>
+                     <span className="text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{lead.metadata.intake}</span>
+                   </div>
+                 )}
+                 {lead?.metadata?.sponsor && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">Financial Sponsor</span>
+                     <span className="text-gray-900 font-semibold">{lead.metadata.sponsor}</span>
+                   </div>
+                 )}
+               </div>
+
+               {/* Full Saved Text */}
+               {(lead?.metadata?.student_profile || lead?.notes) && (
+                 <div className="mt-3 pt-3 border-t border-gray-100">
+                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                     <span>Saved Dossier / Note</span>
+                     <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                       Saved Permanently
+                     </span>
+                   </div>
+                   <div className="bg-gray-50/90 rounded-xl p-3 text-[11px] font-mono text-gray-800 whitespace-pre-wrap max-h-60 overflow-y-auto border border-gray-200/80 leading-relaxed shadow-2xs">
+                     {lead?.metadata?.student_profile || lead?.notes}
+                   </div>
+                 </div>
+               )}
+            </section>
+          )}
         </div>
       </div>
 
