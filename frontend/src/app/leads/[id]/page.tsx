@@ -745,8 +745,6 @@ export default function LeadProfile() {
 
   const changeStage = async (newStage: string) => {
     if (newStage === lead.stage) return
-    const reason = prompt(`Reason for moving to ${newStage}? (Short note required)`)
-    if (reason === null) return 
     
     setSavingAction(true)
     
@@ -755,7 +753,7 @@ export default function LeadProfile() {
         lead: id, 
         user_id: currentUser?.id || lead?.owner_id,
         type: 'stage change', 
-        text: `Changed stage to ${newStage}. Note: ${reason}`, 
+        text: `Changed stage to ${newStage}`, 
         time: new Date().toISOString() 
       }
     ])
@@ -767,7 +765,7 @@ export default function LeadProfile() {
       fieldName: 'stage',
       oldValue: lead.stage,
       newValue: newStage,
-      summary: `Stage changed from "${lead.stage}" to "${newStage}". Reason: ${reason}`
+      summary: `Stage changed from "${lead.stage}" to "${newStage}"`
     })
     
     const updatePayload: any = { stage: newStage }
