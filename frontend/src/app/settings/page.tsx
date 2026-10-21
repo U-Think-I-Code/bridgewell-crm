@@ -1,9 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 import { 
   PhoneCall, Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
-  Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle
+  Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle,
+  Database, Download, FileSpreadsheet, HardDrive, RefreshCw, FileJson,
+  CheckCircle, AlertCircle, Clock, ShieldCheck, FileDown, Eye, Server
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
@@ -12,7 +15,7 @@ import Link from 'next/link'
 export default function SettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall'>('pipeline')
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'backup'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newStageName, setNewStageName] = useState('')
@@ -37,6 +40,17 @@ export default function SettingsPage() {
   const [isTestingJustCall, setIsTestingJustCall] = useState(false)
   const [justcallTestResult, setJustcallTestResult] = useState<any>(null)
 
+  // Backup & Safety Vault State
+  const [backupStats, setBackupStats] = useState<Record<string, number>>({})
+  const [refreshingStats, setRefreshingStats] = useState(false)
+  const [isExportingJson, setIsExportingJson] = useState(false)
+  const [isExportingExcel, setIsExportingExcel] = useState(false)
+  const [isExportingCsv, setIsExportingCsv] = useState<string | null>(null)
+  const [lastBackupTime, setLastBackupTime] = useState<string | null>(null)
+  const [backupSuccessMessage, setBackupSuccessMessage] = useState<string | null>(null)
+  const [verifiedBackup, setVerifiedBackup] = useState<any | null>(null)
+  const [isVerifyingFile, setIsVerifyingFile] = useState(false)
+
   const verifyToken = process.env.NEXT_PUBLIC_META_VERIFY_TOKEN || 'bridgewell_meta_webhook_2026'
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
   const webhookUrl = `${origin}/api/webhooks/meta`
@@ -47,6 +61,12 @@ export default function SettingsPage() {
       return
     }
     fetchStages()
+    fetchBackupStats()
+
+    if (typeof window !== 'undefined') {
+      const storedLastBackup = localStorage.getItem('bridgewell_last_backup_time')
+      if (storedLastBackup) setLastBackupTime(storedLastBackup)
+    }
 
     // Realtime listener for pipeline stages
     const channel = supabase
@@ -139,6 +159,163 @@ export default function SettingsPage() {
     }
   }
 
+  // Backup & Safety Vault Handlers
+  const fetchBackupStats = async () => {
+    setRefreshingStats(true)
+    const tables = ['leads', 'users', 'stages', 'activities', 'assignments', 'audit_logs', 'notifications', 'email_templates']
+    const counts: Record<string, number> = {}
+    await Promise.all(
+      tables.map(async (t) => {
+        try {
+          const { count } = await supabase.from(t).select('*', { count: 'exact', head: true })
+          counts[t] = count || 0
+        } catch {
+          counts[t] = 0
+        }
+      })
+    )
+    setBackupStats(counts)
+    setRefreshingStats(false)
+  }
+
+  const handleDownloadJson = () => {
+    setIsExportingJson(true)
+    const link = document.createElement('a')
+    link.href = '/api/backup?download=1'
+    link.download = `bridgewell_crm_full_backup_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    const nowStr = new Date().toLocaleString()
+    setLastBackupTime(nowStr)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('bridgewell_last_backup_time', nowStr)
+    }
+    setBackupSuccessMessage('Full JSON database snapshot downloaded safely!')
+    setTimeout(() => {
+      setIsExportingJson(false)
+      setBackupSuccessMessage(null)
+    }, 4500)
+  }
+
+  const handleDownloadExcel = async () => {
+    setIsExportingExcel(true)
+    try {
+      const res = await fetch('/api/backup')
+      const json = await res.json()
+      if (!json || !json.tables) throw new Error('Could not fetch database snapshot')
+
+      const wb = XLSX.utils.book_new()
+
+      // 1. Leads Sheet
+      if (json.tables.leads && json.tables.leads.length > 0) {
+        const cleanedLeads = json.tables.leads.map((l: any) => {
+          const { metadata, ...rest } = l
+          return {
+            ...rest,
+            metadata_details: metadata ? JSON.stringify(metadata) : ''
+          }
+        })
+        const wsLeads = XLSX.utils.json_to_sheet(cleanedLeads)
+        XLSX.utils.book_append_sheet(wb, wsLeads, 'Leads')
+      }
+
+      // 2. Activities & Calls Sheet
+      if (json.tables.activities && json.tables.activities.length > 0) {
+        const wsActivities = XLSX.utils.json_to_sheet(json.tables.activities)
+        XLSX.utils.book_append_sheet(wb, wsActivities, 'Calls & Activities')
+      }
+
+      // 3. Team Sheet
+      if (json.tables.users && json.tables.users.length > 0) {
+        const wsUsers = XLSX.utils.json_to_sheet(json.tables.users)
+        XLSX.utils.book_append_sheet(wb, wsUsers, 'Team')
+      }
+
+      // 4. Stages Sheet
+      if (json.tables.stages && json.tables.stages.length > 0) {
+        const wsStages = XLSX.utils.json_to_sheet(json.tables.stages)
+        XLSX.utils.book_append_sheet(wb, wsStages, 'Pipeline Stages')
+      }
+
+      // 5. Assignments Sheet
+      if (json.tables.assignments && json.tables.assignments.length > 0) {
+        const wsAssignments = XLSX.utils.json_to_sheet(json.tables.assignments)
+        XLSX.utils.book_append_sheet(wb, wsAssignments, 'Assignments')
+      }
+
+      // 6. Audit Logs Sheet
+      if (json.tables.audit_logs && json.tables.audit_logs.length > 0) {
+        const wsAudit = XLSX.utils.json_to_sheet(json.tables.audit_logs)
+        XLSX.utils.book_append_sheet(wb, wsAudit, 'Audit Logs')
+      }
+
+      const filename = `bridgewell_crm_master_backup_${new Date().toISOString().slice(0, 10)}.xlsx`
+      XLSX.writeFile(wb, filename)
+
+      const nowStr = new Date().toLocaleString()
+      setLastBackupTime(nowStr)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('bridgewell_last_backup_time', nowStr)
+      }
+      setBackupSuccessMessage('Complete Excel (.xlsx) master backup downloaded with all sheets!')
+      setTimeout(() => setBackupSuccessMessage(null), 4500)
+    } catch (e: any) {
+      alert('Error exporting Excel: ' + (e?.message || 'Unknown error'))
+    } finally {
+      setIsExportingExcel(false)
+    }
+  }
+
+  const handleDownloadCsv = async (table: 'leads' | 'activities') => {
+    setIsExportingCsv(table)
+    try {
+      const { data, error } = await supabase.from(table).select('*').limit(50000)
+      if (error) throw error
+      if (!data || data.length === 0) {
+        alert(`No records found in ${table} table`)
+        return
+      }
+      const ws = XLSX.utils.json_to_sheet(data)
+      const csv = XLSX.utils.sheet_to_csv(ws)
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `bridgewell_${table}_${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert('Error exporting CSV: ' + (e?.message || 'Unknown error'))
+    } finally {
+      setIsExportingCsv(null)
+    }
+  }
+
+  const handleVerifyBackupFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsVerifyingFile(true)
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string)
+        if (parsed.tables && parsed.metadata) {
+          setVerifiedBackup(parsed)
+        } else {
+          alert('Uploaded JSON file is not a valid Bridgewell CRM backup snapshot.')
+        }
+      } catch {
+        alert('Invalid JSON file. Please upload a valid backup .json file.')
+      } finally {
+        setIsVerifyingFile(false)
+      }
+    }
+    reader.readAsText(file)
+  }
+
   if (loading) return <div className="p-8 h-full flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div></div>
 
   return (
@@ -198,6 +375,21 @@ export default function SettingsPage() {
             <span>JustCall Dialer</span>
             <span className="ml-1 px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold">
               Auto Call Logger
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('backup')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'backup'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Database size={16} className="text-amber-600" />
+            <span>Database Backup & Vault</span>
+            <span className="ml-1 px-2 py-0.5 text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-full font-bold">
+              Safety Vault
             </span>
           </button>
         </div>
@@ -697,6 +889,310 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+            </section>
+          </div>
+        )}
+
+        {/* Tab 4: Database Backup & Vault */}
+        {activeTab === 'backup' && (
+          <div className="space-y-6">
+            {/* Success Toast */}
+            {backupSuccessMessage && (
+              <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center gap-3 text-emerald-900 text-sm font-semibold animate-in fade-in duration-200 shadow-xs">
+                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                <span>{backupSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Health & Safety Vault Card */}
+            <section className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-orange-500/10 border border-amber-300/80 rounded-2xl p-6 shadow-xs">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <ShieldCheck size={26} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-bold text-amber-950">Independent Database Backup &amp; Safety Vault</h2>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Data Safe &amp; Protected
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
+                      While Supabase keeps live records safe, you can instantly export and store independent offline copies so your CRM data is 100% secure against accidental deletion, server outages, or compliance needs.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider block">Last Backup Generated</span>
+                    <span className="text-xs font-semibold text-gray-900 flex items-center gap-1 mt-0.5">
+                      <Clock size={12} className="text-gray-400" />
+                      {lastBackupTime || 'No backup downloaded yet today'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={fetchBackupStats}
+                    disabled={refreshingStats}
+                    className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+                    title="Refresh live table counts"
+                  >
+                    <RefreshCw size={14} className={refreshingStats ? 'animate-spin text-black' : ''} />
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Live Table Counts Grid */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Live Database Overview</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Current record counts across all CRM database tables</p>
+                </div>
+                <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-lg">
+                  {Object.values(backupStats).reduce((a, b) => a + b, 0)} Total Records
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-blue-50/60 border border-blue-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">Leads</span>
+                  <span className="text-xl font-bold text-blue-950 mt-1 block">{backupStats.leads ?? '...'}</span>
+                  <span className="text-[10px] text-blue-600">Prospective Students</span>
+                </div>
+
+                <div className="p-3 bg-emerald-50/60 border border-emerald-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Calls &amp; Activities</span>
+                  <span className="text-xl font-bold text-emerald-950 mt-1 block">{backupStats.activities ?? '...'}</span>
+                  <span className="text-[10px] text-emerald-600">Timeline &amp; Notes</span>
+                </div>
+
+                <div className="p-3 bg-purple-50/60 border border-purple-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">Team Counselors</span>
+                  <span className="text-xl font-bold text-purple-950 mt-1 block">{backupStats.users ?? '...'}</span>
+                  <span className="text-[10px] text-purple-600">Active Staff</span>
+                </div>
+
+                <div className="p-3 bg-indigo-50/60 border border-indigo-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">Pipeline Stages</span>
+                  <span className="text-xl font-bold text-indigo-950 mt-1 block">{backupStats.stages ?? '...'}</span>
+                  <span className="text-[10px] text-indigo-600">Workflow Columns</span>
+                </div>
+
+                <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Assignments</span>
+                  <span className="text-xl font-bold text-amber-950 mt-1 block">{backupStats.assignments ?? '...'}</span>
+                  <span className="text-[10px] text-amber-600">Reassignment Logs</span>
+                </div>
+
+                <div className="p-3 bg-rose-50/60 border border-rose-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Audit Logs</span>
+                  <span className="text-xl font-bold text-rose-950 mt-1 block">{backupStats.audit_logs ?? '...'}</span>
+                  <span className="text-[10px] text-rose-600">Security Events</span>
+                </div>
+
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Email Templates</span>
+                  <span className="text-xl font-bold text-gray-900 mt-1 block">{backupStats.email_templates ?? '...'}</span>
+                  <span className="text-[10px] text-gray-500">Canned Responses</span>
+                </div>
+
+                <div className="p-3 bg-teal-50/60 border border-teal-200/80 rounded-xl">
+                  <span className="text-[10px] font-bold text-teal-700 uppercase tracking-wider block">Notifications</span>
+                  <span className="text-xl font-bold text-teal-950 mt-1 block">{backupStats.notifications ?? '...'}</span>
+                  <span className="text-[10px] text-teal-600">System Alerts</span>
+                </div>
+              </div>
+            </section>
+
+            {/* 1-Click Backup Export Actions */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Option A: Full JSON Snapshot */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center font-bold">
+                      <FileJson size={20} />
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                      Disaster Recovery
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Complete JSON Database Snapshot</h3>
+                  <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">
+                    Downloads an all-in-one raw JSON archive with all 8 database tables, foreign keys, timestamps, and metadata. Suitable for instant full database restoration.
+                  </p>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={handleDownloadJson}
+                    disabled={isExportingJson}
+                    className="w-full py-2.5 px-4 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isExportingJson ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Generating JSON Archive...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download size={14} />
+                        <span>Download Full JSON Snapshot (.json)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Option B: Master Multi-Sheet Excel */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
+                      <FileSpreadsheet size={20} />
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                      Excel / Sheets Ready
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Master Multi-Sheet Excel Workbook</h3>
+                  <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">
+                    Compiles every table into separate tabs inside one organized <code>.xlsx</code> workbook: Leads, Call History, Team Members, Stages, and Assignments.
+                  </p>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={handleDownloadExcel}
+                    disabled={isExportingExcel}
+                    className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isExportingExcel ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Compiling Excel Workbook...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileDown size={14} />
+                        <span>Download Master Excel (.xlsx)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick CSV Downloads */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900 mb-1">Quick Individual CSV Exports</h3>
+              <p className="text-xs text-gray-500 mb-4">Export specific datasets directly into standard CSV format:</p>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => handleDownloadCsv('leads')}
+                  disabled={isExportingCsv === 'leads'}
+                  className="px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-800 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Download size={13} className="text-blue-600" />
+                  <span>{isExportingCsv === 'leads' ? 'Exporting...' : 'Export Leads (.CSV)'}</span>
+                </button>
+
+                <button
+                  onClick={() => handleDownloadCsv('activities')}
+                  disabled={isExportingCsv === 'activities'}
+                  className="px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-800 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Download size={13} className="text-emerald-600" />
+                  <span>{isExportingCsv === 'activities' ? 'Exporting...' : 'Export Calls & Activities (.CSV)'}</span>
+                </button>
+              </div>
+            </section>
+
+            {/* Automated CLI / Scheduled Backup Guide */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center shrink-0">
+                  <Server size={18} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-gray-900">Automated Terminal / Nightly Backup</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    You can also run automated offline backups from your terminal or schedule them as a daily Windows Task / Cron job:
+                  </p>
+
+                  <div className="mt-3 p-3 bg-gray-900 text-gray-100 rounded-xl font-mono text-xs flex items-center justify-between">
+                    <span>npm run backup</span>
+                    <span className="text-gray-400 text-[11px]">Saves timestamped JSON + CSV to /backups</span>
+                  </div>
+
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Backups created with this command are stored permanently inside the root <code>/backups</code> folder with zero dependency on the browser.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Backup Verification & Restore Drill Sandbox */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                    <Eye size={16} className="text-indigo-600" />
+                    <span>Backup Verification &amp; Inspection Tool</span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Test and verify any previously exported backup file to confirm records and schema integrity without touching the live database.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 p-4 border border-dashed border-gray-300 rounded-xl bg-gray-50/50 flex flex-col items-center justify-center text-center">
+                <FileJson size={28} className="text-gray-400 mb-2" />
+                <label className="cursor-pointer">
+                  <span className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-semibold inline-block transition-all shadow-xs">
+                    Choose Backup File (.json) to Inspect
+                  </span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleVerifyBackupFile}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-[11px] text-gray-400 mt-1.5">Zero write risk: purely inspects structure and counts</span>
+              </div>
+
+              {verifiedBackup && (
+                <div className="mt-4 p-4 bg-emerald-50/70 border border-emerald-300 rounded-xl animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 mb-2 text-emerald-900 font-bold text-xs">
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <span>Verified: Valid Bridgewell CRM Backup Snapshot</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-emerald-950 mt-2">
+                    <div className="p-2 bg-white/70 rounded-lg border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 block font-semibold">Generated</span>
+                      <span className="font-bold">{new Date(verifiedBackup.metadata?.generated_at).toLocaleString()}</span>
+                    </div>
+                    <div className="p-2 bg-white/70 rounded-lg border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 block font-semibold">Total Records</span>
+                      <span className="font-bold">{verifiedBackup.metadata?.total_records || 'N/A'}</span>
+                    </div>
+                    <div className="p-2 bg-white/70 rounded-lg border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 block font-semibold">Leads Found</span>
+                      <span className="font-bold">{verifiedBackup.tables?.leads?.length || 0}</span>
+                    </div>
+                    <div className="p-2 bg-white/70 rounded-lg border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 block font-semibold">Activities Found</span>
+                      <span className="font-bold">{verifiedBackup.tables?.activities?.length || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
           </div>
         )}

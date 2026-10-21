@@ -38,6 +38,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Backups
+backups/*
+!backups/.gitkeep
+
 # Turbopack & TS
 *.tsbuildinfo
 next-env.d.ts
