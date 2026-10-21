@@ -3,7 +3,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
-import { formatCountryBadge } from '@/lib/countryHelper'
+import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import AddLeadModal from '@/components/AddLeadModal'
 import CSVImportModal from '@/components/CSVImportModal'
 import Link from 'next/link'
@@ -59,6 +59,9 @@ function LeadsContent() {
   // Country / Ad Target Filter State: 'ALL' | 'USA' | 'UK' | 'Canada' | 'Australia' | etc.
   const countryParam = searchParams?.get('country') || 'ALL'
   const [selectedCountry, setSelectedCountry] = useState<string>(countryParam)
+  // Programme / Degree Level Filter State: 'ALL' | 'Master' | 'Bachelor' | 'Doctorate'
+  const programmeParam = searchParams?.get('programme') || 'ALL'
+  const [selectedProgramme, setSelectedProgramme] = useState<string>(programmeParam)
 
   useEffect(() => {
     fetchLeads()
@@ -181,7 +184,7 @@ function LeadsContent() {
   const coldCount = basePool.filter(l => l.priority === 'Cold').length
   const unsetCount = basePool.filter(l => !l.priority).length
 
-  // Filtered leads based on priority, call outcome, and country
+  // Filtered leads based on priority, call outcome, country, and programme level
   const filteredLeads = basePool.filter(l => {
     if (selectedPriority !== 'ALL') {
       if (selectedPriority === 'UNSET' && l.priority) return false
@@ -194,7 +197,11 @@ function LeadsContent() {
     }
 
     if (selectedCountry !== 'ALL') {
-      if (!l.country || l.country.toUpperCase() !== selectedCountry.toUpperCase()) return false
+      if (!matchesCountryFilter(l, selectedCountry)) return false
+    }
+
+    if (selectedProgramme !== 'ALL') {
+      if (!matchesProgrammeFilter(l, selectedProgramme)) return false
     }
 
     return true
@@ -443,22 +450,47 @@ function LeadsContent() {
               onChange={(e) => setSelectedCountry(e.target.value)}
               className="bg-white border border-blue-200 text-blue-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-blue-50/50 focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
             >
-              <option value="ALL">🌐 All Countries (6 Ads)</option>
+              <option value="ALL">🌐 All Countries</option>
               <option value="USA">🇺🇸 USA Ad Leads</option>
               <option value="UK">🇬🇧 UK Ad Leads</option>
               <option value="Canada">🇨🇦 Canada Ad Leads</option>
               <option value="Australia">🇦🇺 Australia Ad Leads</option>
               <option value="Germany">🇩🇪 Germany Ad Leads</option>
               <option value="Ireland">🇮🇪 Ireland Ad Leads</option>
+              <option value="Europe">🇪🇺 Europe Ad Leads</option>
+              <option value="Saudi Arabia">🇸🇦 Saudi Arabia Leads</option>
+              <option value="South Africa">🇿🇦 South Africa Leads</option>
               <option value="UAE">🇦🇪 UAE Ad Leads</option>
               <option value="India">🇮🇳 India Leads</option>
             </select>
           </div>
+
+          {/* Programme / Degree Level Filter */}
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+              <GraduationCap size={13} className="text-purple-600" /> Degree:
+            </span>
+            <select
+              value={selectedProgramme}
+              onChange={(e) => setSelectedProgramme(e.target.value)}
+              className="bg-white border border-purple-200 text-purple-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-purple-50/50 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer"
+            >
+              <option value="ALL">🎓 All Degrees</option>
+              <option value="Master">🎓 Master</option>
+              <option value="Bachelor">🎓 Bachelor</option>
+              <option value="Doctorate">🎓 Doctorate</option>
+            </select>
+          </div>
         </div>
 
-        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL') && (
+        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL') && (
           <button
-            onClick={() => { setSelectedPriority('ALL'); setSelectedOutcome('ALL'); setSelectedCountry('ALL'); }}
+            onClick={() => {
+              setSelectedPriority('ALL');
+              setSelectedOutcome('ALL');
+              setSelectedCountry('ALL');
+              setSelectedProgramme('ALL');
+            }}
             className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
           >
             Reset Filters

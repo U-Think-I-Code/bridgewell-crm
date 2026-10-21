@@ -6,6 +6,8 @@
 
 export const ISO_COUNTRY_NAMES: Record<string, string> = {
   SA: 'Saudi Arabia',
+  ZA: 'South Africa',
+  EU: 'Europe',
   US: 'USA',
   USA: 'USA',
   UK: 'UK',
@@ -40,7 +42,6 @@ export const ISO_COUNTRY_NAMES: Record<string, string> = {
   UG: 'Uganda',
   TZ: 'Tanzania',
   ZW: 'Zimbabwe',
-  ZA: 'South Africa',
   PH: 'Philippines',
   MY: 'Malaysia',
   SG: 'Singapore',
@@ -72,6 +73,10 @@ export function getCountryFlag(country?: string | null): string {
   if (u === 'UAE' || u === 'DUBAI') return '🇦🇪'
   if (u === 'DE' || u === 'GERMANY') return '🇩🇪'
   if (u === 'IE' || u === 'IRELAND') return '🇮🇪'
+  if (u === 'SA' || u === 'SAUDI' || u === 'SAUDI ARABIA' || u === 'KSA') return '🇸🇦'
+  if (u === 'ZA' || u === 'SOUTH AFRICA' || u === 'RSA') return '🇿🇦'
+  if (u === 'EU' || u === 'EUROPE') return '🇪🇺'
+  if (u === 'IN' || u === 'INDIA') return '🇮🇳'
   if (u.length === 2 && /^[A-Z]{2}$/.test(u)) {
     const codePoints = [...u].map(c => 127397 + c.charCodeAt(0))
     return String.fromCodePoint(...codePoints)
@@ -156,4 +161,157 @@ export function formatCountryBadge(country?: string | null, phone?: string | nul
   }
   return `${flag} ${resolved}`
 }
+
+/**
+ * Filter matcher for Ad Country dropdown
+ */
+export function matchesCountryFilter(
+  lead: { country?: string | null; phone?: string | null; ad_campaign_name?: string | null; source?: string | null; metadata?: any },
+  filter: string
+): boolean {
+  if (!filter || filter === 'ALL' || filter === 'all') return true
+
+  const normFilter = filter.toLowerCase().trim()
+  const rawCountry = (lead.country || '').toLowerCase().trim()
+  const phone = (lead.phone || '').replace(/^p:/i, '').replace(/[^\d+]/g, '')
+  const metaStr = typeof lead.metadata === 'object' ? JSON.stringify(lead.metadata).toLowerCase() : ''
+  const adSource = `${lead.ad_campaign_name || ''} ${lead.source || ''} ${metaStr}`.toLowerCase()
+
+  // Saudi Arabia
+  if (normFilter === 'saudi arabia' || normFilter === 'saudi' || normFilter === 'sa') {
+    return (
+      rawCountry.includes('saudi') ||
+      rawCountry === 'sa' ||
+      rawCountry === 'ksa' ||
+      phone.startsWith('+966') ||
+      adSource.includes('saudi') ||
+      adSource.includes('ksa')
+    )
+  }
+
+  // South Africa
+  if (normFilter === 'south africa' || normFilter === 'za') {
+    return (
+      rawCountry.includes('south africa') ||
+      rawCountry === 'za' ||
+      rawCountry === 'rsa' ||
+      phone.startsWith('+27') ||
+      adSource.includes('south africa')
+    )
+  }
+
+  // Europe (pan-European or European destinations)
+  if (normFilter === 'europe' || normFilter === 'eu') {
+    const euroCountries = [
+      'europe', 'eu', 'germany', 'de', 'france', 'fr', 'ireland', 'ie', 'uk', 'united kingdom', 'gb',
+      'italy', 'it', 'spain', 'es', 'netherlands', 'nl', 'sweden', 'se', 'norway', 'no',
+      'denmark', 'dk', 'finland', 'fi', 'poland', 'pl', 'switzerland', 'ch', 'austria', 'at',
+      'belgium', 'be', 'portugal', 'pt', 'czech', 'hungary', 'romania', 'greece', 'gr'
+    ]
+    return (
+      euroCountries.some(c => rawCountry === c || rawCountry.includes(c)) ||
+      adSource.includes('europe') ||
+      adSource.includes('eur')
+    )
+  }
+
+  // USA
+  if (normFilter === 'usa' || normFilter === 'us') {
+    return (
+      rawCountry.includes('usa') ||
+      rawCountry === 'us' ||
+      rawCountry.includes('united states') ||
+      (phone.startsWith('+1') && !rawCountry.includes('canada')) ||
+      adSource.includes('usa')
+    )
+  }
+
+  // UK
+  if (normFilter === 'uk' || normFilter === 'gb') {
+    return (
+      rawCountry.includes('uk') ||
+      rawCountry === 'gb' ||
+      rawCountry.includes('united kingdom') ||
+      phone.startsWith('+44') ||
+      adSource.includes('uk')
+    )
+  }
+
+  // Canada
+  if (normFilter === 'canada' || normFilter === 'ca') {
+    return rawCountry.includes('canada') || rawCountry === 'ca' || rawCountry === 'can' || adSource.includes('canada')
+  }
+
+  // Australia
+  if (normFilter === 'australia' || normFilter === 'au') {
+    return rawCountry.includes('australia') || rawCountry === 'au' || rawCountry === 'aus' || phone.startsWith('+61') || adSource.includes('australia')
+  }
+
+  // Germany
+  if (normFilter === 'germany' || normFilter === 'de') {
+    return rawCountry.includes('germany') || rawCountry === 'de' || phone.startsWith('+49') || adSource.includes('germany')
+  }
+
+  // Ireland
+  if (normFilter === 'ireland' || normFilter === 'ie') {
+    return rawCountry.includes('ireland') || rawCountry === 'ie' || phone.startsWith('+353') || adSource.includes('ireland')
+  }
+
+  // UAE
+  if (normFilter === 'uae' || normFilter === 'ae') {
+    return rawCountry.includes('uae') || rawCountry === 'ae' || rawCountry.includes('dubai') || phone.startsWith('+971') || adSource.includes('uae')
+  }
+
+  // India
+  if (normFilter === 'india' || normFilter === 'in') {
+    return rawCountry.includes('india') || rawCountry === 'in' || phone.startsWith('+91') || adSource.includes('india')
+  }
+
+  return rawCountry.includes(normFilter) || adSource.includes(normFilter)
+}
+
+/**
+ * Filter matcher for Programme / Degree level dropdown
+ */
+export function matchesProgrammeFilter(
+  lead: { programme_level?: string | null; course?: string | null; metadata?: any },
+  filter: string
+): boolean {
+  if (!filter || filter === 'ALL' || filter === 'all') return true
+
+  const pLevel = (lead.programme_level || '').toLowerCase()
+  const course = (lead.course || '').toLowerCase()
+  const metaDetails = typeof lead.metadata === 'object' ? JSON.stringify(lead.metadata).toLowerCase() : ''
+  const combined = `${pLevel} ${course} ${metaDetails}`
+
+  if (filter === 'Master') {
+    return (
+      combined.includes('master') ||
+      combined.includes('postgraduate') ||
+      combined.includes('post-graduate') ||
+      /\b(mba|msc|ma|mtech|mca|mcom|llm|m\.sc|m\.a|m\.tech|pg)\b/i.test(combined)
+    )
+  }
+
+  if (filter === 'Bachelor') {
+    return (
+      combined.includes('bachelor') ||
+      combined.includes('undergraduate') ||
+      combined.includes('under-graduate') ||
+      /\b(bsc|bba|ba|btech|bca|bcom|llb|b\.sc|b\.a|b\.tech|b\.e|ug)\b/i.test(combined)
+    )
+  }
+
+  if (filter === 'Doctorate') {
+    return (
+      combined.includes('doctor') ||
+      combined.includes('phd') ||
+      combined.includes('ph.d') ||
+      combined.includes('doctoral')
+    )
+  }
+
+  return combined.includes(filter.toLowerCase())
+}
+
 

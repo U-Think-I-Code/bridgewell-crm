@@ -8,10 +8,10 @@ import {
   ArrowLeftRight, Users, User, Flame, Phone, CheckCircle2,
   AlertCircle, GripVertical, Search, Filter, Sparkles, RefreshCw,
   ExternalLink, ArrowRight, ShieldAlert, CheckSquare, Square,
-  Layers, ChevronDown, Check, ArrowDownUp, Globe
+  Layers, ChevronDown, Check, ArrowDownUp, Globe, GraduationCap
 } from 'lucide-react'
 import { notifyLeadAssigned } from '@/lib/notifications'
-import { formatCountryBadge } from '@/lib/countryHelper'
+import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 
 interface Counselor {
   id: string
@@ -35,6 +35,7 @@ interface Lead {
   owner_id?: string | null
   created_at: string
   last_call_outcome?: string
+  metadata?: any
 }
 
 export default function LeadReassignmentPage() {
@@ -53,6 +54,7 @@ export default function LeadReassignmentPage() {
   const [selectedStage, setSelectedStage] = useState<string>('all')
   const [selectedPriority, setSelectedPriority] = useState<string>('all')
   const [selectedCountry, setSelectedCountry] = useState<string>(initialCountry)
+  const [selectedProgramme, setSelectedProgramme] = useState<string>('all')
 
   // Drag and Drop State
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null)
@@ -79,7 +81,7 @@ export default function LeadReassignmentPage() {
       { data: stagesData },
     ] = await Promise.all([
       supabase.from('users').select('id, name, email, role, active').eq('active', true).order('name', { ascending: true }),
-      supabase.from('leads').select('id, name, phone, email, country, course, stage, owner_id, priority, created_at').neq('stage', 'Enrolled').order('created_at', { ascending: false }).limit(300),
+      supabase.from('leads').select('id, name, phone, email, country, course, programme_level, stage, owner_id, priority, created_at, metadata').neq('stage', 'Enrolled').order('created_at', { ascending: false }).limit(300),
       supabase.from('stages').select('name').order('stage_order', { ascending: true }),
     ])
 
@@ -125,7 +127,10 @@ export default function LeadReassignmentPage() {
       if (selectedStage !== 'all' && l.stage !== selectedStage) return false
       if (selectedPriority !== 'all' && l.priority !== selectedPriority) return false
       if (selectedCountry !== 'all') {
-        if (!l.country || l.country.toUpperCase() !== selectedCountry.toUpperCase()) return false
+        if (!matchesCountryFilter(l, selectedCountry)) return false
+      }
+      if (selectedProgramme !== 'all') {
+        if (!matchesProgrammeFilter(l, selectedProgramme)) return false
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -137,7 +142,7 @@ export default function LeadReassignmentPage() {
       }
       return true
     })
-  }, [leads, selectedStage, selectedPriority, selectedCountry, searchQuery])
+  }, [leads, selectedStage, selectedPriority, selectedCountry, selectedProgramme, searchQuery])
 
   // ── Group leads by counselor ID (or 'unassigned') ──
   const leadsByCounselor = useMemo(() => {
@@ -518,15 +523,33 @@ export default function LeadReassignmentPage() {
                 onChange={e => setSelectedCountry(e.target.value)}
                 className="bg-transparent font-semibold text-blue-900 outline-none cursor-pointer"
               >
-                <option value="all">🌐 All Countries (6 Ads)</option>
+                <option value="all">🌐 All Countries</option>
                 <option value="USA">🇺🇸 USA Ad Leads</option>
                 <option value="UK">🇬🇧 UK Ad Leads</option>
                 <option value="Canada">🇨🇦 Canada Ad Leads</option>
                 <option value="Australia">🇦🇺 Australia Ad Leads</option>
                 <option value="Germany">🇩🇪 Germany Ad Leads</option>
                 <option value="Ireland">🇮🇪 Ireland Ad Leads</option>
+                <option value="Europe">🇪🇺 Europe Ad Leads</option>
+                <option value="Saudi Arabia">🇸🇦 Saudi Arabia Leads</option>
+                <option value="South Africa">🇿🇦 South Africa Leads</option>
                 <option value="UAE">🇦🇪 UAE Ad Leads</option>
                 <option value="India">🇮🇳 India Leads</option>
+              </select>
+            </div>
+
+            {/* Programme / Degree Level Filter */}
+            <div className="flex items-center gap-1.5 bg-purple-50/60 px-2.5 py-1.5 rounded-xl border border-purple-200 text-xs">
+              <GraduationCap size={13} className="text-purple-600" />
+              <select
+                value={selectedProgramme}
+                onChange={e => setSelectedProgramme(e.target.value)}
+                className="bg-transparent font-semibold text-purple-900 outline-none cursor-pointer"
+              >
+                <option value="all">🎓 All Degrees</option>
+                <option value="Master">🎓 Master</option>
+                <option value="Bachelor">🎓 Bachelor</option>
+                <option value="Doctorate">🎓 Doctorate</option>
               </select>
             </div>
 
@@ -553,6 +576,21 @@ export default function LeadReassignmentPage() {
                 </button>
               ))}
             </div>
+
+            {(selectedStage !== 'all' || selectedCountry !== 'all' || selectedProgramme !== 'all' || selectedPriority !== 'all' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setSelectedStage('all')
+                  setSelectedCountry('all')
+                  setSelectedProgramme('all')
+                  setSelectedPriority('all')
+                  setSearchQuery('')
+                }}
+                className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer ml-1"
+              >
+                Reset Filters
+              </button>
+            )}
           </div>
 
           {/* Search bar */}
