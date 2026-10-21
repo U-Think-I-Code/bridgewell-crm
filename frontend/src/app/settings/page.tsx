@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
-  Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
+  PhoneCall, Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
   Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
@@ -12,7 +12,7 @@ import Link from 'next/link'
 export default function SettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta'>('pipeline')
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newStageName, setNewStageName] = useState('')
@@ -28,6 +28,14 @@ export default function SettingsPage() {
   const [testCountry, setTestCountry] = useState('USA')
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+
+  // JustCall Integration State
+  const [copiedJustCallUrl, setCopiedJustCallUrl] = useState(false)
+  const [justcallPhone, setJustcallPhone] = useState('+966593274396')
+  const [justcallOutcome, setJustcallOutcome] = useState('Connected')
+  const [justcallDuration, setJustcallDuration] = useState('185')
+  const [isTestingJustCall, setIsTestingJustCall] = useState(false)
+  const [justcallTestResult, setJustcallTestResult] = useState<any>(null)
 
   const verifyToken = process.env.NEXT_PUBLIC_META_VERIFY_TOKEN || 'bridgewell_meta_webhook_2026'
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
@@ -175,6 +183,21 @@ export default function SettingsPage() {
             <span>Meta Ads (Facebook / Instagram)</span>
             <span className="ml-1 px-2 py-0.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-bold">
               Auto-Sync
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('justcall')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'justcall'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <PhoneCall size={16} className="text-emerald-600" />
+            <span>JustCall Dialer</span>
+            <span className="ml-1 px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold">
+              Auto Call Logger
             </span>
           </button>
         </div>
@@ -467,6 +490,211 @@ export default function SettingsPage() {
                     <li>Subscribe to the <strong>leadgen</strong> field.</li>
                     <li>Add <code>META_PAGE_ACCESS_TOKEN</code> in your CRM's <code>.env.local</code>.</li>
                   </ol>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Tab 3: JustCall Automatic Dialer Integration */}
+        {activeTab === 'justcall' && (
+          <div className="space-y-6">
+            {/* JustCall Banner */}
+            <div className="bg-gradient-to-r from-emerald-900 to-teal-950 text-white rounded-2xl p-6 shadow-sm border border-emerald-800">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 mb-3">
+                    <Sparkles size={12} />
+                    <span>Automatic Call Detection &amp; Duration Logger</span>
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-tight mb-2">JustCall Dialer Integration</h2>
+                  <p className="text-emerald-100/80 text-sm max-w-2xl leading-relaxed">
+                    Whenever your counselor dials a lead via JustCall, our system automatically detects whether the call was <strong>Connected</strong> or <strong>Unanswered</strong>, logs the <strong>exact duration (minutes &amp; seconds)</strong>, attaches the <strong>recording link</strong>, and updates the timeline in real-time.
+                  </p>
+                </div>
+                <div className="hidden sm:block">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
+                    <PhoneCall size={28} className="text-emerald-300" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Webhook Configuration Card */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">JustCall Webhook Endpoint</h3>
+              <p className="text-gray-500 text-xs mb-4">
+                Copy this URL and paste it into your JustCall account under <strong>Integrations &gt; Webhooks</strong>.
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Webhook URL (Event: Call Completed)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${origin}/api/webhooks/justcall`}
+                      className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-800 outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${origin}/api/webhooks/justcall`)
+                        setCopiedJustCallUrl(true)
+                        setTimeout(() => setCopiedJustCallUrl(false), 2000)
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-black text-white hover:bg-gray-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      {copiedJustCallUrl ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      <span>{copiedJustCallUrl ? 'Copied!' : 'Copy URL'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Test Simulator */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Test Automatic Call Logger</h3>
+                  <p className="text-gray-500 text-xs">Simulate a call event to verify that duration, status, and timeline updates work immediately.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 mt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Student Phone</label>
+                  <input
+                    type="text"
+                    value={justcallPhone}
+                    onChange={(e) => setJustcallPhone(e.target.value)}
+                    placeholder="+966593274396"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Outcome</label>
+                  <select
+                    value={justcallOutcome}
+                    onChange={(e) => setJustcallOutcome(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white"
+                  >
+                    <option value="Connected">Connected (Answered)</option>
+                    <option value="No Answer">No Answer (Missed)</option>
+                    <option value="Busy">Busy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Duration (Seconds)</label>
+                  <input
+                    type="number"
+                    value={justcallDuration}
+                    onChange={(e) => setJustcallDuration(e.target.value)}
+                    placeholder="185"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black font-mono"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    {justcallOutcome === 'Connected' ? `≈ ${Math.floor(Number(justcallDuration)/60)}m ${Number(justcallDuration)%60}s` : '0s'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                disabled={isTestingJustCall || !justcallPhone}
+                onClick={async () => {
+                  setIsTestingJustCall(true)
+                  setJustcallTestResult(null)
+                  try {
+                    const res = await fetch('/api/webhooks/justcall', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        type: 'call.completed',
+                        data: {
+                          contact_number: justcallPhone,
+                          agent_name: user?.name || 'Counselor',
+                          agent_email: user?.email || '',
+                          call_info: {
+                            direction: 'Outgoing',
+                            type: justcallOutcome === 'Connected' ? 'Answered' : justcallOutcome,
+                            duration: justcallOutcome === 'Connected' ? Number(justcallDuration) : 0
+                          },
+                          recording: justcallOutcome === 'Connected' ? 'https://app.justcall.io/recording/sample_demo.mp3' : '',
+                          notes: 'Test call logged via Settings Simulator'
+                        }
+                      })
+                    })
+                    const data = await res.json()
+                    setJustcallTestResult({ success: res.ok && data.success, data })
+                  } catch (err: any) {
+                    setJustcallTestResult({ success: false, data: { error: err.message } })
+                  } finally {
+                    setIsTestingJustCall(false)
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                {isTestingJustCall ? <Sparkles size={14} className="animate-spin" /> : <PhoneCall size={14} />}
+                <span>{isTestingJustCall ? 'Sending Test Call...' : 'Send Test Call Webhook'}</span>
+              </button>
+
+              {justcallTestResult && (
+                <div
+                  className={`mt-4 p-4 rounded-xl border text-xs ${
+                    justcallTestResult.success
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {justcallTestResult.success ? (
+                    <div className="flex items-start gap-2.5">
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold mb-0.5">Test Call Logged Successfully!</p>
+                        <p className="text-emerald-700 leading-relaxed">
+                          Matched Lead: <strong>{justcallTestResult.data.lead_name}</strong> • Outcome: <strong>{justcallTestResult.data.outcome}</strong> • Duration: <strong>{justcallTestResult.data.duration}</strong>.
+                          Timeline updated in real-time.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="font-semibold">Error: {justcallTestResult.data?.message || justcallTestResult.data?.error || 'Failed to log test call'}</p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* Step-by-Step JustCall Setup Guide */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">How to Enable in JustCall (2 Minutes)</h3>
+              <p className="text-gray-500 text-xs mb-4">Follow these 3 simple steps inside your JustCall dashboard:</p>
+
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Login to JustCall</p>
+                    <p className="text-xs text-gray-600 mt-0.5">Go to <a href="https://app.justcall.io" target="_blank" rel="noreferrer" className="text-emerald-600 underline font-semibold">app.justcall.io</a> &rarr; click on <strong>Settings</strong> (or <strong>Integrations</strong>) &rarr; select <strong>Webhooks</strong>.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Add New Webhook</p>
+                    <p className="text-xs text-gray-600 mt-0.5">Click <strong>+ New Webhook</strong> &rarr; Select Event: <strong>Call Completed</strong> (or <code>call.completed</code>).</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Paste Webhook URL &amp; Save</p>
+                    <p className="text-xs text-gray-600 mt-0.5">Paste the Webhook URL copied from above into the Endpoint URL field and click <strong>Save</strong>. Done!</p>
+                  </div>
                 </div>
               </div>
             </section>

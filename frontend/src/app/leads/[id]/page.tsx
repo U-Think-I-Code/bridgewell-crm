@@ -10,6 +10,18 @@ import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge } from '@/lib/countryHelper'
 
+function extractCallDuration(text?: string): string {
+  if (!text) return 'Logged'
+  const match = text.match(/Duration:\s*([^\n(]+)/i)
+  return match?.[1]?.trim() || 'Logged'
+}
+
+function extractRecordingUrl(text?: string): string | undefined {
+  if (!text) return undefined
+  const match = text.match(/Recording:\s*(https?:\/\/[^\s\n]+)/i)
+  return match?.[1]?.trim()
+}
+
 export default function LeadProfile() {
   const params = useParams()
   const router = useRouter()
@@ -970,15 +982,41 @@ export default function LeadProfile() {
                       }`}
                       title={(act.type === 'note' || act.text?.includes('Student details saved')) ? 'Click to open these saved notes in Call Notes' : undefined}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-sm font-semibold text-gray-900 capitalize flex items-center gap-2">
+                      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                        <div className="text-sm font-semibold text-gray-900 capitalize flex items-center gap-2 flex-wrap">
                           <span>{act.type}</span>
                           {(act.type === 'note' || act.text?.includes('Student details saved')) && (
                             <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
                               Saved Note
                             </span>
                           )}
-                        </p>
+                          {act.type === 'call' && (
+                            <>
+                              {(act.outcome === 'Connected' || act.text?.includes('(Connected)')) && (
+                                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  Connected
+                                </span>
+                              )}
+                              {(act.outcome === 'Busy' || act.text?.includes('(Busy)')) && (
+                                <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  Busy
+                                </span>
+                              )}
+                              {(act.outcome === 'No Answer' || act.text?.includes('(No Answer)')) && (
+                                <span className="text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full">
+                                  No Answer
+                                </span>
+                              )}
+                              {act.text?.includes('Duration:') && (
+                                <span className="text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Clock size={10} className="text-gray-500" />
+                                  {extractCallDuration(act.text)}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
                         {(act.type === 'note' || act.text?.includes('Student details saved')) && (
                           <button
                             type="button"
@@ -996,6 +1034,20 @@ export default function LeadProfile() {
                         )}
                       </div>
                       <p className="text-sm text-gray-700 mb-2 whitespace-pre-wrap leading-relaxed">{act.text}</p>
+                      {extractRecordingUrl(act.text) && (
+                        <div className="mb-2">
+                          <a
+                            href={extractRecordingUrl(act.text)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-2xs"
+                          >
+                            <span>🎙️ Play Call Recording</span>
+                            <ArrowRight size={11} />
+                          </a>
+                        </div>
+                      )}
                       <p className="text-xs text-gray-400 font-medium">{new Date(act.time).toLocaleString()}</p>
                     </div>
                   </div>
