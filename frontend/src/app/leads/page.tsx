@@ -525,9 +525,21 @@ function LeadsContent() {
                           {lead.name}
                         </Link>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                          {lead.country && (
+                          {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
-                              {formatCountryBadge(lead.country)}
+                              {formatCountryBadge(lead.country, lead.phone)}
+                            </span>
+                          )}
+                          {(lead.course || lead.programme_level) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
+                              🎓 {lead.course || lead.programme_level}
+                            </span>
+                          )}
+                          {lead.metadata?.campus_mode && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                              {String(lead.metadata.campus_mode).toLowerCase().includes('campus') ? '🏛️ On Campus' :
+                               String(lead.metadata.campus_mode).toLowerCase().includes('online') ? '💻 Online' :
+                               '🌐 ' + lead.metadata.campus_mode}
                             </span>
                           )}
                           {lead.source && (
@@ -694,9 +706,14 @@ function LeadsContent() {
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100 text-[10px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {lead.country && (
+                            {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                                {formatCountryBadge(lead.country)}
+                                {formatCountryBadge(lead.country, lead.phone)}
+                              </span>
+                            )}
+                            {(lead.course || lead.programme_level) && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-semibold text-[10px] bg-purple-50 text-purple-700 border border-purple-200">
+                                🎓 {lead.course || lead.programme_level}
                               </span>
                             )}
                             {lead.source && <span className="font-medium uppercase tracking-wider text-gray-400">{lead.source}</span>}

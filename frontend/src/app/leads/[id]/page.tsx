@@ -8,7 +8,80 @@ import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/not
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
-import { formatCountryBadge } from '@/lib/countryHelper'
+import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
+
+function getLeadCampaignDetails(lead: any): { key: string, label: string, value: string, type: 'yes' | 'no' | 'campus' | 'program' | 'text' }[] {
+  if (!lead) return []
+  const meta = (lead.metadata && typeof lead.metadata === 'object') ? lead.metadata : {}
+  const answers: Record<string, any> = meta.campaign_answers || {}
+  
+  const results: { key: string, label: string, value: string, type: 'yes' | 'no' | 'campus' | 'program' | 'text' }[] = []
+  const seenLabels = new Set<string>()
+
+  const determineType = (v: string): 'yes' | 'no' | 'campus' | 'program' | 'text' => {
+    const lower = v.toLowerCase()
+    if (lower === 'yes') return 'yes'
+    if (lower === 'no') return 'no'
+    if (lower.includes('campus') || lower.includes('online') || lower.includes('both')) return 'campus'
+    if (lower.includes('master') || lower.includes('doctorate') || lower.includes('bachelor')) return 'program'
+    return 'text'
+  }
+
+  // 1. Process campaign_answers if available
+  Object.entries(answers).forEach(([rawKey, val]) => {
+    if (val === null || val === undefined || val === '') return
+    const strVal = String(val).trim()
+    const lowerKey = rawKey.toLowerCase()
+    
+    // Skip personal info that already has a primary card
+    if (lowerKey === 'name' || lowerKey === 'full name' || lowerKey === 'email' || lowerKey === 'phone' || lowerKey === 'phone number' || lowerKey === 'contact') {
+      return
+    }
+
+    results.push({
+      key: rawKey,
+      label: rawKey,
+      value: strVal,
+      type: determineType(strVal)
+    })
+    seenLabels.add(rawKey.toLowerCase())
+  })
+
+  // 2. Also check if campus_mode was set in metadata
+  if (meta.campus_mode && !seenLabels.has('campus mode (online / offline)') && !seenLabels.has('online/offline')) {
+    results.unshift({
+      key: 'campus_mode',
+      label: 'Campus Mode (Online / Offline)',
+      value: String(meta.campus_mode),
+      type: 'campus'
+    })
+    seenLabels.add('campus mode (online / offline)')
+  }
+
+  // 3. Fallback: check raw metadata keys if campaign_answers is empty
+  if (results.length === 0 && Object.keys(meta).length > 0) {
+    const internalKeys = new Set([
+      'student_profile', 'last_call_duration', 'last_call_timestamp', 
+      'imported_at', 'imported_file', 'address', 'qualification', 'gpa', 
+      'preferred_country', 'intake', 'budget', 'sponsor', 'campaign_answers'
+    ])
+    
+    Object.entries(meta).forEach(([k, v]) => {
+      if (internalKeys.has(k) || typeof v === 'object' || v === null || v === undefined || v === '') return
+      const cleanLabel = k.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      const strVal = String(v).trim()
+
+      results.push({
+        key: k,
+        label: cleanLabel,
+        value: strVal,
+        type: determineType(strVal)
+      })
+    })
+  }
+
+  return results
+}
 
 function formatCallDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s'
@@ -320,6 +393,10 @@ export default function LeadProfile() {
       if (parsed['Intake']) updatedMetadata.intake = parsed['Intake']
       if (parsed['Budget']) updatedMetadata.budget = parsed['Budget']
       if (parsed['Sponsor']) updatedMetadata.sponsor = parsed['Sponsor']
+      if (parsed['Campus Mode']) updatedMetadata.campus_mode = parsed['Campus Mode']
+      if (parsed['Admitted University']) updatedMetadata.admitted_university = parsed['Admitted University']
+      if (parsed['I-20 Received']) updatedMetadata.i20_received = parsed['I-20 Received']
+      if (parsed['SEVIS Fee Paid']) updatedMetadata.sevis_fee_paid = parsed['SEVIS Fee Paid']
 
       // 3. Build lead update payload
       const updatePayload: any = {
@@ -386,27 +463,74 @@ export default function LeadProfile() {
   }
 
   const handleInsertTemplate = () => {
-    const template = [
+    const meta = (lead?.metadata && typeof lead.metadata === 'object') ? lead.metadata : {}
+    const answers: Record<string, any> = meta.campaign_answers || {}
+
+    // Find country
+    const detectedCountry = lead?.country || inferCountryFromPhone(lead?.phone) || meta.country || ''
+
+    // Find campus mode
+    const campusMode = meta.campus_mode || answers['Campus Mode (Online / Offline)'] || answers['Online/Offline'] || ''
+
+    // Find course / program
+    const course = lead?.course || lead?.programme_level || answers['Program Interested In'] || answers['Program Interested in'] || ''
+
+    // Find qualification
+    const qualification = lead?.highest_qualification || meta.qualification || answers['Highest Qualification'] || answers['Qualification'] || ''
+
+    // Find key campaign answers like university, I-20, SEVIS
+    const university = answers['Admitted US University'] || answers['Which Us University Have You Been Admitted To'] || meta['which_us_university_have_you_been_admitted_to?'] || meta.admitted_university || ''
+    const i20 = answers['I-20 Received From US University?'] || answers['Have You Received Your I 20 From A Us University'] || meta['have_you_received_your_i-20_from_a_us_university?'] || meta.i20_received || ''
+    const sevis = answers['SEVIS I-901 Fee Paid?'] || answers['Have You Paid Your Sevis I 901 Fee'] || meta['have_you_paid_your_sevis_i-901_fee?'] || meta.sevis_fee_paid || ''
+
+    const lines = [
       `Name: ${lead?.name || ''}`,
       `Phone / WhatsApp: ${lead?.phone || ''}`,
       `Email: ${lead?.email || ''}`,
-      `Address: `,
-      `Country: ${lead?.country || ''}`,
-      `Qualification: `,
-      `GPA: `,
-      `Course: ${lead?.course || ''}`,
-      `Preferred Country: `,
-      `Intake: `,
-      `Budget: `,
-      `Sponsor: `
-    ].join('\n')
+      `Address: ${meta.address || ''}`,
+      `Country: ${detectedCountry}`,
+      `Qualification: ${qualification}`,
+      `GPA: ${meta.gpa || ''}`,
+      `Course: ${course}`,
+      `Campus Mode: ${campusMode}`,
+      `Preferred Country: ${meta.preferred_country || detectedCountry}`,
+      `Intake: ${meta.intake || ''}`,
+      `Budget: ${lead?.budget_range || meta.budget || ''}`,
+      `Sponsor: ${meta.sponsor || ''}`,
+    ]
+
+    // Append campaign-specific answers if available
+    const extraAnswers: string[] = []
+    if (university) extraAnswers.push(`Admitted University: ${university}`)
+    if (i20) extraAnswers.push(`I-20 Received: ${i20}`)
+    if (sevis) extraAnswers.push(`SEVIS Fee Paid: ${sevis}`)
+
+    Object.entries(answers).forEach(([q, a]) => {
+      if (!a) return
+      const lower = q.toLowerCase()
+      if (
+        lower.includes('name') || lower.includes('phone') || lower.includes('email') ||
+        lower.includes('course') || lower.includes('program') || lower.includes('campus') ||
+        lower.includes('country') || lower.includes('university') || lower.includes('i-20') ||
+        lower.includes('i20') || lower.includes('sevis') || lower.includes('qualification')
+      ) return
+      extraAnswers.push(`${q}: ${a}`)
+    })
+
+    if (extraAnswers.length > 0) {
+      lines.push('')
+      lines.push('--- Campaign Answers ---')
+      lines.push(...extraAnswers)
+    }
+
+    const template = lines.join('\n')
 
     if (!note.trim()) {
       setNote(template)
     } else if (!note.includes('Name:') && !note.includes('Qualification:')) {
       setNote(note.trim() + '\n\n' + template)
     } else {
-      if (confirm('Replace current note with a fresh Student Profile template?')) {
+      if (confirm('Replace current note with pre-filled Campaign & Student Profile template?')) {
         setNote(template)
       }
     }
@@ -1081,9 +1205,9 @@ export default function LeadProfile() {
             </div>
             <p className="text-gray-400 text-xs flex items-center gap-1.5 font-normal mt-1.5 flex-wrap">
               <Clock size={12} /> Added {new Date(lead.created_at).toLocaleDateString()}
-              {lead.country && (
+              {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
-                  {formatCountryBadge(lead.country)} Ad
+                  {formatCountryBadge(lead.country, lead.phone)} Ad
                 </span>
               )}
               {lead.source ? `• via ${lead.source}` : ''}
@@ -1249,33 +1373,35 @@ export default function LeadProfile() {
                )}
              </div>
              <div className="space-y-3 text-xs">
-                {lead.country && (
+                {(lead.country || lead.phone) && (
                   <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
-                     <span className="text-gray-400 font-medium">Target Country</span>
+                     <span className="text-gray-400 font-medium">Target Country / Location</span>
                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                       {lead.country === 'USA' ? '🇺🇸 USA' :
-                        lead.country === 'UK' ? '🇬🇧 UK' :
-                        lead.country === 'Canada' ? '🇨🇦 Canada' :
-                        lead.country === 'Australia' ? '🇦🇺 Australia' :
-                        lead.country === 'Germany' ? '🇩🇪 Germany' :
-                        lead.country === 'Ireland' ? '🇮🇪 Ireland' :
-                        lead.country === 'UAE' ? '🇦🇪 UAE' :
-                        lead.country === 'India' ? '🇮🇳 India' :
-                        `🌍 ${lead.country}`}
+                       {formatCountryBadge(lead.country, lead.phone)}
                      </span>
                   </div>
                 )}
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                    <span className="text-gray-400 font-medium">Programme</span>
-                   <span className="text-gray-900 font-semibold">{lead.programme_level || 'Not provided'}</span>
+                   <span className="text-gray-900 font-semibold">{lead.course || lead.programme_level || lead.metadata?.campaign_answers?.['Program Interested In'] || 'Not provided'}</span>
                 </div>
+                {(lead.metadata?.campus_mode || lead.metadata?.campaign_answers?.['Campus Mode (Online / Offline)']) && (
+                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
+                     <span className="text-gray-400 font-medium">Campus Mode</span>
+                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                       {String(lead.metadata?.campus_mode || lead.metadata?.campaign_answers?.['Campus Mode (Online / Offline)']).toLowerCase().includes('campus') ? '🏛️ On Campus' :
+                        String(lead.metadata?.campus_mode || lead.metadata?.campaign_answers?.['Campus Mode (Online / Offline)']).toLowerCase().includes('online') ? '💻 Online' :
+                        '🌐 ' + String(lead.metadata?.campus_mode || lead.metadata?.campaign_answers?.['Campus Mode (Online / Offline)'])}
+                     </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                    <span className="text-gray-400 font-medium">Source / Campaign</span>
                    <span className="text-gray-900 font-semibold">{lead.source}</span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                    <span className="text-gray-400 font-medium">Qualification</span>
-                   <span className="text-gray-900 font-semibold">{lead.highest_qualification || 'Not provided'}</span>
+                   <span className="text-gray-900 font-semibold">{lead.highest_qualification || lead.metadata?.qualification || 'Not provided'}</span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                    <span className="text-gray-400 font-medium">Work Experience</span>
@@ -1283,26 +1409,69 @@ export default function LeadProfile() {
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 last:border-0">
                    <span className="text-gray-400 font-medium">Budget Range</span>
-                   <span className="text-gray-900 font-semibold">{lead.budget_range || 'Not provided'}</span>
+                   <span className="text-gray-900 font-semibold">{lead.budget_range || lead.metadata?.budget || 'Not provided'}</span>
                 </div>
              </div>
           </section>
 
-          {lead.metadata && Object.keys(lead.metadata).length > 0 && (
-          <section className="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-xs">
-             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-               Additional Details (From CSV)
-             </h3>
-             <div className="space-y-2 text-xs">
-                {Object.entries(lead.metadata).map(([key, value]) => (
-                  <div key={key} className="flex justify-between items-start py-1.5 border-b border-gray-100 last:border-0 gap-3">
-                     <span className="text-gray-400 font-medium capitalize shrink-0">{String(key).replace(/_/g, ' ')}</span>
-                     <span className="text-gray-900 font-semibold text-right break-words">{String(value)}</span>
-                  </div>
-                ))}
-             </div>
-          </section>
-          )}
+          {/* Campaign Form Questionnaire & Dynamic Excel Answers */}
+          {(() => {
+            const campaignDetails = getLeadCampaignDetails(lead)
+            if (campaignDetails.length === 0) return null
+
+            return (
+              <section className="bg-white border border-blue-200/90 rounded-2xl p-5 shadow-xs relative overflow-hidden">
+                 <div className="flex items-center justify-between mb-3">
+                   <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                     <Sparkles size={13} className="text-blue-600" />
+                     <span>Campaign Form Details</span>
+                   </h3>
+                   {lead.source && (
+                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 truncate max-w-[140px]">
+                       {lead.source}
+                     </span>
+                   )}
+                 </div>
+                 <p className="text-[11px] text-gray-500 mb-3.5 leading-snug">
+                   Student questionnaire responses from the ad campaign:
+                 </p>
+                 <div className="space-y-2.5 text-xs">
+                    {campaignDetails.map((item) => (
+                      <div key={item.key} className="bg-gray-50/80 border border-gray-200/80 rounded-xl p-3 flex flex-col gap-1.5">
+                         <span className="text-gray-600 font-semibold text-[11px] leading-tight">
+                           {item.label}
+                         </span>
+                         <div>
+                           {item.type === 'yes' ? (
+                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                               <Check size={12} className="stroke-[3]" /> Yes
+                             </span>
+                           ) : item.type === 'no' ? (
+                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                               <X size={12} className="stroke-[3]" /> No
+                             </span>
+                           ) : item.type === 'campus' ? (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                               {item.value.toLowerCase().includes('campus') ? '🏛️ On Campus' :
+                                item.value.toLowerCase().includes('online') ? '💻 Online' :
+                                '🌐 ' + item.value}
+                             </span>
+                           ) : item.type === 'program' ? (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                               🎓 {item.value}
+                             </span>
+                           ) : (
+                             <span className="text-gray-900 font-bold break-words">
+                               {item.value}
+                             </span>
+                           )}
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+              </section>
+            )
+          })()}
         </div>
       </div>
 
