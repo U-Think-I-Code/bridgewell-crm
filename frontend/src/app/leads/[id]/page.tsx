@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save } from 'lucide-react'
+import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -28,7 +28,9 @@ export default function LeadProfile() {
   const [note, setNote] = useState('')
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false)
+  const [isNotesOpen, setIsNotesOpen] = useState(true)
   const isEditingNoteRef = useRef(false)
+  const notesTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [followUpDate, setFollowUpDate] = useState('')
   const [savingFollowUp, setSavingFollowUp] = useState(false)
   const [followUpSavedSuccess, setFollowUpSavedSuccess] = useState(false)
@@ -232,6 +234,18 @@ export default function LeadProfile() {
     }
   }
 
+  const handleOpenNotes = (textToLoad?: string) => {
+    setIsNotesOpen(true)
+    if (textToLoad) {
+      setNote(textToLoad)
+      isEditingNoteRef.current = true
+    }
+    setTimeout(() => {
+      notesTextareaRef.current?.focus()
+      notesTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+
   const handleSaveStudentDetails = async () => {
     if (!note.trim()) return
     setSavingDetails(true)
@@ -317,7 +331,10 @@ export default function LeadProfile() {
       }))
 
       setDetailsSavedSuccess(true)
-      setTimeout(() => setDetailsSavedSuccess(false), 3500)
+      setTimeout(() => {
+        setDetailsSavedSuccess(false)
+        setIsNotesOpen(false)
+      }, 1600)
       fetchLeadAndActivities()
     } catch (err: any) {
       console.error('Error saving student details:', err)
@@ -939,8 +956,45 @@ export default function LeadProfile() {
                        act.type === 'call' ? <PhoneCall size={12} /> :
                        <FileText size={12} />}
                     </div>
-                    <div className="bg-white border border-gray-200 p-4 rounded-xl flex-1 shadow-sm">
-                      <p className="text-sm font-semibold text-gray-900 mb-1 capitalize">{act.type}</p>
+                    <div 
+                      onClick={() => {
+                        if (act.type === 'note' || act.text?.includes('Student details saved')) {
+                          const cleanText = act.text?.replace(/^Student details saved permanently:\s*/i, '') || lead?.metadata?.student_profile || ''
+                          handleOpenNotes(cleanText)
+                        }
+                      }}
+                      className={`bg-white border p-4 rounded-xl flex-1 shadow-sm transition-all ${
+                        (act.type === 'note' || act.text?.includes('Student details saved'))
+                          ? 'border-blue-200 hover:border-blue-400 hover:shadow-md cursor-pointer group/note bg-gradient-to-br from-white to-blue-50/10'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      title={(act.type === 'note' || act.text?.includes('Student details saved')) ? 'Click to open these saved notes in Call Notes' : undefined}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-semibold text-gray-900 capitalize flex items-center gap-2">
+                          <span>{act.type}</span>
+                          {(act.type === 'note' || act.text?.includes('Student details saved')) && (
+                            <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                              Saved Note
+                            </span>
+                          )}
+                        </p>
+                        {(act.type === 'note' || act.text?.includes('Student details saved')) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const cleanText = act.text?.replace(/^Student details saved permanently:\s*/i, '') || lead?.metadata?.student_profile || ''
+                              handleOpenNotes(cleanText)
+                            }}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-md transition-colors cursor-pointer border border-blue-200 shadow-2xs group-hover/note:bg-blue-600 group-hover/note:text-white group-hover/note:border-blue-600"
+                            title="Click to open these saved notes in the editor"
+                          >
+                            <Edit3 size={11} />
+                            <span>Open Notes</span>
+                          </button>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-700 mb-2 whitespace-pre-wrap leading-relaxed">{act.text}</p>
                       <p className="text-xs text-gray-400 font-medium">{new Date(act.time).toLocaleString()}</p>
                     </div>
@@ -1008,76 +1062,132 @@ export default function LeadProfile() {
 
         {/* Input box for notes and follow-up */}
         <div className="p-6 bg-gray-50 border-t border-gray-200 shrink-0">
-           {/* Quick template toolbar */}
-           <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
-             <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider">
-               <FileText size={13} className="text-gray-400" />
-               <span>Call Notes & Student Details</span>
-             </div>
-             <div className="flex items-center gap-2">
-               <button
-                 type="button"
-                 onClick={handleInsertTemplate}
-                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
-                 title="Insert Student Profile Template (Qualification, GPA, Intake, Budget, Sponsor, etc.)"
+           {!isNotesOpen ? (
+             <div className="bg-white border border-blue-200 rounded-xl p-3 mb-4 shadow-2xs flex items-center justify-between gap-3 flex-wrap animate-fade-in">
+               <div 
+                 onClick={() => handleOpenNotes()}
+                 className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-[200px]"
+                 title="Click to open and edit student details"
                >
-                 <Sparkles size={13} className="text-blue-600" />
-                 <span>+ Student Details Template</span>
-               </button>
+                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                   <FileText size={16} />
+                 </div>
+                 <div>
+                   <p className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                     <span>{lead?.metadata?.student_profile ? 'Student Details & Notes (Saved)' : 'Call Notes & Student Details'}</span>
+                     {lead?.metadata?.student_profile && (
+                       <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                         Saved
+                       </span>
+                     )}
+                   </p>
+                   <p className="text-[11px] text-gray-400 truncate max-w-md">
+                     {note ? note.split('\n').filter(Boolean).slice(0, 2).join(' • ') : 'Click "Open Notes" to view or edit details'}
+                   </p>
+                 </div>
+               </div>
 
-                {/* Save Details Permanently Button */}
-                <button
-                  type="button"
-                  onClick={handleSaveStudentDetails}
-                  disabled={savingDetails || !note.trim()}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer active:scale-95 ${
-                    note.trim()
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 font-bold'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                  }`}
-                  title="Save student details permanently to the lead profile"
-                >
-                  <Save size={13} />
-                  <span>{savingDetails ? 'Saving...' : 'Save Details'}</span>
-                </button>
-
-                {/* Success feedback */}
-                {detailsSavedSuccess && (
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 animate-fade-in">
-                    <CheckCircle2 size={13} className="text-emerald-600" />
-                    <span>Saved Permanently!</span>
-                  </span>
-                )}
-
-               {note && (
+               <div className="flex items-center gap-2">
                  <button
                    type="button"
-                   onClick={() => {
-                     if (confirm('Clear note content?')) {
-                       setNote('')
-                     }
-                   }}
-                   className="text-xs text-gray-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded transition-colors cursor-pointer"
-                   title="Clear note text"
+                   onClick={() => handleOpenNotes()}
+                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs cursor-pointer transition-all active:scale-95"
                  >
-                   Clear
+                   <Edit3 size={12} />
+                   <span>Open Notes</span>
                  </button>
-               )}
+               </div>
              </div>
-           </div>
+           ) : (
+             <div>
+               {/* Quick template toolbar with Close button */}
+               <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
+                 <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                   <FileText size={13} className="text-gray-400" />
+                   <span>Call Notes & Student Details</span>
+                 </div>
 
-           <textarea 
-             value={note}
-             onFocus={() => { isEditingNoteRef.current = true }}
-             onChange={e => {
-               isEditingNoteRef.current = true
-               setNote(e.target.value)
-             }}
-             placeholder="Click '+ Student Details Template' above or type notes about the call..." 
-             className={`w-full bg-white border border-gray-200 rounded-xl text-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all shadow-sm leading-relaxed mb-4 ${
-               note.includes('Name:') ? 'min-h-[250px] font-mono text-xs resize-y' : 'min-h-[75px] resize-y'
-             }`}
-           />
+                 <div className="flex items-center gap-2 flex-wrap">
+                   {/* 1. Insert Template Button */}
+                   <button
+                     type="button"
+                     onClick={handleInsertTemplate}
+                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                     title="Insert Student Profile Template (Qualification, GPA, Intake, Budget, Sponsor, etc.)"
+                   >
+                     <Sparkles size={13} className="text-blue-600" />
+                     <span>+ Student Details Template</span>
+                   </button>
+
+                   {/* 2. Save Details Button */}
+                   <button
+                     type="button"
+                     onClick={handleSaveStudentDetails}
+                     disabled={savingDetails || !note.trim()}
+                     className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer active:scale-95 ${
+                       note.trim()
+                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 font-bold'
+                         : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                     }`}
+                     title="Save student details permanently to the lead profile"
+                   >
+                     <Save size={13} />
+                     <span>{savingDetails ? 'Saving...' : 'Save Details'}</span>
+                   </button>
+
+                   {/* Success feedback */}
+                   {detailsSavedSuccess && (
+                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 animate-fade-in">
+                       <CheckCircle2 size={13} className="text-emerald-600" />
+                       <span>Saved Permanently!</span>
+                     </span>
+                   )}
+
+                   {/* Clear button */}
+                   {note && (
+                     <button
+                       type="button"
+                       onClick={() => {
+                         if (confirm('Clear note content?')) {
+                           setNote('')
+                           isEditingNoteRef.current = true
+                         }
+                       }}
+                       className="text-xs text-gray-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded transition-colors cursor-pointer"
+                       title="Clear note text"
+                     >
+                       Clear
+                     </button>
+                   )}
+
+                   {/* 3. Close / Minimize Button */}
+                   <button
+                     type="button"
+                     onClick={() => setIsNotesOpen(false)}
+                     className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 border border-gray-200 transition-all cursor-pointer shadow-2xs active:scale-95"
+                     title="Close / Minimize Notes box"
+                   >
+                     <ChevronUp size={13} />
+                     <span>Close</span>
+                   </button>
+                 </div>
+               </div>
+
+               <textarea 
+                 ref={notesTextareaRef}
+                 value={note}
+                 onFocus={() => { isEditingNoteRef.current = true }}
+                 onChange={e => {
+                   isEditingNoteRef.current = true
+                   setNote(e.target.value)
+                 }}
+                 placeholder="Click '+ Student Details Template' above or type notes about the call..." 
+                 className={`w-full bg-white border border-gray-200 rounded-xl text-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all shadow-sm leading-relaxed mb-4 ${
+                   note.includes('Name:') ? 'min-h-[250px] font-mono text-xs resize-y' : 'min-h-[75px] resize-y'
+                 }`}
+               />
+             </div>
+           )}
            
            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200 flex-wrap">
               <label className="text-sm font-semibold text-gray-700 whitespace-nowrap flex items-center gap-1.5">
