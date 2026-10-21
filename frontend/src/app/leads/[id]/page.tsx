@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -62,6 +62,12 @@ export default function LeadProfile() {
   const [savingAction, setSavingAction] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [copiedEmailText, setCopiedEmailText] = useState(false)
 
   // Live timer tick for active call
   useEffect(() => {
@@ -716,25 +722,109 @@ export default function LeadProfile() {
     setSavingAction(false)
   }
 
+  const handleSelectTemplate = (templateId: string) => {
+    if (templateId === 'custom') {
+      setSelectedTemplate({ id: 'custom', name: 'Custom Message' })
+      return
+    }
+    const found = templates.find(t => t.id === templateId)
+    if (found) {
+      setSelectedTemplate(found)
+      setEmailSubject(found.subject || '')
+      const cleanBody = (found.body || '')
+        .replace(/\\n/g, '\n')
+        .replace(/\[Name\]/g, lead?.name || 'Student')
+        .replace(/\[Counselor\]/g, currentUser?.name || 'Counselor')
+        .replace(/\[Course\]/g, lead?.course || 'Program')
+      setEmailBody(cleanBody)
+    }
+  }
+
+  const handleSaveAsTemplate = async () => {
+    if (!newTemplateName.trim()) {
+      alert('Please enter a template name')
+      return
+    }
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      alert('Please enter both subject and message body before saving template')
+      return
+    }
+
+    setSavingTemplate(true)
+    try {
+      let bodyToSave = emailBody
+      if (lead?.name) {
+        bodyToSave = bodyToSave.split(lead.name).join('[Name]')
+      }
+
+      const { data, error } = await supabase.from('email_templates').insert([
+        {
+          name: newTemplateName.trim(),
+          subject: emailSubject.trim(),
+          body: bodyToSave
+        }
+      ]).select().single()
+
+      if (error) throw error
+
+      if (data) {
+        setTemplates(prev => [...prev, data])
+        setSelectedTemplate(data)
+      }
+      setShowSaveTemplateModal(false)
+      setNewTemplateName('')
+      alert(`Template "${newTemplateName}" saved successfully!`)
+    } catch (err: any) {
+      console.error('Error saving template:', err)
+      alert('Failed to save template: ' + (err.message || 'Unknown error'))
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  const handleDeleteTemplate = async (templateId: string, templateName: string) => {
+    if (!confirm(`Delete template "${templateName}"?`)) return
+    try {
+      const { error } = await supabase.from('email_templates').delete().eq('id', templateId)
+      if (error) throw error
+      setTemplates(prev => prev.filter(t => t.id !== templateId))
+      if (selectedTemplate?.id === templateId) {
+        setSelectedTemplate({ id: 'custom', name: 'Custom Message' })
+      }
+    } catch (err: any) {
+      console.error('Error deleting template:', err)
+      alert('Failed to delete template: ' + err.message)
+    }
+  }
+
+  const handleCopyEmail = () => {
+    const fullText = `Subject: ${emailSubject}\n\n${emailBody}`
+    navigator.clipboard.writeText(fullText)
+    setCopiedEmailText(true)
+    setTimeout(() => setCopiedEmailText(false), 2000)
+  }
+
   const handleSendEmail = async () => {
-    if (!selectedTemplate || !lead.email) return
-    const subject = selectedTemplate.subject
-    const body = selectedTemplate.body.replace('[Name]', lead.name)
-    
-    window.location.href = `mailto:${lead.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-    
+    if (!lead?.email) return
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      alert('Please enter both email subject and body')
+      return
+    }
+
+    const mailtoUrl = `mailto:${lead.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`
+    window.location.href = mailtoUrl
+
     await supabase.from('activities').insert([
       { 
         lead: id, 
-        user_id: currentUser?.id || lead?.owner_id,
+        user_id: currentUser?.id || lead?.owner_id, 
         type: 'email', 
-        text: `Sent email template: ${selectedTemplate.name}`, 
+        text: `✉️ Sent email: "${emailSubject}"\n\n--- Content ---\n${emailBody}`, 
         time: new Date().toISOString() 
       }
     ])
-    
+
     setShowEmailModal(false)
-    setSelectedTemplate(null)
     fetchLeadAndActivities()
   }
 
@@ -745,45 +835,195 @@ export default function LeadProfile() {
     <div className="flex h-full bg-[#FDFDFD]">
       {/* Email Modal */}
       {showEmailModal && (
-        <div className="absolute inset-0 z-50 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-white border border-gray-200 rounded-2xl w-[500px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] animate-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Mail size={16} /> Send Email</h3>
-              <button onClick={() => setShowEmailModal(false)} className="text-gray-400 hover:text-gray-900 p-1 hover:bg-gray-100 rounded-md transition-colors"><X size={16}/></button>
+        <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[92vh]">
+            
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Mail size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Send Email to Student</h3>
+                  <p className="text-[11px] text-gray-500">Choose a template or write &amp; save custom message</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowEmailModal(false)} 
+                className="text-gray-400 hover:text-gray-900 p-1.5 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={16}/>
+              </button>
             </div>
+
             {!lead.email ? (
-              <div className="p-8 text-center text-gray-500 text-sm">
-                 This lead does not have an email address saved.
+              <div className="p-10 text-center text-gray-500 text-sm">
+                <Mail size={32} className="mx-auto mb-2 text-gray-300" />
+                <p className="font-semibold text-gray-700">No Email Address</p>
+                <p className="text-xs text-gray-400 mt-1">This lead does not have an email address saved in their profile.</p>
               </div>
             ) : (
-              <div className="p-6 space-y-5">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Select Template</label>
-                  <select 
-                    onChange={e => setSelectedTemplate(templates.find(t => t.id === e.target.value))}
-                    className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 px-3 py-2 text-sm outline-none focus:ring-4 focus:ring-gray-100 focus:border-gray-400 transition-all"
-                    defaultValue=""
-                  >
-                    <option value="" disabled>Choose a template...</option>
-                    {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                
+                {/* Template Selector & Action Bar */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                      Select Template or Write Custom
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowSaveTemplateModal(true)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors cursor-pointer"
+                      title="Save current message as a new reusable template"
+                    >
+                      <Save size={11} />
+                      <span>+ Save as New Template</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select 
+                      value={selectedTemplate?.id || 'custom'}
+                      onChange={e => handleSelectTemplate(e.target.value)}
+                      className="flex-1 bg-white border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <option value="custom">✏️ Write Custom Email (Blank)</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>📄 {t.name} — {t.subject}</option>
+                      ))}
+                    </select>
+
+                    {selectedTemplate && selectedTemplate.id !== 'custom' && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(selectedTemplate.id, selectedTemplate.name)}
+                        className="text-gray-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
+                        title="Delete this template"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {selectedTemplate && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2 text-sm shadow-sm">
-                    <p><span className="text-gray-500 font-medium">To:</span> <span className="text-gray-900">{lead.email}</span></p>
-                    <p><span className="text-gray-500 font-medium">Subject:</span> <span className="text-gray-900">{selectedTemplate.subject}</span></p>
-                    <div className="pt-3 border-t border-gray-200 whitespace-pre-wrap text-gray-700 mt-2">
-                      {selectedTemplate.body.replace('[Name]', lead.name)}
+
+                {/* Inline Save Template Drawer */}
+                {showSaveTemplateModal && (
+                  <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 space-y-2.5 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                        <Save size={13} />
+                        <span>Save This Email as a New Template</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowSaveTemplateModal(false)}
+                        className="text-blue-500 hover:text-blue-800 text-xs cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newTemplateName}
+                        onChange={e => setNewTemplateName(e.target.value)}
+                        placeholder="Template Name (e.g. Visa Guidance - Rahul)"
+                        className="flex-1 bg-white border border-blue-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 outline-none focus:ring-2 focus:ring-blue-200"
+                        onKeyDown={e => e.key === 'Enter' && handleSaveAsTemplate()}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveAsTemplate}
+                        disabled={savingTemplate || !newTemplateName.trim()}
+                        className="px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingTemplate ? 'Saving...' : 'Save Template'}
+                      </button>
                     </div>
                   </div>
                 )}
-                <button 
-                  onClick={handleSendEmail} 
-                  disabled={!selectedTemplate}
-                  className="w-full bg-black hover:bg-gray-800 text-white font-medium py-2.5 rounded-lg transition-all disabled:opacity-50 text-sm shadow-sm"
-                >
-                  Open in Email Client
-                </button>
+
+                {/* Recipient & Subject */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    <span className="font-semibold text-gray-500 shrink-0">To:</span>
+                    <span className="font-bold text-gray-900 truncate">{lead.email}</span>
+                    <span className="text-[10px] text-gray-400 font-medium ml-auto">({lead.name})</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Subject
+                    </label>
+                    <input
+                      type="text"
+                      value={emailSubject}
+                      onChange={e => setEmailSubject(e.target.value)}
+                      placeholder="Email Subject..."
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-gray-700">
+                        Email Body
+                      </label>
+                      {/* Variable Insertion Chips */}
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <span className="text-gray-400 font-medium">Insert:</span>
+                        <button
+                          type="button"
+                          onClick={() => setEmailBody(prev => prev + ` ${lead?.name || ''}`)}
+                          className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-mono cursor-pointer transition-colors"
+                        >
+                          + Student Name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmailBody(prev => prev + ` ${currentUser?.name || 'Counselor'}`)}
+                          className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-mono cursor-pointer transition-colors"
+                        >
+                          + My Name
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={emailBody}
+                      onChange={e => setEmailBody(e.target.value)}
+                      rows={8}
+                      placeholder="Type your message here..."
+                      className="w-full bg-white border border-gray-300 rounded-lg p-3 text-xs text-gray-900 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-2xs leading-relaxed resize-y font-normal"
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button 
+                    type="button"
+                    onClick={handleSendEmail} 
+                    disabled={!emailSubject.trim() || !emailBody.trim()}
+                    className="flex-1 bg-black hover:bg-gray-800 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                  >
+                    <Mail size={14} />
+                    <span>Open in Email Client (Gmail / Outlook)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyEmail}
+                    disabled={!emailSubject.trim() && !emailBody.trim()}
+                    className="px-3 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Copy email subject and body to clipboard"
+                  >
+                    {copiedEmailText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                    <span>{copiedEmailText ? 'Copied!' : 'Copy Text'}</span>
+                  </button>
+                </div>
+
               </div>
             )}
           </div>
@@ -955,8 +1195,20 @@ export default function LeadProfile() {
              </a>
 
              <button 
-               onClick={() => setShowEmailModal(true)} 
-               className="flex justify-center items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+               type="button"
+               onClick={() => {
+                 setShowEmailModal(true)
+                 if (!emailSubject && !emailBody) {
+                   if (templates.length > 0) {
+                     handleSelectTemplate(templates[0].id)
+                   } else {
+                     setSelectedTemplate({ id: 'custom', name: 'Custom Message' })
+                     setEmailSubject(`Information for ${lead?.name || 'Student'}`)
+                     setEmailBody(`Hi ${lead?.name || 'Student'},\n\n`)
+                   }
+                 }
+               }} 
+               className="flex justify-center items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
              >
                 <Mail size={13} className="text-gray-500 shrink-0" />
                 <span>Email</span>
