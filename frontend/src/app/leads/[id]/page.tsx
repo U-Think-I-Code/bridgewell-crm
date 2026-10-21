@@ -783,6 +783,10 @@ export default function LeadProfile() {
   }
 
   const handleDeleteTemplate = async (templateId: string, templateName: string) => {
+    if (['Introduction', 'Follow Up', 'Missing Documents'].includes(templateName)) {
+      alert(`Default template "${templateName}" is a system template and cannot be deleted. You can edit its content or save your own custom template!`)
+      return
+    }
     if (!confirm(`Delete template "${templateName}"?`)) return
     try {
       const { error } = await supabase.from('email_templates').delete().eq('id', templateId)
@@ -895,12 +899,12 @@ export default function LeadProfile() {
                       ))}
                     </select>
 
-                    {selectedTemplate && selectedTemplate.id !== 'custom' && (
+                    {selectedTemplate && selectedTemplate.id !== 'custom' && !['Introduction', 'Follow Up', 'Missing Documents'].includes(selectedTemplate.name) && (
                       <button
                         type="button"
                         onClick={() => handleDeleteTemplate(selectedTemplate.id, selectedTemplate.name)}
                         className="text-gray-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
-                        title="Delete this template"
+                        title="Delete this custom template"
                       >
                         <Trash2 size={14} />
                       </button>
