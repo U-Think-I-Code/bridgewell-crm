@@ -390,6 +390,7 @@ export default function LeadProfile() {
       if (parsed['Address']) updatedMetadata.address = parsed['Address']
       if (parsed['Qualification']) updatedMetadata.qualification = parsed['Qualification']
       if (parsed['GPA']) updatedMetadata.gpa = parsed['GPA']
+      if (parsed['Work Experience']) updatedMetadata.work_experience = parsed['Work Experience']
       if (parsed['Preferred Country']) updatedMetadata.preferred_country = parsed['Preferred Country']
       if (parsed['Intake']) updatedMetadata.intake = parsed['Intake']
       if (parsed['Budget']) updatedMetadata.budget = parsed['Budget']
@@ -412,6 +413,7 @@ export default function LeadProfile() {
         updatePayload.programme_level = parsed['Course']
       }
       if (parsed['Qualification']) updatePayload.highest_qualification = parsed['Qualification']
+      if (parsed['Work Experience']) updatePayload.work_experience = parsed['Work Experience']
       if (parsed['Budget']) updatePayload.budget_range = parsed['Budget']
 
       // 4. Save to Supabase
@@ -481,6 +483,9 @@ export default function LeadProfile() {
     // Find qualification
     const qualification = lead?.highest_qualification || meta.qualification || answers['Highest Qualification'] || answers['Qualification'] || ''
 
+    // Find work experience
+    const workExperience = lead?.work_experience || meta.work_experience || ''
+
     // Find key campaign answers like university, I-20, SEVIS
     const university = answers['Admitted US University'] || answers['Which Us University Have You Been Admitted To'] || meta['which_us_university_have_you_been_admitted_to?'] || meta.admitted_university || ''
     const i20 = answers['I-20 Received From US University?'] || answers['Have You Received Your I 20 From A Us University'] || meta['have_you_received_your_i-20_from_a_us_university?'] || meta.i20_received || ''
@@ -494,6 +499,7 @@ export default function LeadProfile() {
       `Country: ${detectedCountry}`,
       `Qualification: ${qualification}`,
       `GPA: ${meta.gpa || ''}`,
+      `Work Experience: ${workExperience}`,
       `Course: ${course}`,
       `Campus Mode: ${campusMode}`,
       `Preferred Country: ${meta.preferred_country || detectedCountry}`,
@@ -515,7 +521,8 @@ export default function LeadProfile() {
         lower.includes('name') || lower.includes('phone') || lower.includes('email') ||
         lower.includes('course') || lower.includes('program') || lower.includes('campus') ||
         lower.includes('country') || lower.includes('university') || lower.includes('i-20') ||
-        lower.includes('i20') || lower.includes('sevis') || lower.includes('qualification')
+        lower.includes('i20') || lower.includes('sevis') || lower.includes('qualification') ||
+        lower.includes('work experience')
       ) return
       extraAnswers.push(`${q}: ${a}`)
     })
@@ -1525,6 +1532,12 @@ export default function LeadProfile() {
                    <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
                      <span className="text-gray-400 font-medium">GPA / Academic Score</span>
                      <span className="text-gray-900 font-bold bg-gray-100 px-2 py-0.5 rounded text-xs">{lead.metadata.gpa}</span>
+                   </div>
+                 )}
+                 {(lead?.work_experience || lead?.metadata?.work_experience) && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">Work Experience</span>
+                     <span className="text-gray-900 font-semibold">{lead.work_experience || lead.metadata.work_experience}</span>
                    </div>
                  )}
                  {lead?.metadata?.preferred_country && (
