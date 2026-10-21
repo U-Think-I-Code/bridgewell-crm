@@ -240,8 +240,8 @@ export default function LeadProfile() {
     if (!isEditingNoteRef.current) {
       if (leadData?.metadata?.student_profile) {
         setNote(leadData.metadata.student_profile)
-      } else if (leadData?.notes) {
-        setNote(leadData.notes)
+      } else if (leadData?.metadata?.notes) {
+        setNote(leadData.metadata.notes)
       }
     }
     
@@ -384,6 +384,7 @@ export default function LeadProfile() {
       const updatedMetadata: Record<string, any> = {
         ...currentMetadata,
         student_profile: note,
+        notes: note,
       }
 
       if (parsed['Address']) updatedMetadata.address = parsed['Address']
@@ -398,16 +399,18 @@ export default function LeadProfile() {
       if (parsed['I-20 Received']) updatedMetadata.i20_received = parsed['I-20 Received']
       if (parsed['SEVIS Fee Paid']) updatedMetadata.sevis_fee_paid = parsed['SEVIS Fee Paid']
 
-      // 3. Build lead update payload
+      // 3. Build lead update payload (only columns existing on leads table)
       const updatePayload: any = {
-        notes: note,
         metadata: updatedMetadata,
       }
 
       if (parsed['Name']) updatePayload.name = parsed['Name']
       if (parsed['Email']) updatePayload.email = parsed['Email']
       if (parsed['Country']) updatePayload.country = parsed['Country']
-      if (parsed['Course']) updatePayload.course = parsed['Course']
+      if (parsed['Course']) {
+        updatePayload.course = parsed['Course']
+        updatePayload.programme_level = parsed['Course']
+      }
       if (parsed['Qualification']) updatePayload.highest_qualification = parsed['Qualification']
       if (parsed['Budget']) updatePayload.budget_range = parsed['Budget']
 
@@ -549,11 +552,11 @@ export default function LeadProfile() {
       updatePayload.next_follow_up = new Date(followUpDate).toISOString()
     }
     if (type === 'note' && text.trim()) {
-      updatePayload.notes = text
       const currentMetadata = (lead?.metadata && typeof lead.metadata === 'object') ? lead.metadata : {}
       updatePayload.metadata = {
         ...currentMetadata,
-        student_profile: text
+        student_profile: text,
+        notes: text
       }
     }
 
@@ -1493,7 +1496,7 @@ export default function LeadProfile() {
           })()}
 
           {/* Permanent Student Profile & Saved Counselor Notes Card */}
-          {(lead?.metadata?.student_profile || lead?.notes || lead?.metadata?.address || lead?.metadata?.gpa || lead?.metadata?.preferred_country || lead?.metadata?.intake || lead?.metadata?.sponsor) && (
+          {(lead?.metadata?.student_profile || lead?.metadata?.notes || lead?.metadata?.address || lead?.metadata?.gpa || lead?.metadata?.preferred_country || lead?.metadata?.intake || lead?.metadata?.sponsor) && (
             <section className="bg-white border border-emerald-300 rounded-2xl p-5 shadow-xs relative overflow-hidden animate-fade-in">
                <div className="flex items-center justify-between mb-3">
                  <h3 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -1502,7 +1505,7 @@ export default function LeadProfile() {
                  </h3>
                  <button
                    type="button"
-                   onClick={() => handleOpenNotes(lead?.metadata?.student_profile || lead?.notes)}
+                   onClick={() => handleOpenNotes(lead?.metadata?.student_profile || lead?.metadata?.notes)}
                    className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer shadow-2xs hover:shadow-xs"
                    title="Click to edit or add more details in the notes editor"
                  >
@@ -1545,7 +1548,7 @@ export default function LeadProfile() {
                </div>
 
                {/* Full Saved Text */}
-               {(lead?.metadata?.student_profile || lead?.notes) && (
+               {(lead?.metadata?.student_profile || lead?.metadata?.notes) && (
                  <div className="mt-3 pt-3 border-t border-gray-100">
                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                      <span>Saved Dossier / Note</span>
@@ -1555,7 +1558,7 @@ export default function LeadProfile() {
                      </span>
                    </div>
                    <div className="bg-gray-50/90 rounded-xl p-3 text-[11px] font-mono text-gray-800 whitespace-pre-wrap max-h-60 overflow-y-auto border border-gray-200/80 leading-relaxed shadow-2xs">
-                     {lead?.metadata?.student_profile || lead?.notes}
+                     {lead?.metadata?.student_profile || lead?.metadata?.notes}
                    </div>
                  </div>
                )}
