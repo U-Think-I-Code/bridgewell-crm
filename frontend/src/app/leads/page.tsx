@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import AddLeadModal from '@/components/AddLeadModal'
@@ -63,6 +63,12 @@ function LeadsContent() {
   const programmeParam = searchParams?.get('programme') || 'ALL'
   const [selectedProgramme, setSelectedProgramme] = useState<string>(programmeParam)
 
+  // Date Filter State: 'ALL' | 'today' | 'yesterday' | 'last7' | 'last30' | 'this_month' | 'custom'
+  const dateParam = searchParams?.get('date') || 'ALL'
+  const [selectedDatePreset, setSelectedDatePreset] = useState<string>(dateParam)
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
+
   useEffect(() => {
     fetchLeads()
     fetchStages()
@@ -98,7 +104,7 @@ function LeadsContent() {
       .from('leads')
       .select('id, name, email, phone, country, source, stage, owner_id, next_follow_up, priority, created_at, course, programme_level, last_call_outcome, attempts, metadata, owner:owner_id(name)')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(1000)
     
     if (user?.role === 'counselor') {
       query = query.eq('owner_id', user.id)
@@ -184,7 +190,61 @@ function LeadsContent() {
   const coldCount = basePool.filter(l => l.priority === 'Cold').length
   const unsetCount = basePool.filter(l => !l.priority).length
 
-  // Filtered leads based on priority, call outcome, country, and programme level
+  // Helper to test if a lead created_at falls inside selected date filter
+  const matchesDateFilter = (createdAtStr: string | null | undefined): boolean => {
+    if (selectedDatePreset === 'ALL') return true
+    if (!createdAtStr) return false
+
+    const leadDate = new Date(createdAtStr)
+    if (isNaN(leadDate.getTime())) return false
+
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    if (selectedDatePreset === 'today') {
+      return leadDate >= startOfToday && leadDate <= endOfToday
+    }
+
+    if (selectedDatePreset === 'yesterday') {
+      const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000)
+      const endOfYesterday = new Date(endOfToday.getTime() - 24 * 60 * 60 * 1000)
+      return leadDate >= startOfYesterday && leadDate <= endOfYesterday
+    }
+
+    if (selectedDatePreset === 'last7') {
+      const startOf7DaysAgo = new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return leadDate >= startOf7DaysAgo && leadDate <= endOfToday
+    }
+
+    if (selectedDatePreset === 'last30') {
+      const startOf30DaysAgo = new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000)
+      return leadDate >= startOf30DaysAgo && leadDate <= endOfToday
+    }
+
+    if (selectedDatePreset === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+      return leadDate >= startOfMonth && leadDate <= endOfToday
+    }
+
+    if (selectedDatePreset === 'custom') {
+      if (customStartDate) {
+        const s = new Date(customStartDate)
+        s.setHours(0, 0, 0, 0)
+        if (leadDate < s) return false
+      }
+      if (customEndDate) {
+        const e = new Date(customEndDate)
+        e.setHours(23, 59, 59, 999)
+        if (leadDate > e) return false
+      }
+      return true
+    }
+
+    return true
+  }
+
+  // Filtered leads based on priority, call outcome, country, programme level, and date
   const filteredLeads = basePool.filter(l => {
     if (selectedPriority !== 'ALL') {
       if (selectedPriority === 'UNSET' && l.priority) return false
@@ -202,6 +262,10 @@ function LeadsContent() {
 
     if (selectedProgramme !== 'ALL') {
       if (!matchesProgrammeFilter(l, selectedProgramme)) return false
+    }
+
+    if (!matchesDateFilter(l.created_at)) {
+      return false
     }
 
     return true
@@ -225,6 +289,17 @@ function LeadsContent() {
               <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200 flex items-center gap-1.5">
                 <span>Counselor Filter Active</span>
                 <Link href="/leads" className="text-blue-500 hover:text-blue-900 font-bold text-sm leading-none ml-0.5">×</Link>
+              </span>
+            )}
+            {selectedDatePreset !== 'ALL' && (
+              <span className="text-xs font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
+                <span>📅 Date: {selectedDatePreset === 'today' ? 'Today' : selectedDatePreset === 'yesterday' ? 'Yesterday' : selectedDatePreset === 'last7' ? 'Last 7 Days' : selectedDatePreset === 'last30' ? 'Last 30 Days' : selectedDatePreset === 'this_month' ? 'This Month' : customStartDate || customEndDate ? `${customStartDate || '...'} to ${customEndDate || '...'}` : 'Custom Range'}</span>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedDatePreset('ALL'); setCustomStartDate(''); setCustomEndDate(''); }}
+                  className="text-emerald-600 hover:text-emerald-950 font-bold text-sm leading-none ml-0.5 cursor-pointer"
+                  title="Clear Date Filter"
+                >×</button>
               </span>
             )}
             <span className="text-xs bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full border border-gray-200">
@@ -481,15 +556,58 @@ function LeadsContent() {
               <option value="Doctorate">🎓 Doctorate</option>
             </select>
           </div>
+
+          {/* Date Filter */}
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+              <Calendar size={13} className="text-emerald-600" /> Date:
+            </span>
+            <select
+              value={selectedDatePreset}
+              onChange={(e) => setSelectedDatePreset(e.target.value)}
+              className="bg-white border border-emerald-300 text-emerald-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-emerald-50/50 focus:ring-2 focus:ring-emerald-200 transition-all cursor-pointer"
+            >
+              <option value="ALL">📅 All Dates</option>
+              <option value="today">⚡ Today</option>
+              <option value="yesterday">⏪ Yesterday</option>
+              <option value="last7">🗓️ Last 7 Days</option>
+              <option value="last30">📅 Last 30 Days</option>
+              <option value="this_month">📆 This Month</option>
+              <option value="custom">✏️ Custom Range...</option>
+            </select>
+
+            {selectedDatePreset === 'custom' && (
+              <div className="flex items-center gap-1 bg-white border border-emerald-300 rounded-lg p-1 shadow-2xs">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="text-[11px] font-medium text-gray-700 outline-none px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded"
+                  title="Start Date (From)"
+                />
+                <span className="text-[10px] text-gray-400 font-bold px-0.5">to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="text-[11px] font-medium text-gray-700 outline-none px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded"
+                  title="End Date (To)"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
-        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL') && (
+        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL') && (
           <button
             onClick={() => {
               setSelectedPriority('ALL');
               setSelectedOutcome('ALL');
               setSelectedCountry('ALL');
               setSelectedProgramme('ALL');
+              setSelectedDatePreset('ALL');
+              setCustomStartDate('');
+              setCustomEndDate('');
             }}
             className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
           >
