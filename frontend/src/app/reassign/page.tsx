@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { notifyLeadAssigned } from '@/lib/notifications'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
+import { canManageLeads, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
 
 interface Counselor {
   id: string
@@ -19,6 +20,7 @@ interface Counselor {
   email: string
   open_lead_cap?: number
   active: boolean
+  languages?: string
 }
 
 interface Lead {
@@ -67,9 +69,9 @@ export default function LeadReassignmentPage() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [bulkTargetCounselorId, setBulkTargetCounselorId] = useState<string>('')
 
-  // Manager Access Guard
+  // Manager or Team Leader Access Guard
   useEffect(() => {
-    if (user && user.role !== 'manager') {
+    if (user && !canManageLeads(user)) {
       router.push('/')
     }
   }, [user, router])
@@ -80,18 +82,26 @@ export default function LeadReassignmentPage() {
       { data: leadsData },
       { data: stagesData },
     ] = await Promise.all([
-      supabase.from('users').select('id, name, email, role, active').eq('active', true).order('name', { ascending: true }),
-      supabase.from('leads').select('id, name, phone, email, country, course, programme_level, stage, owner_id, priority, created_at, metadata').neq('stage', 'Enrolled').order('created_at', { ascending: false }).limit(300),
+      supabase.from('users').select('id, name, email, role, languages, active').eq('active', true).order('name', { ascending: true }),
+      supabase.from('leads').select('id, name, phone, email, country, course, programme_level, stage, owner_id, priority, created_at, metadata').neq('stage', 'Enrolled').order('created_at', { ascending: false }).limit(500),
       supabase.from('stages').select('name').order('stage_order', { ascending: true }),
     ])
 
     const activeCounselors = (counselorsData || []).filter(c => c.role === 'counselor')
-    setCounselors(activeCounselors)
-    setLeads(leadsData || [])
+    const assignableCounselors = getAssignableCounselors(user, activeCounselors)
+    setCounselors(assignableCounselors)
+
+    // Filter leads to match team leader's scope (unassigned leads + their team members' leads)
+    const allowedOwners = getAllowedOwnerIds(user, activeCounselors)
+    const scopedLeads = allowedOwners
+      ? (leadsData || []).filter(l => allowedOwners.has(l.owner_id || null))
+      : (leadsData || [])
+
+    setLeads(scopedLeads)
     setStages((stagesData || []).map(s => s.name))
 
-    if (activeCounselors.length > 0 && !bulkTargetCounselorId) {
-      setBulkTargetCounselorId(activeCounselors[0].id)
+    if (assignableCounselors.length > 0 && !bulkTargetCounselorId) {
+      setBulkTargetCounselorId(assignableCounselors[0].id)
     }
 
     setLoading(false)
@@ -416,9 +426,16 @@ export default function LeadReassignmentPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 Live Realtime Sync
               </span>
+              {isTeamLeader(user) && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                  👑 Team Leader Workspace (Assigning to your team)
+                </span>
+              )}
             </div>
             <p className="text-gray-500 text-xs mt-1">
-              Drag student cards between counselor columns to instantly rebalance workloads and reassign leads.
+              {isTeamLeader(user)
+                ? 'Assign unassigned leads and balance workloads between counselors in your team.'
+                : 'Drag student cards between counselor columns to instantly rebalance workloads and reassign leads.'}
             </p>
           </div>
 

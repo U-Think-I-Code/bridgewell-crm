@@ -10,6 +10,7 @@ import CSVImportModal from '@/components/CSVImportModal'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { canManageLeads, isCounselor, isTeamLeader, parseUserTeamMeta } from '@/lib/teamHelper'
 
 function LeadsContent() {
   const router = useRouter()
@@ -113,8 +114,16 @@ function LeadsContent() {
       .order('created_at', { ascending: false })
       .limit(1000)
     
-    if (user?.role === 'counselor') {
+    if (isCounselor(user)) {
       query = query.eq('owner_id', user.id)
+    } else if (isTeamLeader(user)) {
+      const meta = parseUserTeamMeta(user.languages)
+      const allowed = Array.from(new Set([user.id, ...(meta.member_ids || [])]))
+      if (counselorParam) {
+        query = query.eq('owner_id', counselorParam)
+      } else {
+        query = query.or(`owner_id.in.(${allowed.join(',')}),owner_id.is.null`)
+      }
     } else if (counselorParam) {
       query = query.eq('owner_id', counselorParam)
     }
@@ -448,7 +457,7 @@ function LeadsContent() {
             </button>
           </div>
 
-          {user?.role === 'manager' && (
+          {canManageLeads(user) && (
             <Link
               href="/reassign"
               className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs"
@@ -459,7 +468,7 @@ function LeadsContent() {
             </Link>
           )}
           
-          {user?.role === 'manager' && (
+          {canManageLeads(user) && (
             <div className="flex gap-2">
               <button 
                 onClick={() => setShowImportModal(true)}

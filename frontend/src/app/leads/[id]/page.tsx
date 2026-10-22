@@ -10,6 +10,7 @@ import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
+import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
 
 function getLeadCampaignDetails(lead: any): { key: string, label: string, value: string, type: 'yes' | 'no' | 'campus' | 'program' | 'text' }[] {
   if (!lead) return []
@@ -159,7 +160,7 @@ export default function LeadProfile() {
     fetchLeadAndActivities()
     fetchTemplates()
     fetchStages()
-    if (currentUser?.role === 'manager') fetchCounselors()
+    if (canManageLeads(currentUser)) fetchCounselors()
 
     // Realtime listener for live timeline, stage, and counselor updates
     const channel = supabase
@@ -197,8 +198,10 @@ export default function LeadProfile() {
   }
 
   async function fetchCounselors() {
-    const { data } = await supabase.from('users').select('*').eq('role', 'counselor')
-    setCounselors(data || [])
+    const { data } = await supabase.from('users').select('id, name, email, role, languages, active').eq('active', true)
+    const activeCounselors = (data || []).filter((u: any) => u.role === 'counselor')
+    const assignable = getAssignableCounselors(currentUser, activeCounselors)
+    setCounselors(assignable)
   }
 
   async function fetchLeadAndActivities() {
@@ -206,7 +209,7 @@ export default function LeadProfile() {
     const { data: actsData } = await supabase.from('activities').select('*').eq('lead', id).order('time', { ascending: false })
     const { data: auditData } = await supabase.from('audit_logs').select('*').eq('lead_id', id).order('created_at', { ascending: false })
 
-    const { data: allUsers } = await supabase.from('users').select('id, name, role')
+    const { data: allUsers } = await supabase.from('users').select('id, name, role, languages')
     const uMap: Record<string, any> = {}
     allUsers?.forEach(u => { uMap[u.id] = u })
 
@@ -216,12 +219,24 @@ export default function LeadProfile() {
       user_role: a.user_id && uMap[a.user_id] ? uMap[a.user_id].role : 'system'
     }))
 
-    // Access Control: Counselors can only view their own assigned leads or unassigned leads
-    if (currentUser?.role === 'counselor' && leadData?.owner_id && leadData.owner_id !== currentUser.id) {
+    // Access Control:
+    // - Managers can view all leads.
+    // - Team Leaders can view leads belonging to their team, themselves, or unassigned.
+    // - Counselors can only view their own assigned leads or unassigned leads.
+    if (isCounselor(currentUser) && leadData?.owner_id && leadData.owner_id !== currentUser.id) {
       console.warn('[Security] Unauthorized lead access attempt blocked for counselor:', currentUser.id)
       setLead(null)
       setLoading(false)
       return
+    }
+    if (isTeamLeader(currentUser) && leadData?.owner_id) {
+      const allowedOwners = getAllowedOwnerIds(currentUser, allUsers || [])
+      if (allowedOwners && !allowedOwners.has(leadData.owner_id)) {
+        console.warn('[Security] Unauthorized lead access attempt blocked for team leader outside team:', currentUser.id)
+        setLead(null)
+        setLoading(false)
+        return
+      }
     }
 
     setLead(leadData)
@@ -1319,7 +1334,7 @@ export default function LeadProfile() {
               <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 leading-none">
                 Assigned Counselor
               </label>
-              {currentUser?.role === 'manager' ? (
+              {canManageLeads(currentUser) ? (
                 <select 
                   value={lead.owner_id || ''} 
                   onChange={(e) => assignLead(e.target.value, e.target.options[e.target.selectedIndex].text)}

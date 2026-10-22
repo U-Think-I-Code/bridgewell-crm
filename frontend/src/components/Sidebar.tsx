@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, LogOut, Search, UserCheck, BarChart3, Bell, Megaphone, ArrowLeftRight, AlarmClock, Clock, ClipboardList, GraduationCap } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useNotifications } from '@/components/NotificationContext'
+import { canManageLeads, isManager } from '@/lib/teamHelper'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -23,7 +24,7 @@ export default function Sidebar() {
     { name: 'Notifications', href: '/notifications', icon: Bell, badge: unreadCount },
     { name: 'Activity Log', href: '/activity', icon: Clock, managerOnly: true },
     { name: 'Audit Trail', href: '/audit', icon: ClipboardList, managerOnly: true },
-    { name: 'Reassignment', href: '/reassign', icon: ArrowLeftRight, managerOnly: true },
+    { name: 'Reassignment', href: '/reassign', icon: ArrowLeftRight, leaderOrManager: true },
     { name: 'Analytics', href: '/analytics', icon: BarChart3, managerOnly: true },
     { name: 'Team & Attendance', href: '/team', icon: UserCheck, managerOnly: true },
     { name: 'Settings', href: '/settings', icon: Settings, managerOnly: true },
@@ -76,7 +77,8 @@ export default function Sidebar() {
       
       <nav className="flex-1 px-3 space-y-1">
         {links.map((link) => {
-          if ((link as any).managerOnly && user?.role === 'counselor') return null
+          if ((link as any).managerOnly && !isManager(user)) return null
+          if ((link as any).leaderOrManager && !canManageLeads(user)) return null
           
           const Icon = link.icon
           const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href))

@@ -5,18 +5,29 @@ import {
   Users, UserPlus, KeyRound, Trash2, CheckCircle2, 
   XCircle, Shield, Mail, User, Lock, Copy, Check, X,
   PhoneCall, ShieldAlert, Sparkles, Trophy, ArrowLeftRight,
-  Clock, Calendar, Filter, Search, ArrowUpRight, Activity, AlertCircle
+  Clock, Calendar, Filter, Search, ArrowUpRight, Activity, AlertCircle,
+  Crown, CheckSquare, Square
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import LeaderboardSection from '@/components/LeaderboardSection'
+import {
+  parseUserTeamMeta,
+  serializeUserTeamMeta,
+  getUserDesignation,
+  isManager,
+  isTeamLeader,
+  isCounselor,
+  canManageLeads
+} from '@/lib/teamHelper'
 
 interface Employee {
   id: string
   name: string
   email: string
   role: string
+  languages?: string | null
   active: boolean
   auth_id: string | null
   leads_count?: number
@@ -87,11 +98,22 @@ export default function TeamPage() {
   const [addName, setAddName] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addPassword, setAddPassword] = useState('')
-  const [addRole, setAddRole] = useState('counselor')
+  const [addRole, setAddRole] = useState<'counselor' | 'team_leader' | 'manager'>('counselor')
+  const [addTeamLeaderId, setAddTeamLeaderId] = useState('')
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState('')
   const [createdSuccess, setCreatedSuccess] = useState<{ email: string; password: string; name: string } | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // Manage Team Modal State (for Team Leaders)
+  const [managingTeamLeader, setManagingTeamLeader] = useState<Employee | null>(null)
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
+  const [savingTeam, setSavingTeam] = useState(false)
+
+  // Role Change Modal State
+  const [roleModalEmployee, setRoleModalEmployee] = useState<Employee | null>(null)
+  const [newAssignedRole, setNewAssignedRole] = useState<'counselor' | 'team_leader' | 'manager'>('counselor')
+  const [savingRole, setSavingRole] = useState(false)
 
   // Reset Password Modal State
   const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -114,7 +136,7 @@ export default function TeamPage() {
   }, [])
 
   useEffect(() => {
-    if (user && user.role !== 'manager') {
+    if (user && !canManageLeads(user)) {
       router.push('/')
       return
     }
@@ -259,12 +281,14 @@ export default function TeamPage() {
       return
     }
 
+    const effectiveDbRole = addRole === 'manager' ? 'manager' : 'counselor'
+
     try {
       const { data, error } = await supabase.rpc('create_employee', {
         p_name: addName.trim(),
         p_email: addEmail.trim().toLowerCase(),
         p_password: addPassword,
-        p_role: addRole
+        p_role: effectiveDbRole
       })
 
       if (error) {
@@ -279,8 +303,42 @@ export default function TeamPage() {
         return
       }
 
+      const createdEmail = addEmail.trim().toLowerCase()
+
+      // Fetch created user to set team metadata in languages column
+      const { data: createdUser } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('email', createdEmail)
+        .maybeSingle()
+
+      if (createdUser) {
+        if (addRole === 'team_leader') {
+          await supabase.from('users').update({
+            languages: serializeUserTeamMeta({ designation: 'team_leader', member_ids: [] })
+          }).eq('id', createdUser.id)
+        } else if (addRole === 'counselor' && addTeamLeaderId) {
+          const tl = employees.find(e => e.id === addTeamLeaderId)
+          await supabase.from('users').update({
+            languages: serializeUserTeamMeta({
+              designation: 'counselor',
+              team_leader_id: addTeamLeaderId,
+              team_leader_name: tl?.name || ''
+            })
+          }).eq('id', createdUser.id)
+
+          if (tl) {
+            const tlMeta = parseUserTeamMeta(tl.languages)
+            const currentMembers = Array.from(new Set([...(tlMeta.member_ids || []), createdUser.id]))
+            tlMeta.designation = 'team_leader'
+            tlMeta.member_ids = currentMembers
+            await supabase.from('users').update({ languages: serializeUserTeamMeta(tlMeta) }).eq('id', tl.id)
+          }
+        }
+      }
+
       setCreatedSuccess({
-        email: addEmail.trim().toLowerCase(),
+        email: createdEmail,
         password: addPassword,
         name: addName.trim()
       })
@@ -289,11 +347,112 @@ export default function TeamPage() {
       setAddEmail('')
       setAddPassword('')
       setAddRole('counselor')
+      setAddTeamLeaderId('')
       await fetchEmployees()
     } catch (err: any) {
       setAddError(err.message || 'Unexpected error occurred')
     } finally {
       setAddLoading(false)
+    }
+  }
+
+  const handleOpenManageTeam = (tl: Employee) => {
+    setManagingTeamLeader(tl)
+    const tlMeta = parseUserTeamMeta(tl.languages)
+    const memberSet = new Set(tlMeta.member_ids || [])
+    employees.forEach(e => {
+      if (isCounselor(e)) {
+        const cMeta = parseUserTeamMeta(e.languages)
+        if (cMeta.team_leader_id === tl.id) {
+          memberSet.add(e.id)
+        }
+      }
+    })
+    setSelectedMemberIds(Array.from(memberSet))
+  }
+
+  const handleSaveTeamMembers = async () => {
+    if (!managingTeamLeader) return
+    setSavingTeam(true)
+    try {
+      // 1. Update Team Leader
+      const tlMeta = parseUserTeamMeta(managingTeamLeader.languages)
+      tlMeta.designation = 'team_leader'
+      tlMeta.member_ids = selectedMemberIds
+      await supabase.from('users').update({ languages: serializeUserTeamMeta(tlMeta) }).eq('id', managingTeamLeader.id)
+
+      // 2. Update selected counselors
+      for (const memberId of selectedMemberIds) {
+        const emp = employees.find(e => e.id === memberId)
+        const cMeta = parseUserTeamMeta(emp?.languages)
+        cMeta.designation = 'counselor'
+        cMeta.team_leader_id = managingTeamLeader.id
+        cMeta.team_leader_name = managingTeamLeader.name
+        await supabase.from('users').update({ languages: serializeUserTeamMeta(cMeta) }).eq('id', memberId)
+      }
+
+      // 3. Clear unselected counselors who previously pointed to this TL
+      const unselected = employees.filter(e => isCounselor(e) && !selectedMemberIds.includes(e.id))
+      for (const u of unselected) {
+        const cMeta = parseUserTeamMeta(u.languages)
+        if (cMeta.team_leader_id === managingTeamLeader.id) {
+          cMeta.team_leader_id = null
+          cMeta.team_leader_name = null
+          await supabase.from('users').update({ languages: serializeUserTeamMeta(cMeta) }).eq('id', u.id)
+        }
+      }
+
+      await fetchEmployees()
+      setManagingTeamLeader(null)
+    } catch (err: any) {
+      alert('Error updating team: ' + err.message)
+    } finally {
+      setSavingTeam(false)
+    }
+  }
+
+  const handleOpenRoleModal = (employee: Employee) => {
+    setRoleModalEmployee(employee)
+    setNewAssignedRole(getUserDesignation(employee))
+  }
+
+  const handleSaveRole = async () => {
+    if (!roleModalEmployee) return
+    setSavingRole(true)
+    try {
+      if (newAssignedRole === 'manager') {
+        await supabase.from('users').update({
+          role: 'manager',
+          languages: serializeUserTeamMeta({ designation: 'manager' })
+        }).eq('id', roleModalEmployee.id)
+      } else if (newAssignedRole === 'team_leader') {
+        const currentMeta = parseUserTeamMeta(roleModalEmployee.languages)
+        currentMeta.designation = 'team_leader'
+        currentMeta.member_ids = currentMeta.member_ids || []
+        currentMeta.team_leader_id = null
+        currentMeta.team_leader_name = null
+        await supabase.from('users').update({
+          role: 'counselor',
+          languages: serializeUserTeamMeta(currentMeta)
+        }).eq('id', roleModalEmployee.id)
+      } else {
+        const currentMeta = parseUserTeamMeta(roleModalEmployee.languages)
+        currentMeta.designation = 'counselor'
+        currentMeta.member_ids = []
+        currentMeta.team_leader_id = null
+        currentMeta.team_leader_name = null
+        await supabase.from('users').update({
+          role: 'counselor',
+          languages: serializeUserTeamMeta(currentMeta)
+        }).eq('id', roleModalEmployee.id)
+      }
+
+      await fetchEmployees()
+      setRoleModalEmployee(null)
+    } catch (err: any) {
+      alert('Failed to update role: ' + err.message)
+    } finally {
+      setSavingRole(false)
     }
   }
 
@@ -409,10 +568,11 @@ export default function TeamPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const totalCounselorsCount = employees.filter(e => e.role !== 'manager').length
-  const activeCounselorsCount = employees.filter(e => e.role === 'counselor' && e.active).length
-  const managersCount = employees.filter(e => e.role === 'manager').length
-  const onlineCounselorsCount = employees.filter(e => e.role !== 'manager' && e.effective_status === 'online').length
+  const teamLeadersCount = employees.filter(e => isTeamLeader(e)).length
+  const totalCounselorsCount = employees.filter(e => isCounselor(e)).length
+  const activeCounselorsCount = employees.filter(e => isCounselor(e) && e.active).length
+  const managersCount = employees.filter(e => isManager(e)).length
+  const onlineCounselorsCount = employees.filter(e => isCounselor(e) && e.effective_status === 'online').length
   
   const counselorIdsLoggedInToday = useMemo(() => {
     const ids = new Set<string>()
@@ -820,7 +980,7 @@ export default function TeamPage() {
         {teamTab === 'members' && (
           <>
           {/* Stats Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -830,7 +990,20 @@ export default function TeamPage() {
               </div>
               <p className="text-3xl font-bold text-gray-900">{employees.length}</p>
               <p className="text-xs text-gray-500 mt-1">
-                {totalCounselorsCount} counselors • {managersCount} managers
+                {totalCounselorsCount} counselors • {teamLeadersCount} TLs • {managersCount} mgrs
+              </p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <Crown size={15} className="text-amber-500" />
+                </div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Team Leaders</h3>
+              </div>
+              <p className="text-3xl font-bold text-amber-700">{teamLeadersCount}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {employees.filter(e => isTeamLeader(e) && e.effective_status === 'online').length} online right now
               </p>
             </div>
 
@@ -861,7 +1034,7 @@ export default function TeamPage() {
               </div>
               <p className="text-3xl font-bold text-gray-900">{managersCount}</p>
               <p className="text-xs text-gray-500 mt-1">
-                {employees.filter(e => e.role === 'manager' && e.effective_status === 'online').length} online right now
+                {employees.filter(e => isManager(e) && e.effective_status === 'online').length} online right now
               </p>
             </div>
           </div>
@@ -888,6 +1061,11 @@ export default function TeamPage() {
             <div className="divide-y divide-gray-100">
               {employees.map((emp) => {
                 const isPrimaryAdmin = emp.email === 'admin@bridgewell.com'
+                const designation = getUserDesignation(emp)
+                const isTL = designation === 'team_leader'
+                const isMgr = designation === 'manager'
+                const teamMeta = parseUserTeamMeta(emp.languages)
+
                 return (
                   <div
                     key={emp.id}
@@ -896,8 +1074,10 @@ export default function TeamPage() {
                     <div className="flex items-center gap-4">
                       {/* Avatar */}
                       <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-semibold text-sm ${
-                        emp.role === 'manager' 
+                        isMgr
                           ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                          : isTL
+                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
                           : 'bg-blue-100 text-blue-700 border border-blue-200'
                       }`}>
                         {emp.name.slice(0, 2).toUpperCase()}
@@ -906,18 +1086,32 @@ export default function TeamPage() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm font-semibold text-gray-900">{emp.name}</h3>
-                          {isPrimaryAdmin && (
+                          {isPrimaryAdmin ? (
                             <span className="text-[10px] uppercase font-bold tracking-wider bg-gray-900 text-white px-2 py-0.5 rounded">
                               Super Admin
                             </span>
+                          ) : isMgr ? (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                              Manager
+                            </span>
+                          ) : isTL ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                              <Crown size={12} className="text-amber-600" />
+                              <span>Team Leader ({teamMeta.member_ids?.length || 0} members)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                              Counselor
+                            </span>
                           )}
-                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                            emp.role === 'manager'
-                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                              : 'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}>
-                            {emp.role === 'manager' ? 'Manager' : 'Counselor'}
-                          </span>
+
+                          {designation === 'counselor' && teamMeta.team_leader_name && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded bg-amber-50/70 text-amber-800 border border-amber-200/60">
+                              <Crown size={10} className="text-amber-600" />
+                              <span>Team: {teamMeta.team_leader_name}</span>
+                            </span>
+                          )}
+
                           {!emp.active && (
                             <span className="text-[11px] font-medium bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-200">
                               Inactive
@@ -970,6 +1164,30 @@ export default function TeamPage() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+                      {/* Manage Team Button (For Team Leaders) */}
+                      {isTL && (
+                        <button
+                          onClick={() => handleOpenManageTeam(emp)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-900 hover:bg-amber-100 transition-colors shadow-2xs"
+                          title="Assign or remove counselors from this Team Leader's team"
+                        >
+                          <Crown size={13} className="text-amber-600" />
+                          <span>Manage Team ({teamMeta.member_ids?.length || 0})</span>
+                        </button>
+                      )}
+
+                      {/* Change Role Button (For Managers to edit roles) */}
+                      {!isPrimaryAdmin && isManager(user) && (
+                        <button
+                          onClick={() => handleOpenRoleModal(emp)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+                          title="Change Employee Role (Manager, Team Leader, Counselor)"
+                        >
+                          <Shield size={13} className="text-gray-500" />
+                          <span>Change Role</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           setSelectedCounselorFilter(emp.id)
@@ -1149,13 +1367,32 @@ export default function TeamPage() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Role *</label>
                   <select
                     value={addRole}
-                    onChange={e => setAddRole(e.target.value)}
+                    onChange={e => setAddRole(e.target.value as any)}
                     className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-4 focus:ring-gray-100 focus:border-gray-400 transition-all text-gray-900"
                   >
                     <option value="counselor">Counselor (Views & manages assigned leads)</option>
+                    <option value="team_leader">👑 Team Leader (Assigns leads to team members)</option>
                     <option value="manager">Manager / Admin (Full access to all leads, team, & settings)</option>
                   </select>
                 </div>
+
+                {addRole === 'counselor' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Assign to Team Leader (Optional)
+                    </label>
+                    <select
+                      value={addTeamLeaderId}
+                      onChange={e => setAddTeamLeaderId(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-4 focus:ring-gray-100 focus:border-gray-400 transition-all text-gray-900"
+                    >
+                      <option value="">No Team Leader (Direct to Manager)</option>
+                      {employees.filter(e => isTeamLeader(e) && e.active).map(tl => (
+                        <option key={tl.id} value={tl.id}>👑 {tl.name} ({tl.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="pt-3 flex justify-end gap-2 border-t border-gray-100 mt-4">
                   <button
@@ -1257,6 +1494,250 @@ export default function TeamPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Manage Team Members Modal (For Team Leaders) */}
+      {managingTeamLeader && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-amber-50/50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Crown size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Manage Team Members</h3>
+                  <p className="text-xs text-amber-800">
+                    Team Leader: <strong>{managingTeamLeader.name}</strong> ({managingTeamLeader.email})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setManagingTeamLeader(null)}
+                className="text-gray-400 hover:text-gray-900 transition-colors p-1 hover:bg-gray-100 rounded-md"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto space-y-4">
+              <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3 text-xs text-blue-900">
+                <p className="font-semibold mb-1">👑 Team Leader Permissions:</p>
+                <p>
+                  {managingTeamLeader.name} will ONLY be allowed to assign and reassign leads to counselors checked below (and to themselves).
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs font-semibold text-gray-700">
+                  Select Counselors ({selectedMemberIds.length} assigned)
+                </span>
+                <div className="flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allCounselorIds = employees.filter(e => isCounselor(e)).map(e => e.id)
+                      setSelectedMemberIds(allCounselorIds)
+                    }}
+                    className="text-indigo-600 hover:underline font-medium"
+                  >
+                    Select All
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMemberIds([])}
+                    className="text-gray-500 hover:underline"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-64 overflow-y-auto bg-gray-50/40">
+                {employees.filter(e => isCounselor(e)).length === 0 ? (
+                  <div className="p-4 text-center text-xs text-gray-500">
+                    No counselors found. Add counselors first.
+                  </div>
+                ) : (
+                  employees.filter(e => isCounselor(e)).map(c => {
+                    const isChecked = selectedMemberIds.includes(c.id)
+                    const cMeta = parseUserTeamMeta(c.languages)
+                    const isUnderOtherTL = cMeta.team_leader_id && cMeta.team_leader_id !== managingTeamLeader.id
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedMemberIds(prev => 
+                            isChecked ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                          )
+                        }}
+                        className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${
+                          isChecked ? 'bg-amber-50/60' : 'hover:bg-gray-100/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="text-amber-600">
+                            {isChecked ? <CheckSquare size={18} /> : <Square size={18} className="text-gray-400" />}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">{c.name}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                              <span>{c.email}</span>
+                              <span>•</span>
+                              <span>{c.leads_count || 0} leads</span>
+                              {isUnderOtherTL && (
+                                <span className="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.2 rounded font-medium">
+                                  Currently in {cMeta.team_leader_name}&apos;s team
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                          c.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {c.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50/50 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setManagingTeamLeader(null)}
+                className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingTeam}
+                onClick={handleSaveTeamMembers}
+                className="px-5 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {savingTeam && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <span>{savingTeam ? 'Saving Team...' : 'Save Team Members'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Role Modal */}
+      {roleModalEmployee && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-2">
+                <Shield size={18} className="text-gray-900" />
+                <h3 className="text-base font-semibold text-gray-900">Change Role</h3>
+              </div>
+              <button
+                onClick={() => setRoleModalEmployee(null)}
+                className="text-gray-400 hover:text-gray-900 transition-colors p-1 hover:bg-gray-100 rounded-md"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-xs text-gray-500">
+                  Select a new role for <strong>{roleModalEmployee.name}</strong> ({roleModalEmployee.email}).
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  onClick={() => setNewAssignedRole('counselor')}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                    newAssignedRole === 'counselor' ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="roleChoice"
+                    checked={newAssignedRole === 'counselor'}
+                    onChange={() => setNewAssignedRole('counselor')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Counselor</div>
+                    <div className="text-xs text-gray-500">Can view and work on assigned leads. Cannot reassign leads.</div>
+                  </div>
+                </label>
+
+                <label
+                  onClick={() => setNewAssignedRole('team_leader')}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                    newAssignedRole === 'team_leader' ? 'border-amber-500 bg-amber-50/50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="roleChoice"
+                    checked={newAssignedRole === 'team_leader'}
+                    onChange={() => setNewAssignedRole('team_leader')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                      <Crown size={14} className="text-amber-600" />
+                      <span>Team Leader</span>
+                    </div>
+                    <div className="text-xs text-gray-500">Can assign and reassign leads ONLY to counselors within their team.</div>
+                  </div>
+                </label>
+
+                <label
+                  onClick={() => setNewAssignedRole('manager')}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                    newAssignedRole === 'manager' ? 'border-purple-500 bg-purple-50/50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="roleChoice"
+                    checked={newAssignedRole === 'manager'}
+                    onChange={() => setNewAssignedRole('manager')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                      <Shield size={14} className="text-purple-600" />
+                      <span>Manager / Admin</span>
+                    </div>
+                    <div className="text-xs text-gray-500">Full administrative access across all staff, leads, and settings.</div>
+                  </div>
+                </label>
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setRoleModalEmployee(null)}
+                  className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={savingRole}
+                  onClick={handleSaveRole}
+                  className="px-5 py-2 text-xs font-medium text-white bg-black hover:bg-gray-800 rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {savingRole && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{savingRole ? 'Saving...' : 'Save Role'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
