@@ -9,11 +9,12 @@ import {
   AlertCircle, GripVertical, Search, Filter, Sparkles, RefreshCw,
   ExternalLink, ArrowRight, ShieldAlert, CheckSquare, Square,
   Layers, ChevronDown, Check, ArrowDownUp, Globe, GraduationCap,
-  Crown, Zap
+  Crown, Zap, Calendar
 } from 'lucide-react'
 import { notifyLeadAssigned } from '@/lib/notifications'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { canManageLeads, isManager, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
+import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 
 interface Counselor {
   id: string
@@ -58,6 +59,14 @@ export default function LeadReassignmentPage() {
   const [selectedPriority, setSelectedPriority] = useState<string>('all')
   const [selectedCountry, setSelectedCountry] = useState<string>(initialCountry)
   const [selectedProgramme, setSelectedProgramme] = useState<string>('all')
+
+  // Service Track Filter: 'all' | 'study_abroad' | 'visa_process'
+  const [serviceTrack, setServiceTrack] = useState<ServiceTrack>('all')
+
+  // Date Filter State: 'ALL' | 'today' | 'yesterday' | 'last7' | 'last30' | 'this_month' | 'custom'
+  const [selectedDatePreset, setSelectedDatePreset] = useState<string>('ALL')
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
 
   // Drag and Drop State
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null)
@@ -134,9 +143,68 @@ export default function LeadReassignmentPage() {
     setTimeout(() => setRefreshing(false), 500)
   }
 
+  const studyAbroadCount = useMemo(() => leads.filter(l => getLeadServiceType(l) === 'study_abroad').length, [leads])
+  const visaProcessCount = useMemo(() => leads.filter(l => getLeadServiceType(l) === 'visa_process').length, [leads])
+
+  // Helper to test if a lead created_at falls inside selected date filter
+  const matchesDateFilter = (createdAtStr: string | null | undefined): boolean => {
+    if (selectedDatePreset === 'ALL') return true
+    if (!createdAtStr) return false
+
+    const leadDate = new Date(createdAtStr)
+    if (isNaN(leadDate.getTime())) return false
+
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    if (selectedDatePreset === 'today') {
+      return leadDate >= startOfToday && leadDate <= endOfToday
+    }
+    if (selectedDatePreset === 'yesterday') {
+      const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000)
+      const endOfYesterday = new Date(endOfToday.getTime() - 24 * 60 * 60 * 1000)
+      return leadDate >= startOfYesterday && leadDate <= endOfYesterday
+    }
+    if (selectedDatePreset === 'last7') {
+      const startOf7DaysAgo = new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return leadDate >= startOf7DaysAgo && leadDate <= endOfToday
+    }
+    if (selectedDatePreset === 'last30') {
+      const startOf30DaysAgo = new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000)
+      return leadDate >= startOf30DaysAgo && leadDate <= endOfToday
+    }
+    if (selectedDatePreset === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+      return leadDate >= startOfMonth && leadDate <= endOfToday
+    }
+    if (selectedDatePreset === 'custom') {
+      if (customStartDate) {
+        const s = new Date(customStartDate)
+        s.setHours(0, 0, 0, 0)
+        if (leadDate < s) return false
+      }
+      if (customEndDate) {
+        const e = new Date(customEndDate)
+        e.setHours(23, 59, 59, 999)
+        if (leadDate > e) return false
+      }
+      return true
+    }
+    return true
+  }
+
   // ── Filtered Leads ──
   const filteredLeads = useMemo(() => {
     return leads.filter(l => {
+      // Service Track Filter (Study Abroad vs Visa Process)
+      if (serviceTrack !== 'all') {
+        const sType = getLeadServiceType(l)
+        if (sType !== serviceTrack) return false
+      }
+      // Date Filter
+      if (!matchesDateFilter(l.created_at)) return false
+
       if (selectedStage !== 'all' && l.stage !== selectedStage) return false
       if (selectedPriority !== 'all' && l.priority !== selectedPriority) return false
       if (selectedCountry !== 'all') {
@@ -155,7 +223,7 @@ export default function LeadReassignmentPage() {
       }
       return true
     })
-  }, [leads, selectedStage, selectedPriority, selectedCountry, selectedProgramme, searchQuery])
+  }, [leads, serviceTrack, selectedDatePreset, customStartDate, customEndDate, selectedStage, selectedPriority, selectedCountry, selectedProgramme, searchQuery])
 
   // ── Group leads by counselor ID (or 'unassigned') ──
   const leadsByCounselor = useMemo(() => {
@@ -613,8 +681,62 @@ export default function LeadReassignmentPage() {
           </div>
         </div>
 
+        {/* ──────── Service Stream Switcher: Study Abroad vs Visa Process ──────── */}
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100 flex-wrap">
+          <div className="flex items-center gap-1 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 p-1 rounded-xl shadow-2xs">
+            <button
+              onClick={() => setServiceTrack('all')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                serviceTrack === 'all'
+                  ? 'bg-white text-gray-900 shadow-xs ring-1 ring-black/5 font-bold'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              }`}
+              title="View all leads regardless of service track"
+            >
+              <span>🌐 All Services</span>
+              <span className="text-[10px] text-gray-400">({leads.length})</span>
+            </button>
+
+            <button
+              onClick={() => setServiceTrack('study_abroad')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                serviceTrack === 'study_abroad'
+                  ? 'bg-blue-600 text-white shadow-xs font-bold'
+                  : 'text-blue-700 hover:bg-white/80'
+              }`}
+              title="Show University Admissions & Course Shortlisting Leads"
+            >
+              <GraduationCap size={13} className={serviceTrack === 'study_abroad' ? 'text-white' : 'text-blue-600'} />
+              <span>🎓 Study Abroad</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                serviceTrack === 'study_abroad' ? 'bg-white text-blue-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {studyAbroadCount}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setServiceTrack('visa_process')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                serviceTrack === 'visa_process'
+                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                  : 'text-indigo-700 hover:bg-white/80'
+              }`}
+              title="Show F-1 Visa Processing & SEVIS Leads"
+            >
+              <Globe size={13} className={serviceTrack === 'visa_process' ? 'text-white' : 'text-indigo-600'} />
+              <span>🛂 Visa Process</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                serviceTrack === 'visa_process' ? 'bg-white text-indigo-800' : 'bg-indigo-100 text-indigo-800'
+              }`}>
+                {visaProcessCount}
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* ──────── Filter Row ──────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-100 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             {/* Stage filter */}
             <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1.5 rounded-xl border border-gray-200 text-xs">
@@ -671,6 +793,42 @@ export default function LeadReassignmentPage() {
               </select>
             </div>
 
+            {/* Date Filter */}
+            <div className="flex items-center gap-1.5 bg-emerald-50/60 px-2.5 py-1.5 rounded-xl border border-emerald-200 text-xs">
+              <Calendar size={12} className="text-emerald-600" />
+              <select
+                value={selectedDatePreset}
+                onChange={e => setSelectedDatePreset(e.target.value)}
+                className="bg-transparent font-semibold text-emerald-900 outline-none cursor-pointer"
+              >
+                <option value="ALL">📅 All Dates</option>
+                <option value="today">⚡ Today</option>
+                <option value="yesterday">⏪ Yesterday</option>
+                <option value="last7">🗓️ Last 7 Days</option>
+                <option value="last30">📅 Last 30 Days</option>
+                <option value="this_month">📆 This Month</option>
+                <option value="custom">✏️ Custom Range...</option>
+              </select>
+
+              {selectedDatePreset === 'custom' && (
+                <div className="flex items-center gap-1 bg-white border border-emerald-300 rounded-lg p-0.5 shadow-2xs">
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={e => setCustomStartDate(e.target.value)}
+                    className="text-[11px] font-medium text-gray-700 outline-none px-1 py-0.5 bg-gray-50 border border-gray-200 rounded"
+                  />
+                  <span className="text-[10px] text-gray-400 font-bold px-0.5">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={e => setCustomEndDate(e.target.value)}
+                    className="text-[11px] font-medium text-gray-700 outline-none px-1 py-0.5 bg-gray-50 border border-gray-200 rounded"
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Priority filter */}
             <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-xl border border-gray-200 text-xs">
               {(
@@ -695,13 +853,17 @@ export default function LeadReassignmentPage() {
               ))}
             </div>
 
-            {(selectedStage !== 'all' || selectedCountry !== 'all' || selectedProgramme !== 'all' || selectedPriority !== 'all' || searchQuery) && (
+            {(selectedStage !== 'all' || selectedCountry !== 'all' || selectedProgramme !== 'all' || selectedPriority !== 'all' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || searchQuery) && (
               <button
                 onClick={() => {
                   setSelectedStage('all')
                   setSelectedCountry('all')
                   setSelectedProgramme('all')
                   setSelectedPriority('all')
+                  setSelectedDatePreset('ALL')
+                  setCustomStartDate('')
+                  setCustomEndDate('')
+                  setServiceTrack('all')
                   setSearchQuery('')
                 }}
                 className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer ml-1"
@@ -1042,6 +1204,11 @@ export default function LeadReassignmentPage() {
   function renderLeadCard(lead: Lead, currentColumnId: string) {
     const isSelected = selectedLeadIds.includes(lead.id)
     const isBeingDragged = draggedLeadId === lead.id
+    const sType = getLeadServiceType(lead)
+    const sInfo = getServiceBadgeInfo(sType)
+    const formattedDate = lead.created_at
+      ? new Date(lead.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      : null
 
     return (
       <div
@@ -1103,8 +1270,12 @@ export default function LeadReassignmentPage() {
           )}
         </div>
 
-        {/* Country Badge & Source */}
+        {/* Service Badge & Country Badge & Source */}
         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${sInfo.badgeClass}`}>
+            <span>{sInfo.icon}</span>
+            <span>{sInfo.label}</span>
+          </span>
           {lead.country && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
               {formatCountryBadge(lead.country)}
@@ -1128,11 +1299,19 @@ export default function LeadReassignmentPage() {
           </p>
         )}
 
-        {/* Footer: Stage + Action Link */}
+        {/* Footer: Stage + Date + Action Link */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px]">
-          <span className="font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-            {lead.stage}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+              {lead.stage}
+            </span>
+            {formattedDate && (
+              <span className="text-[10px] text-gray-400 font-medium flex items-center gap-0.5">
+                <Calendar size={10} />
+                {formattedDate}
+              </span>
+            )}
+          </div>
 
           <Link
             href={`/leads/${lead.id}`}

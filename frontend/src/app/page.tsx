@@ -1,24 +1,62 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Activity, TrendingUp, Users, Clock, ArrowRight, Flame } from 'lucide-react'
+import { Activity, TrendingUp, Users, Clock, ArrowRight, Flame, Crown } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
 import LeaderboardSection from '@/components/LeaderboardSection'
+import TeamLeaderDashboardSection from '@/components/TeamLeaderDashboardSection'
+import { isTeamLeader, isManager, parseUserTeamMeta } from '@/lib/teamHelper'
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ total: 0, newToday: 0, enrolled: 0, overdue: 0, hot: 0 })
   const [recentLeads, setRecentLeads] = useState<any[]>([])
+  const [teamLeaders, setTeamLeaders] = useState<any[]>([])
+  const [selectedTLId, setSelectedTLId] = useState<string>('')
   const { user } = useAuth()
+
+  const userIsTL = isTeamLeader(user)
+  const userIsManager = isManager(user)
 
   useEffect(() => {
     async function loadDashboard() {
-      const isCounselor = user?.role === 'counselor'
-      const matchOpts = isCounselor ? { owner_id: user.id } : {}
+      if (!user) return
+
+      let allowedOwnerIds: string[] | null = null
+
+      if (userIsManager) {
+        allowedOwnerIds = null
+      } else if (userIsTL) {
+        const meta = parseUserTeamMeta(user?.languages)
+        // Fetch all counselors to find those with team_leader_id = user.id as well
+        const { data: allUsers } = await supabase.from('users').select('id, languages')
+        const memberSet = new Set<string>(meta.member_ids || [])
+        ;(allUsers || []).forEach(u => {
+          const uMeta = parseUserTeamMeta(u.languages)
+          if (uMeta.team_leader_id === user.id) {
+            memberSet.add(u.id)
+          }
+        })
+        memberSet.add(user.id)
+        allowedOwnerIds = Array.from(memberSet)
+      } else {
+        allowedOwnerIds = [user.id]
+      }
 
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const nowISO = new Date().toISOString()
+
+      function applyScope(query: any) {
+        if (allowedOwnerIds !== null) {
+          if (allowedOwnerIds.length > 0) {
+            return query.in('owner_id', allowedOwnerIds)
+          } else {
+            return query.in('owner_id', ['00000000-0000-0000-0000-000000000000'])
+          }
+        }
+        return query
+      }
 
       // Execute all 5 count queries + recent leads in parallel
       const [
@@ -29,18 +67,24 @@ export default function Dashboard() {
         { count: hot },
         { data: recentData }
       ] = await Promise.all([
-        supabase.from('leads').select('id', { count: 'exact', head: true }).match(matchOpts),
-        supabase.from('leads').select('id', { count: 'exact', head: true }).match(matchOpts).gte('created_at', today.toISOString()),
-        supabase.from('leads').select('id', { count: 'exact', head: true }).match(matchOpts).eq('stage', 'Enrolled'),
-        supabase.from('leads').select('id', { count: 'exact', head: true }).match(matchOpts).lt('next_follow_up', nowISO),
-        supabase.from('leads').select('id', { count: 'exact', head: true }).match(matchOpts).eq('priority', 'Hot'),
+        applyScope(supabase.from('leads').select('id', { count: 'exact', head: true })),
+        applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', today.toISOString())),
+        applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).eq('stage', 'Enrolled')),
+        applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).lt('next_follow_up', nowISO)),
+        applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).eq('priority', 'Hot')),
         (() => {
           let q = supabase
             .from('leads')
             .select('id, name, phone, email, stage, priority, country, course, created_at')
             .order('created_at', { ascending: false })
             .limit(5)
-          if (isCounselor) q = q.eq('owner_id', user.id)
+          if (allowedOwnerIds !== null) {
+            if (allowedOwnerIds.length > 0) {
+              q = q.in('owner_id', allowedOwnerIds)
+            } else {
+              q = q.in('owner_id', ['00000000-0000-0000-0000-000000000000'])
+            }
+          }
           return q
         })(),
       ])
@@ -54,6 +98,16 @@ export default function Dashboard() {
       })
 
       setRecentLeads(recentData || [])
+
+      // If Manager, fetch list of Team Leaders for inspection view
+      if (userIsManager) {
+        const { data: allUsers } = await supabase.from('users').select('*')
+        const tls = (allUsers || []).filter(u => isTeamLeader(u))
+        setTeamLeaders(tls)
+        if (tls.length > 0 && !selectedTLId) {
+          setSelectedTLId(tls[0].id)
+        }
+      }
     }
     
     if (user) {
@@ -150,6 +204,48 @@ export default function Dashboard() {
           <p className="text-3xl font-bold text-gray-900">{stats.overdue}</p>
         </Link>
       </div>
+
+      {/* Team Leader Dedicated Roster Section (when user is a Team Leader) */}
+      {userIsTL && (
+        <TeamLeaderDashboardSection currentUser={user} />
+      )}
+
+      {/* Manager View: Team Leaders Inspector Dropdown & Section */}
+      {userIsManager && teamLeaders.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between gap-3 mb-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                <Crown size={16} />
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wide">Team Leaders & Roster View</h2>
+                <p className="text-[11px] text-gray-500">
+                  Inspect counselor roster, attendance, and calling pipelines by Team Leader
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">Viewing Team:</span>
+              <select
+                value={selectedTLId || (teamLeaders[0]?.id || '')}
+                onChange={e => setSelectedTLId(e.target.value)}
+                className="text-xs font-bold text-gray-900 bg-gray-50 border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
+              >
+                {teamLeaders.map(tl => (
+                  <option key={tl.id} value={tl.id}>
+                    👑 {tl.name} ({parseUserTeamMeta(tl.languages).team_name || 'Calling Team'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <TeamLeaderDashboardSection
+            currentUser={teamLeaders.find(tl => tl.id === selectedTLId) || teamLeaders[0]}
+          />
+        </div>
+      )}
 
       {/* Live Calling Leaderboard & Counselor Performance */}
       <div className="mb-6">
