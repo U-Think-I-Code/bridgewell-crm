@@ -121,14 +121,38 @@ export function startUserActivityTracking(
           device_info: userAgent,
           is_active: true
         }])
+      }
 
-        // Record a precise login activity in activities
-        await supabase.from('activities').insert([{
-          user_id: userId,
-          type: 'login',
-          text: `${userName || 'Staff'} logged in at ${formattedTime} (${formattedDate})`,
-          time: nowIso
-        }])
+      // Check / record daily clock-in login activity for today
+      const localTodayStr = new Date().toLocaleDateString('en-CA')
+      const dailyClockInKey = `bw_clockin_${userId}_${localTodayStr}`
+      const hasClockedInToday = sessionStorage.getItem(dailyClockInKey)
+
+      if (!hasClockedInToday) {
+        // Query to check if a login was already logged today in activities
+        const startOfDay = new Date()
+        startOfDay.setHours(0, 0, 0, 0)
+
+        const { data: todayLoginAct } = await supabase
+          .from('activities')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'login')
+          .gte('time', startOfDay.toISOString())
+          .limit(1)
+
+        if (!todayLoginAct || todayLoginAct.length === 0) {
+          await supabase.from('activities').insert([{
+            user_id: userId,
+            type: 'login',
+            text: `${userName || 'Staff'} logged in at ${formattedTime} (${formattedDate})`,
+            time: nowIso
+          }])
+          await supabase.from('users').update({
+            last_login_at: nowIso
+          }).eq('id', userId)
+        }
+        sessionStorage.setItem(dailyClockInKey, 'true')
       }
 
       // Daily login alert key in sessionStorage
@@ -192,6 +216,14 @@ export function startUserActivityTracking(
     try {
       const pingTime = new Date().toISOString()
       const newStatus = isUserIdle ? 'idle' : 'online'
+
+      // Check if day rolled over while tab was open
+      const currentDay = new Date().toLocaleDateString('en-CA')
+      const dailyKey = `bw_clockin_${userId}_${currentDay}`
+      if (!sessionStorage.getItem(dailyKey)) {
+        // Automatically clock in for the new day
+        recordSession()
+      }
 
       await supabase.from('users').update({
         last_active_at: pingTime,

@@ -38,6 +38,37 @@ interface LoginLogItem {
   user_role?: string
 }
 
+function isSameDayAsToday(isoString?: string | null): boolean {
+  if (!isoString) return false
+  try {
+    const d = new Date(isoString)
+    const today = new Date()
+    return (
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+    )
+  } catch {
+    return false
+  }
+}
+
+function isSameDayAsYesterday(isoString?: string | null): boolean {
+  if (!isoString) return false
+  try {
+    const d = new Date(isoString)
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    return (
+      d.getFullYear() === yesterday.getFullYear() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getDate() === yesterday.getDate()
+    )
+  } catch {
+    return false
+  }
+}
+
 export default function TeamPage() {
   const { user } = useAuth()
   const router = useRouter()
@@ -150,16 +181,31 @@ export default function TeamPage() {
         userMap[u.id] = u
       })
 
-      const todayStr = new Date().toISOString().split('T')[0]
-
       // Enrich employees with today's login time & presence
       const enriched = (usersData || []).map((u: any) => {
-        // Find today's logins for this user
+        let effectiveStatus: 'online' | 'idle' | 'offline' = u.status || 'offline'
+        if (u.last_active_at) {
+          const diffMins = (Date.now() - new Date(u.last_active_at).getTime()) / (1000 * 60)
+          if (diffMins > 20) {
+            effectiveStatus = 'offline'
+          } else if (diffMins > 5) {
+            effectiveStatus = 'idle'
+          } else {
+            effectiveStatus = 'online'
+          }
+        }
+
+        // Find today's logins for this user using timezone-safe date match
         const userLoginsToday = (loginActs || [])
-          .filter(a => a.user_id === u.id && a.time && a.time.startsWith(todayStr))
+          .filter(a => a.user_id === u.id && a.time && isSameDayAsToday(a.time))
           .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 
-        const earliestLoginIso = userLoginsToday[0]?.time || (u.last_login_at?.startsWith(todayStr) ? u.last_login_at : null)
+        let earliestLoginIso = userLoginsToday[0]?.time || (isSameDayAsToday(u.last_login_at) ? u.last_login_at : null)
+
+        // Failsafe: If user is active right now (online or idle), they must NEVER show as "Not logged in today"
+        if (!earliestLoginIso && (effectiveStatus === 'online' || effectiveStatus === 'idle')) {
+          earliestLoginIso = isSameDayAsToday(u.last_active_at) ? u.last_active_at : new Date().toISOString()
+        }
 
         let todayLoginFormatted: string | null = null
         if (earliestLoginIso) {
@@ -171,18 +217,6 @@ export default function TeamPage() {
               hour12: true
             })
           } catch {}
-        }
-
-        let effectiveStatus: 'online' | 'idle' | 'offline' = u.status || 'offline'
-        if (u.last_active_at) {
-          const diffMins = (Date.now() - new Date(u.last_active_at).getTime()) / (1000 * 60)
-          if (diffMins > 20) {
-            effectiveStatus = 'offline'
-          } else if (diffMins > 5) {
-            effectiveStatus = 'idle'
-          } else {
-            effectiveStatus = 'online'
-          }
         }
 
         return {
@@ -340,17 +374,17 @@ export default function TeamPage() {
   const totalCounselorsCount = employees.filter(e => e.role !== 'manager').length
   const activeCounselorsCount = employees.filter(e => e.role === 'counselor' && e.active).length
   const managersCount = employees.filter(e => e.role === 'manager').length
-  const todayDateStr = new Date().toISOString().split('T')[0]
+  const onlineCounselorsCount = employees.filter(e => e.role !== 'manager' && e.effective_status === 'online').length
   
   const counselorIdsLoggedInToday = useMemo(() => {
     const ids = new Set<string>()
     loginLogs.forEach(l => {
-      if (l.time && l.time.startsWith(todayDateStr)) {
+      if (l.time && isSameDayAsToday(l.time)) {
         ids.add(l.user_id)
       }
     })
     return ids
-  }, [loginLogs, todayDateStr])
+  }, [loginLogs])
 
   const counselorsPresentTodayCount = employees.filter(
     e => e.role !== 'manager' && (counselorIdsLoggedInToday.has(e.id) || e.today_login_time)
@@ -364,7 +398,7 @@ export default function TeamPage() {
 
   const earliestClockIn = useMemo(() => {
     const todayActs = loginLogs
-      .filter(l => l.time && l.time.startsWith(todayDateStr))
+      .filter(l => l.time && isSameDayAsToday(l.time))
       .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
     if (todayActs.length === 0) return null
     const first = todayActs[0]
@@ -379,13 +413,9 @@ export default function TeamPage() {
     } catch {
       return null
     }
-  }, [loginLogs, todayDateStr])
+  }, [loginLogs])
 
   const filteredLoginLogs = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0]
-    const yesterdayDate = new Date()
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1)
-    const yesterdayStr = yesterdayDate.toISOString().split('T')[0]
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
@@ -395,8 +425,8 @@ export default function TeamPage() {
       }
 
       if (attendanceDateFilter !== 'all' && log.time) {
-        if (attendanceDateFilter === 'today' && !log.time.startsWith(todayStr)) return false
-        if (attendanceDateFilter === 'yesterday' && !log.time.startsWith(yesterdayStr)) return false
+        if (attendanceDateFilter === 'today' && !isSameDayAsToday(log.time)) return false
+        if (attendanceDateFilter === 'yesterday' && !isSameDayAsYesterday(log.time)) return false
         if (attendanceDateFilter === '7days' && new Date(log.time) < sevenDaysAgo) return false
         if (attendanceDateFilter === '30days' && new Date(log.time) < thirtyDaysAgo) return false
       }
@@ -761,6 +791,9 @@ export default function TeamPage() {
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Staff</h3>
               </div>
               <p className="text-3xl font-bold text-gray-900">{employees.length}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {totalCounselorsCount} counselors • {managersCount} managers
+              </p>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
@@ -768,9 +801,17 @@ export default function TeamPage() {
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                   <PhoneCall size={15} className="text-emerald-500" />
                 </div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Counselors</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Counselors on Duty</h3>
               </div>
-              <p className="text-3xl font-bold text-gray-900">{activeCounselorsCount}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-3xl font-bold text-emerald-600">{onlineCounselorsCount}</p>
+                <span className="text-sm font-medium text-gray-400">/ {totalCounselorsCount} active</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {onlineCounselorsCount > 0
+                  ? `${onlineCounselorsCount} online right now • ${Math.max(0, totalCounselorsCount - onlineCounselorsCount)} offline`
+                  : `0 online right now • ${totalCounselorsCount} offline`}
+              </p>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
@@ -781,6 +822,9 @@ export default function TeamPage() {
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Admins / Managers</h3>
               </div>
               <p className="text-3xl font-bold text-gray-900">{managersCount}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {employees.filter(e => e.role === 'manager' && e.effective_status === 'online').length} online right now
+              </p>
             </div>
           </div>
 
