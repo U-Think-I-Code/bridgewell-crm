@@ -12,6 +12,7 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
   const [highestQualification, setHighestQualification] = useState('')
   const [workExperience, setWorkExperience] = useState('')
   const [budgetRange, setBudgetRange] = useState('')
+  const [serviceType, setServiceType] = useState<'study_abroad' | 'visa_process'>('study_abroad')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,7 +43,10 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
       { 
         name, phone, email, source, programme_level: programmeLevel, 
         highest_qualification: highestQualification, work_experience: workExperience, budget_range: budgetRange,
-        stage: 'New' 
+        stage: 'New',
+        metadata: {
+          service_type: serviceType
+        }
       }
     ])
 
@@ -63,6 +67,35 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
           <button onClick={onClose} className="text-gray-400 hover:text-gray-900 transition-colors p-1 hover:bg-gray-100 rounded-md"><X size={20}/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-8 overflow-y-auto">
+          {/* Service Stream Track Selector */}
+          <div>
+            <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Service Track *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setServiceType('study_abroad')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  serviceType === 'study_abroad'
+                    ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-200 font-bold shadow-xs'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span>🎓 Study Abroad (Admissions)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setServiceType('visa_process')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  serviceType === 'visa_process'
+                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-2 ring-indigo-200 font-bold shadow-xs'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span>🛂 Visa Process (F-1 / SEVIS)</span>
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Contact Details</h4>
             <div>

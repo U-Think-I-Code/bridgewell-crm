@@ -9,6 +9,7 @@ import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRule
 import { logAuditTrail } from '@/lib/auditLogger'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
+import { getLeadServiceType } from '@/lib/leadTypeHelper'
 
 function getLeadCampaignDetails(lead: any): { key: string, label: string, value: string, type: 'yes' | 'no' | 'campus' | 'program' | 'text' }[] {
   if (!lead) return []
@@ -1228,6 +1229,16 @@ export default function LeadProfile() {
                     {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : '❄️ Cold'}
                   </span>
                 )}
+                {/* Service Track Badge */}
+                {getLeadServiceType(lead) === 'visa_process' ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 flex items-center gap-1 shadow-2xs">
+                    <span>🛂 Visa Process Lead</span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1 shadow-2xs">
+                    <span>🎓 Study Abroad Lead</span>
+                  </span>
+                )}
               </div>
             </div>
             <p className="text-gray-400 text-xs flex items-center gap-1.5 font-normal mt-1.5 flex-wrap">
@@ -1400,6 +1411,18 @@ export default function LeadProfile() {
                )}
              </div>
              <div className="space-y-3 text-xs">
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
+                   <span className="text-gray-400 font-medium">Service Track</span>
+                   {getLeadServiceType(lead) === 'visa_process' ? (
+                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs">
+                       🛂 Visa Process Track
+                     </span>
+                   ) : (
+                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+                       🎓 Study Abroad Track
+                     </span>
+                   )}
+                </div>
                 {(lead.country || lead.phone) && (
                   <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                      <span className="text-gray-400 font-medium">Target Country / Location</span>

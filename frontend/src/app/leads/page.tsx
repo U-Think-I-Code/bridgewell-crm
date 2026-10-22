@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
+import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 import AddLeadModal from '@/components/AddLeadModal'
 import CSVImportModal from '@/components/CSVImportModal'
 import Link from 'next/link'
@@ -68,6 +69,12 @@ function LeadsContent() {
   const [selectedDatePreset, setSelectedDatePreset] = useState<string>(dateParam)
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
+
+  // Service Stream Track: 'all' | 'study_abroad' | 'visa_process'
+  const serviceParam = (searchParams?.get('service') as ServiceTrack) || 'all'
+  const [serviceTrack, setServiceTrack] = useState<ServiceTrack>(
+    serviceParam === 'visa_process' || serviceParam === 'study_abroad' ? serviceParam : 'all'
+  )
 
   useEffect(() => {
     fetchLeads()
@@ -190,6 +197,10 @@ function LeadsContent() {
   const coldCount = basePool.filter(l => l.priority === 'Cold').length
   const unsetCount = basePool.filter(l => !l.priority).length
 
+  // Service Track Counts
+  const studyAbroadCount = basePool.filter(l => getLeadServiceType(l) === 'study_abroad').length
+  const visaProcessCount = basePool.filter(l => getLeadServiceType(l) === 'visa_process').length
+
   // Helper to test if a lead created_at falls inside selected date filter
   const matchesDateFilter = (createdAtStr: string | null | undefined): boolean => {
     if (selectedDatePreset === 'ALL') return true
@@ -266,6 +277,11 @@ function LeadsContent() {
 
     if (!matchesDateFilter(l.created_at)) {
       return false
+    }
+
+    // Service Stream Track Filter: Study Abroad vs Visa Process
+    if (serviceTrack !== 'all') {
+      if (getLeadServiceType(l) !== serviceTrack) return false
     }
 
     return true
@@ -357,6 +373,58 @@ function LeadsContent() {
             >
               <span>All Master</span>
               <span className="text-[10px] text-gray-400">({totalCount})</span>
+            </button>
+          </div>
+
+          {/* Service Stream Switcher: Study Abroad vs Visa Process */}
+          <div className="flex items-center gap-1 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 p-1 rounded-xl w-fit shadow-2xs">
+            <button
+              onClick={() => setServiceTrack('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                serviceTrack === 'all'
+                  ? 'bg-white text-gray-900 shadow-xs ring-1 ring-black/5 font-bold'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              }`}
+              title="View all leads regardless of service track"
+            >
+              <span>🌐 All Services</span>
+              <span className="text-[10px] text-gray-400">({basePool.length})</span>
+            </button>
+
+            <button
+              onClick={() => setServiceTrack('study_abroad')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                serviceTrack === 'study_abroad'
+                  ? 'bg-blue-600 text-white shadow-xs font-bold'
+                  : 'text-blue-700 hover:bg-white/80'
+              }`}
+              title="Show University Admissions & Course Shortlisting Leads"
+            >
+              <GraduationCap size={14} className={serviceTrack === 'study_abroad' ? 'text-white' : 'text-blue-600'} />
+              <span>🎓 Study Abroad</span>
+              <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
+                serviceTrack === 'study_abroad' ? 'bg-white text-blue-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {studyAbroadCount}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setServiceTrack('visa_process')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                serviceTrack === 'visa_process'
+                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                  : 'text-indigo-700 hover:bg-white/80'
+              }`}
+              title="Show F-1 Visa Processing & SEVIS Leads"
+            >
+              <Globe size={14} className={serviceTrack === 'visa_process' ? 'text-white' : 'text-indigo-600'} />
+              <span>🛂 Visa Process</span>
+              <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
+                serviceTrack === 'visa_process' ? 'bg-white text-indigo-800' : 'bg-indigo-100 text-indigo-800'
+              }`}>
+                {visaProcessCount}
+              </span>
             </button>
           </div>
         </div>
@@ -598,7 +666,7 @@ function LeadsContent() {
           </div>
         </div>
 
-        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL') && (
+        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all') && (
           <button
             onClick={() => {
               setSelectedPriority('ALL');
@@ -606,6 +674,7 @@ function LeadsContent() {
               setSelectedCountry('ALL');
               setSelectedProgramme('ALL');
               setSelectedDatePreset('ALL');
+              setServiceTrack('all');
               setCustomStartDate('');
               setCustomEndDate('');
             }}
@@ -675,6 +744,33 @@ function LeadsContent() {
                           {lead.name}
                         </Link>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                          {/* Service Track Tag */}
+                          {getLeadServiceType(lead) === 'visa_process' ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs">
+                              🛂 Visa Process
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+                              🎓 Study Abroad
+                            </span>
+                          )}
+
+                          {/* Visa Specific Info Chips */}
+                          {getLeadServiceType(lead) === 'visa_process' && (
+                            <>
+                              {(lead.metadata?.campaign_answers?.['SEVIS I-901 Fee Paid?'] || lead.metadata?.['have_you_paid_your_sevis_i-901_fee?']) && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  SEVIS: {lead.metadata?.campaign_answers?.['SEVIS I-901 Fee Paid?'] || lead.metadata?.['have_you_paid_your_sevis_i-901_fee?']}
+                                </span>
+                              )}
+                              {(lead.metadata?.campaign_answers?.['I-20 Received From US University?'] || lead.metadata?.['have_you_received_your_i-20_from_a_us_university?']) && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-800 border border-purple-200">
+                                  I-20: {lead.metadata?.campaign_answers?.['I-20 Received From US University?'] || lead.metadata?.['have_you_received_your_i-20_from_a_us_university?']}
+                                </span>
+                              )}
+                            </>
+                          )}
+
                           {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
                               {formatCountryBadge(lead.country, lead.phone)}
@@ -856,6 +952,16 @@ function LeadsContent() {
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100 text-[10px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Service Track Tag */}
+                            {getLeadServiceType(lead) === 'visa_process' ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-bold text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                🛂 Visa
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                                🎓 Study
+                              </span>
+                            )}
                             {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
                                 {formatCountryBadge(lead.country, lead.phone)}

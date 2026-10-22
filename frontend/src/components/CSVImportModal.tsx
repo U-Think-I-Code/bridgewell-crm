@@ -320,6 +320,12 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
           }
         })
 
+        const isVisaFile = (file?.name || '').toLowerCase().includes('visa') || 
+                           String(rawSource || '').toLowerCase().includes('visa') ||
+                           campaignAnswers['SEVIS I-901 Fee Paid?'] !== undefined ||
+                           campaignAnswers['I-20 Received From US University?'] !== undefined
+        const inferredServiceType = isVisaFile ? 'visa_process' : 'study_abroad'
+
         // Standard lead record
         const record: any = {
           name: rawName,
@@ -333,6 +339,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
           stage: 'New',
           metadata: {
             ...rawMetadata,
+            service_type: inferredServiceType,
             campaign_answers: campaignAnswers,
             campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
             imported_file: file?.name || 'Spreadsheet',
