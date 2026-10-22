@@ -233,10 +233,14 @@ function LeadsContent() {
 
       // 3. Insert assignment history record
       if (targetOwnerId) {
+        const currentLead = leads.find(l => l.id === leadId)
         await supabase.from('assignments').insert([{
-          lead: leadId,
-          assigned_to: targetOwnerId,
-          assigned_by: user?.id
+          lead_id: leadId,
+          from_user: currentLead?.owner_id || null,
+          to_user: targetOwnerId,
+          assigned_by: user?.id,
+          reason: isTeamLeader(user) ? 'Team Leader Reassignment' : 'Manager Reassignment',
+          time: new Date().toISOString()
         }])
 
         // 4. Send notification
@@ -274,20 +278,28 @@ function LeadsContent() {
     }
   }
 
-  const handleBulkReassignLeads = async () => {
-    if (selectedLeadIds.length === 0 || !bulkTargetCounselor) return
+  const handleBulkReassignLeads = async (customIds?: string[]) => {
+    const idsToReassign = customIds && customIds.length > 0 ? customIds : selectedLeadIds
+    if (idsToReassign.length === 0) {
+      alert('Please select at least one lead using the checkboxes or "Select All".')
+      return
+    }
+    if (!bulkTargetCounselor) {
+      alert('Please select a counselor from the dropdown to assign the leads to.')
+      return
+    }
 
     const targetOwnerId = bulkTargetCounselor === 'unassigned' ? null : bulkTargetCounselor
     const targetCounselor = counselors.find(c => c.id === targetOwnerId)
     const targetName = targetOwnerId === user?.id ? (user?.name || 'My Pool') : targetCounselor ? targetCounselor.name : 'Unassigned'
 
-    if (!confirm(`Reassign all ${selectedLeadIds.length} selected leads to ${targetName}?`)) return
+    if (!confirm(`Reassign all ${idsToReassign.length} selected leads to ${targetName}?`)) return
 
     setBulkProcessing(true)
 
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
-      if (selectedLeadIds.includes(l.id)) {
+      if (idsToReassign.includes(l.id)) {
         return {
           ...l,
           owner_id: targetOwnerId,
@@ -302,20 +314,25 @@ function LeadsContent() {
       const { error } = await supabase
         .from('leads')
         .update({ owner_id: targetOwnerId })
-        .in('id', selectedLeadIds)
+        .in('id', idsToReassign)
 
       if (error) throw error
 
       // 2. Audit entries for assignments and activities
-      const assignmentInserts = selectedLeadIds.map(leadId => ({
-        lead_id: leadId,
-        assigned_to: targetOwnerId,
-        assigned_by: user?.id,
-        time: new Date().toISOString()
-      }))
+      const assignmentInserts = idsToReassign.map(leadId => {
+        const lead = leads.find(l => l.id === leadId)
+        return {
+          lead_id: leadId,
+          from_user: lead?.owner_id || null,
+          to_user: targetOwnerId,
+          assigned_by: user?.id,
+          reason: isTeamLeader(user) ? 'Bulk Team Leader Reassignment' : 'Bulk Manager Reassignment',
+          time: new Date().toISOString()
+        }
+      })
       await supabase.from('assignments').insert(assignmentInserts)
 
-      const activityInserts = selectedLeadIds.map(leadId => ({
+      const activityInserts = idsToReassign.map(leadId => ({
         lead: leadId,
         user_id: user?.id,
         type: 'reassigned',
@@ -327,18 +344,19 @@ function LeadsContent() {
       if (targetOwnerId && targetOwnerId !== user?.id) {
         notifyLeadAssigned({
           recipientId: targetOwnerId,
-          leadId: selectedLeadIds[0],
-          leadName: `${selectedLeadIds.length} Leads`,
+          leadId: idsToReassign[0],
+          leadName: `${idsToReassign.length} Leads`,
           senderName: user?.name || (isTeamLeader(user) ? 'Team Leader' : 'Manager')
         }).catch(console.error)
       }
 
       setSelectedLeadIds([])
       setBulkTargetCounselor('')
+      await fetchLeads()
     } catch (err: any) {
       console.error('Failed to bulk reassign leads:', err)
       alert(err?.message || 'Failed to bulk reassign leads.')
-      fetchLeads()
+      await fetchLeads()
     } finally {
       setBulkProcessing(false)
     }
@@ -1005,102 +1023,7 @@ function LeadsContent() {
 
       {/* Main Area */}
       <div className="flex-1 overflow-auto p-8">
-        {/* Bulk Action Bar (Leads Page) */}
-        {selectedLeadIds.length > 0 && (
-          <div className="mb-5 p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50/50 to-blue-50 border border-blue-200 rounded-xl flex items-center justify-between gap-4 flex-wrap shadow-sm animate-in fade-in duration-200">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
-              <span className="text-xs font-bold text-blue-950">
-                {selectedLeadIds.length} of {filteredLeads.length} lead(s) selected
-              </span>
-              {selectedLeadIds.length < filteredLeads.length ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedLeadIds(filteredLeads.map(l => l.id))}
-                  className="text-xs text-blue-700 font-bold hover:underline"
-                >
-                  Select all {filteredLeads.length} leads
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setSelectedLeadIds([])}
-                  className="text-xs text-gray-500 font-medium hover:underline"
-                >
-                  Deselect all
-                </button>
-              )}
-            </div>
 
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Bulk Reassign to Counselor */}
-              {canManageLeads(user) && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-gray-600 font-medium">Assign to:</span>
-                  <select
-                    value={bulkTargetCounselor}
-                    onChange={e => setBulkTargetCounselor(e.target.value)}
-                    className="text-xs font-bold text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-black cursor-pointer"
-                  >
-                    <option value="">Select Counselor...</option>
-                    {isManager(user) && (
-                      <option value="unassigned">⚪ Unassigned Pool</option>
-                    )}
-                    {isTeamLeader(user) && (
-                      <option value={user.id}>👑 My Allocated Pool ({user.name || 'Me'})</option>
-                    )}
-                    {assignableCounselors
-                      .filter(c => !isTeamLeader(user) || c.id !== user.id)
-                      .map(c => (
-                        <option key={c.id} value={c.id}>
-                          👤 {c.name}
-                        </option>
-                      ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    disabled={!bulkTargetCounselor || bulkProcessing}
-                    onClick={handleBulkReassignLeads}
-                    className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1 shadow-2xs"
-                  >
-                    <span>Reassign ({selectedLeadIds.length})</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Bulk Priority */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-600 font-medium">Priority:</span>
-                <select
-                  defaultValue=""
-                  onChange={e => {
-                    if (e.target.value) {
-                      handleBulkUpdatePriority(e.target.value)
-                      e.target.value = ''
-                    }
-                  }}
-                  className="text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1.5 outline-none cursor-pointer"
-                >
-                  <option value="">Set Priority...</option>
-                  <option value="Hot">🔥 Hot</option>
-                  <option value="Warm">☀️ Warm</option>
-                  <option value="Cold">❄️ Cold</option>
-                  <option value="UNSET">⚪ Unset</option>
-                </select>
-              </div>
-
-              {/* Clear button */}
-              <button
-                type="button"
-                onClick={() => setSelectedLeadIds([])}
-                className="text-xs text-gray-500 hover:text-black font-semibold px-2 py-1"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        )}
         {activeTab === 'enrolled' && (
           <div className="mb-6 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-3.5">
@@ -1136,6 +1059,130 @@ function LeadsContent() {
         ) : view === 'list' ? (
           /* List View */
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            {/* ─── Always-Visible Bulk Selection & Assignment Header Bar ─── */}
+            <div className="px-5 py-3 bg-gradient-to-r from-gray-50 via-blue-50/40 to-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Master Select All Checkbox Button */}
+                <button
+                  type="button"
+                  onClick={toggleSelectAllLeads}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border cursor-pointer ${
+                    selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                      ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                      : selectedLeadIds.length > 0
+                      ? 'bg-blue-50 text-blue-900 border-blue-300'
+                      : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-100 shadow-2xs'
+                  }`}
+                  title="Click to select or deselect all filtered leads"
+                >
+                  <CheckSquare size={14} className={selectedLeadIds.length > 0 ? 'text-blue-500' : 'text-gray-400'} />
+                  <span>
+                    {selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                      ? `Deselect All (${filteredLeads.length})`
+                      : selectedLeadIds.length > 0
+                      ? `Selected (${selectedLeadIds.length}/${filteredLeads.length})`
+                      : `Select All (${filteredLeads.length} leads)`}
+                  </span>
+                </button>
+
+                {selectedLeadIds.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-200 animate-in fade-in">
+                    ✓ {selectedLeadIds.length} selected
+                  </span>
+                )}
+
+                {selectedLeadIds.length > 0 && selectedLeadIds.length < filteredLeads.length && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeadIds(filteredLeads.map(l => l.id))}
+                    className="text-xs text-blue-700 hover:text-blue-900 font-semibold underline cursor-pointer"
+                  >
+                    Select all {filteredLeads.length}
+                  </button>
+                )}
+
+                {selectedLeadIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeadIds([])}
+                    className="text-xs text-gray-500 hover:text-black font-medium cursor-pointer"
+                  >
+                    Clear selection
+                  </button>
+                )}
+              </div>
+
+              {/* Bulk Reassign to Counselor (Always visible for TL & Admin) */}
+              {canManageLeads(user) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                    <Users size={13} className="text-blue-600" />
+                    Assign {selectedLeadIds.length > 0 ? `(${selectedLeadIds.length})` : ''} to:
+                  </span>
+
+                  <select
+                    value={bulkTargetCounselor}
+                    onChange={e => setBulkTargetCounselor(e.target.value)}
+                    className="text-xs font-semibold text-gray-900 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-black cursor-pointer shadow-2xs"
+                  >
+                    <option value="">Choose Counselor...</option>
+                    {isManager(user) && (
+                      <option value="unassigned">⚪ Unassigned Pool</option>
+                    )}
+                    {isTeamLeader(user) && (
+                      <option value={user.id}>👑 My Allocated Pool ({user.name || 'Me'})</option>
+                    )}
+                    {assignableCounselors
+                      .filter(c => !isTeamLeader(user) || c.id !== user.id)
+                      .map(c => {
+                        const count = leads.filter(l => l.owner_id === c.id).length
+                        return (
+                          <option key={c.id} value={c.id}>
+                            👤 {c.name} ({count} leads)
+                          </option>
+                        )
+                      })}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={bulkProcessing}
+                    onClick={() => {
+                      if (selectedLeadIds.length === 0) {
+                        const allIds = filteredLeads.map(l => l.id)
+                        setSelectedLeadIds(allIds)
+                        if (!bulkTargetCounselor) {
+                          alert(`Selected all ${allIds.length} leads! Now choose a counselor from the dropdown and click Assign.`)
+                          return
+                        }
+                        handleBulkReassignLeads(allIds)
+                        return
+                      }
+                      if (!bulkTargetCounselor) {
+                        alert('Please choose a counselor from the dropdown to assign the selected leads.')
+                        return
+                      }
+                      handleBulkReassignLeads()
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                      selectedLeadIds.length > 0 && bulkTargetCounselor
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : selectedLeadIds.length > 0
+                        ? 'bg-black hover:bg-gray-800 text-white'
+                        : 'bg-black hover:bg-gray-800 text-white'
+                    }`}
+                  >
+                    <ArrowRight size={13} />
+                    <span>
+                      {selectedLeadIds.length > 0
+                        ? `Assign (${selectedLeadIds.length})`
+                        : `Assign All (${filteredLeads.length})`}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -1488,6 +1535,81 @@ function LeadsContent() {
             })}
           </div>
         )}
+      {/* ─── Floating Bulk Action Pill (Fixed at bottom when leads are selected) ─── */}
+      {selectedLeadIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-950/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700 flex items-center gap-3.5 flex-wrap animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-xs font-bold text-white">
+              {selectedLeadIds.length} lead(s) selected
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-gray-700 mx-1 hidden sm:block" />
+
+          {selectedLeadIds.length < filteredLeads.length ? (
+            <button
+              type="button"
+              onClick={() => setSelectedLeadIds(filteredLeads.map(l => l.id))}
+              className="text-xs text-blue-400 hover:text-blue-300 font-semibold underline cursor-pointer"
+            >
+              Select all ({filteredLeads.length})
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSelectedLeadIds([])}
+              className="text-xs text-gray-400 hover:text-white font-medium cursor-pointer"
+            >
+              Deselect all
+            </button>
+          )}
+
+          {canManageLeads(user) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-300 font-medium">Assign to:</span>
+              <select
+                value={bulkTargetCounselor}
+                onChange={e => setBulkTargetCounselor(e.target.value)}
+                className="text-xs font-semibold text-gray-900 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+              >
+                <option value="">Select Counselor...</option>
+                {isManager(user) && (
+                  <option value="unassigned">⚪ Unassigned Pool</option>
+                )}
+                {isTeamLeader(user) && (
+                  <option value={user.id}>👑 My Allocated Pool ({user.name || 'Me'})</option>
+                )}
+                {assignableCounselors
+                  .filter(c => !isTeamLeader(user) || c.id !== user.id)
+                  .map(c => (
+                    <option key={c.id} value={c.id}>
+                      👤 {c.name}
+                    </option>
+                  ))}
+              </select>
+
+              <button
+                type="button"
+                disabled={!bulkTargetCounselor || bulkProcessing}
+                onClick={() => handleBulkReassignLeads()}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                Confirm Move ({selectedLeadIds.length})
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setSelectedLeadIds([])}
+            className="text-xs text-gray-400 hover:text-white font-medium ml-1 cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       </div>
 
       {showModal && <AddLeadModal onClose={() => setShowModal(false)} onSuccess={fetchLeads} />}
