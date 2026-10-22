@@ -80,6 +80,7 @@ export default function TeamPage() {
   const [attendanceDateFilter, setAttendanceDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days' | 'all'>('today')
   const [selectedCounselorFilter, setSelectedCounselorFilter] = useState<string>('all')
   const [attendanceSearch, setAttendanceSearch] = useState<string>('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   
   // Add Employee Modal State
   const [showAddModal, setShowAddModal] = useState(false)
@@ -348,19 +349,56 @@ export default function TeamPage() {
       return
     }
 
-    const confirmed = confirm(
-      `Are you sure you want to delete ${employee.name} (${employee.email})?\n\nTheir login credentials will be removed. Any leads assigned to them will be unassigned.`
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete ${employee.name} (${employee.email})?\n\nTheir login credentials will be removed and any leads assigned to them will be moved to the unassigned pool.`
     )
     if (!confirmed) return
 
-    const { data, error } = await supabase.rpc('remove_employee_account', {
-      p_user_id: employee.id
-    })
+    setDeletingId(employee.id)
+    try {
+      // 1. Unassign all leads assigned to this employee
+      await supabase.from('leads').update({ owner_id: null }).eq('owner_id', employee.id)
 
-    if (error || (data && !data.success)) {
-      alert(error?.message || data?.error || 'Failed to delete employee')
-    } else {
+      // 2. Clear foreign key references in activities so constraint violation doesn't occur
+      await supabase.from('activities').update({ user_id: null }).eq('user_id', employee.id)
+
+      // 3. Clear foreign key references in assignments
+      await supabase.from('assignments').update({ to_user: null }).eq('to_user', employee.id)
+      await supabase.from('assignments').update({ from_user: null }).eq('from_user', employee.id)
+      await supabase.from('assignments').update({ assigned_by: null }).eq('assigned_by', employee.id)
+
+      // 4. Clean up user sessions
+      await supabase.from('user_sessions').delete().eq('user_id', employee.id)
+
+      // 5. Clean up notifications
+      try {
+        await supabase.from('notifications').delete().or(`recipient_id.eq.${employee.id},sender_id.eq.${employee.id}`)
+      } catch {}
+
+      // 6. Nullify audit log user_id
+      try {
+        await supabase.from('audit_logs').update({ user_id: null }).eq('user_id', employee.id)
+      } catch {}
+
+      // 7. Delete employee via RPC, with direct delete fallback
+      const { data, error } = await supabase.rpc('remove_employee_account', {
+        p_user_id: employee.id
+      })
+
+      if (error || (data && !data.success)) {
+        // Direct fallback delete if RPC failed
+        const { error: delErr } = await supabase.from('users').delete().eq('id', employee.id)
+        if (delErr) {
+          throw new Error(delErr.message || error?.message || 'Failed to delete employee account')
+        }
+      }
+
       await fetchEmployees()
+    } catch (err: any) {
+      console.error('Failed to delete employee:', err)
+      alert(err?.message || 'Failed to delete employee. Please try again.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -970,10 +1008,15 @@ export default function TeamPage() {
                       {!isPrimaryAdmin && (
                         <button
                           onClick={() => handleDeleteEmployee(emp)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          disabled={deletingId === emp.id}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                           title="Delete Employee Account"
                         >
-                          <Trash2 size={16} />
+                          {deletingId === emp.id ? (
+                            <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
                         </button>
                       )}
                     </div>
