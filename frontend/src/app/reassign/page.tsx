@@ -8,11 +8,12 @@ import {
   ArrowLeftRight, Users, User, Flame, Phone, CheckCircle2,
   AlertCircle, GripVertical, Search, Filter, Sparkles, RefreshCw,
   ExternalLink, ArrowRight, ShieldAlert, CheckSquare, Square,
-  Layers, ChevronDown, Check, ArrowDownUp, Globe, GraduationCap
+  Layers, ChevronDown, Check, ArrowDownUp, Globe, GraduationCap,
+  Crown, Zap
 } from 'lucide-react'
 import { notifyLeadAssigned } from '@/lib/notifications'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
-import { canManageLeads, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
+import { canManageLeads, isManager, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
 
 interface Counselor {
   id: string
@@ -91,10 +92,12 @@ export default function LeadReassignmentPage() {
     const assignableCounselors = getAssignableCounselors(user, activeCounselors)
     setCounselors(assignableCounselors)
 
-    // Filter leads to match team leader's scope (unassigned leads + their team members' leads)
+    // Filter leads to match role scope:
+    // Manager: All leads (including unassigned)
+    // Team Leader: ONLY leads assigned to Team Leader or their team members (NO unassigned leads)
     const allowedOwners = getAllowedOwnerIds(user, activeCounselors)
     const scopedLeads = allowedOwners
-      ? (leadsData || []).filter(l => allowedOwners.has(l.owner_id || null))
+      ? (leadsData || []).filter(l => l.owner_id && allowedOwners.has(l.owner_id))
       : (leadsData || [])
 
     setLeads(scopedLeads)
@@ -157,33 +160,46 @@ export default function LeadReassignmentPage() {
   // ── Group leads by counselor ID (or 'unassigned') ──
   const leadsByCounselor = useMemo(() => {
     const map: Record<string, Lead[]> = { unassigned: [] }
+    if (user?.id) {
+      map[user.id] = []
+    }
     counselors.forEach(c => {
       map[c.id] = []
     })
 
     filteredLeads.forEach(l => {
-      if (!l.owner_id || !map[l.owner_id]) {
+      if (!l.owner_id) {
         map.unassigned.push(l)
-      } else {
+      } else if (map[l.owner_id]) {
         map[l.owner_id].push(l)
+      } else {
+        map.unassigned.push(l)
       }
     })
 
     return map
-  }, [filteredLeads, counselors])
+  }, [filteredLeads, counselors, user?.id])
 
   // ── KPI Summary Stats ──
   const stats = useMemo(() => {
     const total = leads.length
     const unassigned = leads.filter(l => !l.owner_id).length
+    const myPool = user?.id ? leads.filter(l => l.owner_id === user.id).length : 0
     const activeCounselorCount = counselors.length
-    const avgLeads = activeCounselorCount > 0 ? Math.round((total - unassigned) / activeCounselorCount) : 0
-    return { total, unassigned, activeCounselorCount, avgLeads }
-  }, [leads, counselors])
+    const avgLeads = activeCounselorCount > 0 ? Math.round((total - unassigned - myPool) / activeCounselorCount) : 0
+    return { total, unassigned, myPool, activeCounselorCount, avgLeads }
+  }, [leads, counselors, user?.id])
 
   // ── Drag and Drop Handler ──
   const handleDropLead = async (targetColumnId: string) => {
     if (!draggedLeadId) return
+    if (isTeamLeader(user) && targetColumnId === 'unassigned') {
+      alert('Team Leaders cannot move leads to the general unassigned pool.')
+      setDraggedLeadId(null)
+      setDragOverColumnId(null)
+      return
+    }
+
     const lead = leads.find(l => l.id === draggedLeadId)
     if (!lead) return
 
@@ -198,7 +214,14 @@ export default function LeadReassignmentPage() {
     }
 
     const targetCounselor = counselors.find(c => c.id === newOwnerId)
-    const targetName = targetCounselor ? targetCounselor.name : 'Unassigned'
+    const targetName =
+      targetColumnId === 'unassigned'
+        ? 'Unassigned Pool'
+        : newOwnerId === user?.id
+        ? '👑 My Leads Pool'
+        : targetCounselor
+        ? targetCounselor.name
+        : 'Assigned User'
 
     // Optimistic UI update
     setLeads(prev =>
@@ -222,7 +245,7 @@ export default function LeadReassignmentPage() {
           from_user: oldOwnerId || null,
           to_user: newOwnerId,
           assigned_by: user?.id,
-          reason: 'Reassigned via Drag & Drop Board',
+          reason: isTeamLeader(user) ? 'Team Leader Reassignment' : 'Manager Reassignment',
           time: new Date().toISOString(),
         },
       ])
@@ -239,12 +262,12 @@ export default function LeadReassignmentPage() {
       ])
 
       // 4. Trigger in-app notification to new counselor
-      if (newOwnerId) {
+      if (newOwnerId && newOwnerId !== user?.id) {
         notifyLeadAssigned({
           recipientId: newOwnerId,
           leadId: lead.id,
           leadName: lead.name,
-          senderName: user?.name || 'Manager',
+          senderName: user?.name || (isTeamLeader(user) ? 'Team Leader' : 'Manager'),
         }).catch(console.error)
       }
     } catch (err) {
@@ -254,70 +277,134 @@ export default function LeadReassignmentPage() {
     }
   }
 
-  // ── Auto-Distribute Unassigned Leads (Round Robin) ──
-  const handleAutoDistributeUnassigned = async () => {
-    const unassignedList = leads.filter(l => !l.owner_id)
-    if (unassignedList.length === 0) {
-      alert('No unassigned leads found to distribute.')
-      return
-    }
-    if (counselors.length === 0) {
-      alert('No active counselors available to receive leads.')
-      return
-    }
-
-    const confirmMsg = `Auto-distribute all ${unassignedList.length} unassigned leads equally among ${counselors.length} active counselors?`
-    if (!confirm(confirmMsg)) return
-
-    setIsProcessing(true)
-
-    try {
-      // Distribute round-robin
-      for (let i = 0; i < unassignedList.length; i++) {
-        const lead = unassignedList[i]
-        const targetCounselor = counselors[i % counselors.length]
-
-        await supabase.from('leads').update({ owner_id: targetCounselor.id }).eq('id', lead.id)
-
-        await supabase.from('assignments').insert([
-          {
-            lead_id: lead.id,
-            from_user: null,
-            to_user: targetCounselor.id,
-            assigned_by: user?.id,
-            reason: 'Auto-distributed via Round Robin',
-            time: new Date().toISOString(),
-          },
-        ])
-
-        await supabase.from('activities').insert([
-          {
-            lead: lead.id,
-            user_id: user?.id,
-            type: 'assignment',
-            text: `Assigned to ${targetCounselor.name} via Auto-Distribution.`,
-            time: new Date().toISOString(),
-          },
-        ])
-
-        notifyLeadAssigned({
-          recipientId: targetCounselor.id,
-          leadId: lead.id,
-          leadName: lead.name,
-          senderName: user?.name || 'Manager',
-        }).catch(console.error)
+  // ── Auto-Distribute Leads (Round Robin) ──
+  const handleAutoDistribute = async () => {
+    if (isManager(user)) {
+      const unassignedList = leads.filter(l => !l.owner_id)
+      if (unassignedList.length === 0) {
+        alert('No unassigned leads found in the pool to distribute.')
+        return
+      }
+      if (counselors.length === 0) {
+        alert('No active counselors available to receive leads.')
+        return
       }
 
-      await fetchData()
-      setLastMovedLead({
-        leadName: `${unassignedList.length} Leads`,
-        toName: `All ${counselors.length} Counselors (Round Robin)`,
-      })
-      setTimeout(() => setLastMovedLead(null), 4000)
-    } catch (err) {
-      console.error('Error during auto-distribution:', err)
-    } finally {
-      setIsProcessing(false)
+      const confirmMsg = `Auto-distribute all ${unassignedList.length} unassigned leads equally among ${counselors.length} active staff?`
+      if (!confirm(confirmMsg)) return
+
+      setIsProcessing(true)
+
+      try {
+        for (let i = 0; i < unassignedList.length; i++) {
+          const lead = unassignedList[i]
+          const targetCounselor = counselors[i % counselors.length]
+
+          await supabase.from('leads').update({ owner_id: targetCounselor.id }).eq('id', lead.id)
+
+          await supabase.from('assignments').insert([
+            {
+              lead_id: lead.id,
+              from_user: null,
+              to_user: targetCounselor.id,
+              assigned_by: user?.id,
+              reason: 'Manager Auto-Distributed via Round Robin',
+              time: new Date().toISOString(),
+            },
+          ])
+
+          await supabase.from('activities').insert([
+            {
+              lead: lead.id,
+              user_id: user?.id,
+              type: 'assignment',
+              text: `Assigned to ${targetCounselor.name} via Auto-Distribution.`,
+              time: new Date().toISOString(),
+            },
+          ])
+
+          notifyLeadAssigned({
+            recipientId: targetCounselor.id,
+            leadId: lead.id,
+            leadName: lead.name,
+            senderName: user?.name || 'Manager',
+          }).catch(console.error)
+        }
+
+        await fetchData()
+        setLastMovedLead({
+          leadName: `${unassignedList.length} Leads`,
+          toName: `All ${counselors.length} Staff Members (Round Robin)`,
+        })
+        setTimeout(() => setLastMovedLead(null), 4000)
+      } catch (err) {
+        console.error('Error during auto-distribution:', err)
+      } finally {
+        setIsProcessing(false)
+      }
+    } else if (isTeamLeader(user)) {
+      const myPool = leads.filter(l => l.owner_id === user?.id)
+      if (myPool.length === 0) {
+        alert('No leads in your pool to distribute. When Admin allocates leads to you, they will appear here.')
+        return
+      }
+      if (counselors.length === 0) {
+        alert('No counselors assigned to your team yet. Please contact Admin.')
+        return
+      }
+
+      const confirmMsg = `Auto-distribute all ${myPool.length} leads from your pool equally among your ${counselors.length} team counselors?`
+      if (!confirm(confirmMsg)) return
+
+      setIsProcessing(true)
+
+      try {
+        for (let i = 0; i < myPool.length; i++) {
+          const lead = myPool[i]
+          const targetCounselor = counselors[i % counselors.length]
+
+          await supabase.from('leads').update({ owner_id: targetCounselor.id }).eq('id', lead.id)
+
+          await supabase.from('assignments').insert([
+            {
+              lead_id: lead.id,
+              from_user: user?.id,
+              to_user: targetCounselor.id,
+              assigned_by: user?.id,
+              reason: 'Team Leader Auto-Distribute',
+              time: new Date().toISOString(),
+            },
+          ])
+
+          await supabase.from('activities').insert([
+            {
+              lead: lead.id,
+              user_id: user?.id,
+              type: 'assignment',
+              text: `Assigned to ${targetCounselor.name} by Team Leader.`,
+              time: new Date().toISOString(),
+            },
+          ])
+
+          notifyLeadAssigned({
+            recipientId: targetCounselor.id,
+            leadId: lead.id,
+            leadName: lead.name,
+            senderName: user?.name || 'Team Leader',
+          }).catch(console.error)
+        }
+
+        await fetchData()
+        setLastMovedLead({
+          leadName: `${myPool.length} Leads`,
+          toName: `Your ${counselors.length} Team Counselors (Round Robin)`,
+        })
+        setTimeout(() => setLastMovedLead(null), 4000)
+      } catch (err) {
+        console.error('Error during TL auto-distribution:', err)
+      } finally {
+        setIsProcessing(false)
+      }
     }
   }
 
@@ -434,7 +521,7 @@ export default function LeadReassignmentPage() {
             </div>
             <p className="text-gray-500 text-xs mt-1">
               {isTeamLeader(user)
-                ? 'Assign unassigned leads and balance workloads between counselors in your team.'
+                ? 'Distribute your allocated lead pool and balance workloads between counselors in your team.'
                 : 'Drag student cards between counselor columns to instantly rebalance workloads and reassign leads.'}
             </p>
           </div>
@@ -442,12 +529,16 @@ export default function LeadReassignmentPage() {
           <div className="flex items-center gap-2.5 flex-wrap">
             {/* Auto Distribute Round Robin Button */}
             <button
-              onClick={handleAutoDistributeUnassigned}
-              disabled={isProcessing || stats.unassigned === 0}
+              onClick={handleAutoDistribute}
+              disabled={isProcessing || (isManager(user) ? stats.unassigned === 0 : stats.myPool === 0)}
               className="px-3.5 py-2 bg-white hover:bg-gray-50 border border-gray-200 hover:border-gray-300 text-gray-800 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
             >
               <Sparkles size={13} className="text-amber-500" />
-              <span>Auto-Distribute ({stats.unassigned} Unassigned)</span>
+              <span>
+                {isManager(user)
+                  ? `Auto-Distribute (${stats.unassigned} Unassigned)`
+                  : `Auto-Distribute My Pool (${stats.myPool} Leads)`}
+              </span>
             </button>
 
             {/* Bulk Mode Toggle Button */}
@@ -481,7 +572,9 @@ export default function LeadReassignmentPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
           <div className="bg-gray-50/70 border border-gray-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Pipeline</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                {isManager(user) ? 'Total Pipeline' : 'Team Leads'}
+              </span>
               <span className="text-lg font-bold text-gray-900">{stats.total} Leads</span>
             </div>
             <Layers size={16} className="text-gray-400" />
@@ -489,16 +582,24 @@ export default function LeadReassignmentPage() {
 
           <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Unassigned Queue</span>
-              <span className="text-lg font-bold text-amber-900">{stats.unassigned} Leads</span>
+              <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
+                {isManager(user) ? 'Unassigned Queue' : 'My Distributable Pool'}
+              </span>
+              <span className="text-lg font-bold text-amber-900">
+                {isManager(user) ? `${stats.unassigned} Leads` : `${stats.myPool} Leads`}
+              </span>
             </div>
-            <AlertCircle size={16} className="text-amber-500" />
+            {isManager(user) ? <AlertCircle size={16} className="text-amber-500" /> : <Crown size={16} className="text-amber-600" />}
           </div>
 
           <div className="bg-gray-50/70 border border-gray-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Active Counselors</span>
-              <span className="text-lg font-bold text-gray-900">{stats.activeCounselorCount} Team</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                {isManager(user) ? 'Active Staff' : 'My Team Counselors'}
+              </span>
+              <span className="text-lg font-bold text-gray-900">
+                {stats.activeCounselorCount} {isManager(user) ? 'Staff' : 'Counselors'}
+              </span>
             </div>
             <Users size={16} className="text-gray-400" />
           </div>
@@ -643,6 +744,11 @@ export default function LeadReassignmentPage() {
                 onChange={e => setBulkTargetCounselorId(e.target.value)}
                 className="bg-white border border-gray-300 text-gray-900 rounded-lg px-2.5 py-1 text-xs outline-none font-medium"
               >
+                {isTeamLeader(user) && (
+                  <option value={user.id}>
+                    👑 My Leads Pool ({leadsByCounselor[user.id]?.length || 0} leads)
+                  </option>
+                )}
                 {counselors.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({leadsByCounselor[c.id]?.length || 0} leads)
@@ -675,68 +781,151 @@ export default function LeadReassignmentPage() {
       {/* ──────── Main Kanban Columns Canvas ──────── */}
       <div className="flex-1 overflow-x-auto p-6 flex gap-5 items-start">
         {/* ======================================================== */}
-        {/* COLUMN 1: UNASSIGNED LEADS */}
+        {/* COLUMN 1 FOR MANAGER: UNASSIGNED LEADS (Admin Pool)     */}
         {/* ======================================================== */}
-        <div
-          onDragOver={e => {
-            e.preventDefault()
-            setDragOverColumnId('unassigned')
-          }}
-          onDragLeave={() => {
-            if (dragOverColumnId === 'unassigned') setDragOverColumnId(null)
-          }}
-          onDrop={e => {
-            e.preventDefault()
-            handleDropLead('unassigned')
-          }}
-          className={`w-80 shrink-0 flex flex-col rounded-2xl border transition-all duration-200 max-h-full ${
-            dragOverColumnId === 'unassigned'
-              ? 'border-dashed border-2 border-amber-500 bg-amber-50/40 ring-4 ring-amber-500/10 scale-[1.01]'
-              : 'border-amber-200/90 bg-amber-50/20 shadow-xs'
-          }`}
-        >
-          {/* Column Header */}
-          <div className="p-4 border-b border-amber-200/70 bg-amber-50/50 rounded-t-2xl">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
-                  <AlertCircle size={14} />
+        {isManager(user) && (
+          <div
+            onDragOver={e => {
+              e.preventDefault()
+              setDragOverColumnId('unassigned')
+            }}
+            onDragLeave={() => {
+              if (dragOverColumnId === 'unassigned') setDragOverColumnId(null)
+            }}
+            onDrop={e => {
+              e.preventDefault()
+              handleDropLead('unassigned')
+            }}
+            className={`w-80 shrink-0 flex flex-col rounded-2xl border transition-all duration-200 max-h-full ${
+              dragOverColumnId === 'unassigned'
+                ? 'border-dashed border-2 border-amber-500 bg-amber-50/40 ring-4 ring-amber-500/10 scale-[1.01]'
+                : 'border-amber-200/90 bg-amber-50/20 shadow-xs'
+            }`}
+          >
+            {/* Column Header */}
+            <div className="p-4 border-b border-amber-200/70 bg-amber-50/50 rounded-t-2xl">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
+                    <AlertCircle size={14} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-xs">Unassigned Pool</h3>
+                    <span className="text-[10px] text-gray-500">Needs Counselor Allocation</span>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-gray-900 text-xs">Unassigned Pool</h3>
-                  <span className="text-[10px] text-gray-500">Needs Counselor Allocation</span>
-                </div>
+
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-200/80 text-amber-900">
+                  {leadsByCounselor.unassigned?.length || 0}
+                </span>
               </div>
 
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-200/80 text-amber-900">
-                {leadsByCounselor.unassigned.length}
-              </span>
+              {/* Select All in this column */}
+              {bulkMode && (leadsByCounselor.unassigned?.length || 0) > 0 && (
+                <button
+                  onClick={() => toggleSelectAllInColumn(leadsByCounselor.unassigned)}
+                  className="mt-2 text-[10px] text-amber-800 font-bold hover:underline flex items-center gap-1"
+                >
+                  <span>Select all in pool</span>
+                </button>
+              )}
             </div>
 
-            {/* Select All in this column */}
-            {bulkMode && leadsByCounselor.unassigned.length > 0 && (
-              <button
-                onClick={() => toggleSelectAllInColumn(leadsByCounselor.unassigned)}
-                className="mt-2 text-[10px] text-amber-800 font-bold hover:underline flex items-center gap-1"
-              >
-                <span>Select all in pool</span>
-              </button>
-            )}
+            {/* Cards List */}
+            <div className="p-3 space-y-2.5 overflow-y-auto flex-1 min-h-[300px]">
+              {(leadsByCounselor.unassigned?.length || 0) === 0 ? (
+                <div className="h-44 flex flex-col items-center justify-center text-center p-4 border border-dashed border-amber-200 rounded-xl">
+                  <CheckCircle2 size={24} className="text-amber-500/70 mb-1.5" />
+                  <span className="text-xs font-semibold text-gray-700">All Leads Assigned</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">Drop leads here to unassign</span>
+                </div>
+              ) : (
+                leadsByCounselor.unassigned.map(lead => renderLeadCard(lead, 'unassigned'))
+              )}
+            </div>
           </div>
+        )}
 
-          {/* Cards List */}
-          <div className="p-3 space-y-2.5 overflow-y-auto flex-1 min-h-[300px]">
-            {leadsByCounselor.unassigned.length === 0 ? (
-              <div className="h-44 flex flex-col items-center justify-center text-center p-4 border border-dashed border-amber-200 rounded-xl">
-                <CheckCircle2 size={24} className="text-amber-500/70 mb-1.5" />
-                <span className="text-xs font-semibold text-gray-700">All Leads Assigned</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Drop leads here to unassign</span>
+        {/* ======================================================== */}
+        {/* COLUMN 1 FOR TEAM LEADER: MY ALLOCATED LEADS POOL       */}
+        {/* ======================================================== */}
+        {isTeamLeader(user) && (
+          <div
+            onDragOver={e => {
+              e.preventDefault()
+              setDragOverColumnId(user.id)
+            }}
+            onDragLeave={() => {
+              if (dragOverColumnId === user.id) setDragOverColumnId(null)
+            }}
+            onDrop={e => {
+              e.preventDefault()
+              handleDropLead(user.id)
+            }}
+            className={`w-80 shrink-0 flex flex-col rounded-2xl border transition-all duration-200 max-h-full ${
+              dragOverColumnId === user.id
+                ? 'border-dashed border-2 border-amber-500 bg-amber-50/40 ring-4 ring-amber-500/10 scale-[1.01]'
+                : 'border-amber-300 bg-gradient-to-b from-amber-50/40 via-white to-white shadow-xs'
+            }`}
+          >
+            {/* Column Header */}
+            <div className="p-4 border-b border-amber-200 bg-amber-100/70 rounded-t-2xl">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                    <Crown size={14} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                      <span>My Allocated Pool</span>
+                    </h3>
+                    <span className="text-[10px] text-amber-800 font-medium">Leads given to you by Admin to assign</span>
+                  </div>
+                </div>
+
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs">
+                  {leadsByCounselor[user.id]?.length || 0}
+                </span>
               </div>
-            ) : (
-              leadsByCounselor.unassigned.map(lead => renderLeadCard(lead, 'unassigned'))
-            )}
+
+              {/* Select All in this column */}
+              {bulkMode && (leadsByCounselor[user.id]?.length || 0) > 0 && (
+                <button
+                  onClick={() => toggleSelectAllInColumn(leadsByCounselor[user.id] || [])}
+                  className="mt-2 text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-1"
+                >
+                  <span>Select all in my pool</span>
+                </button>
+              )}
+            </div>
+
+            {/* Cards List */}
+            <div className="p-3 space-y-2.5 overflow-y-auto flex-1 min-h-[300px]">
+              {(leadsByCounselor[user.id]?.length || 0) === 0 ? (
+                <div className="h-44 flex flex-col items-center justify-center text-center p-4 border border-dashed border-amber-200 rounded-xl bg-amber-50/20">
+                  <Crown size={24} className="text-amber-500/70 mb-1.5" />
+                  <span className="text-xs font-semibold text-gray-700">No Leads in Your Pool</span>
+                  <span className="text-[10px] text-gray-500 mt-1 max-w-[200px]">
+                    When Admin allocates leads to you, they will appear here so you can assign them to your team.
+                  </span>
+                </div>
+              ) : (
+                (leadsByCounselor[user.id] || []).map(lead => renderLeadCard(lead, user.id))
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Empty state if Team Leader has no counselors assigned yet */}
+        {isTeamLeader(user) && counselors.length === 0 && (
+          <div className="w-80 p-8 border border-dashed border-gray-300 rounded-2xl bg-white text-center shrink-0">
+            <Users size={32} className="text-gray-400 mx-auto mb-2" />
+            <h4 className="text-sm font-semibold text-gray-900">No Counselors in Team</h4>
+            <p className="text-xs text-gray-500 mt-1">
+              Ask Admin to assign counselors to your team in the Team Management page.
+            </p>
+          </div>
+        )}
 
         {/* ======================================================== */}
         {/* COUNSELOR COLUMNS */}
@@ -772,12 +961,19 @@ export default function LeadReassignmentPage() {
               <div className="p-4 border-b border-gray-100 bg-gray-50/50 rounded-t-2xl">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center font-bold text-[10px] text-gray-800 uppercase shrink-0">
-                      {counselor.name?.slice(0, 2) || 'CO'}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] uppercase shrink-0 ${
+                      isTeamLeader(counselor)
+                        ? 'bg-amber-100 border border-amber-300 text-amber-800'
+                        : 'bg-gray-200 border border-gray-300 text-gray-800'
+                    }`}>
+                      {isTeamLeader(counselor) ? <Crown size={12} className="text-amber-600" /> : counselor.name?.slice(0, 2) || 'CO'}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-gray-900 text-xs truncate max-w-[130px]">
-                        {counselor.name}
+                      <h3 className="font-bold text-gray-900 text-xs truncate max-w-[130px] flex items-center gap-1">
+                        <span>{counselor.name}</span>
+                        {isTeamLeader(counselor) && (
+                          <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-semibold shrink-0">TL</span>
+                        )}
                       </h3>
                       <span className="text-[10px] text-gray-400 truncate block">
                         {counselor.email?.split('@')[0]}

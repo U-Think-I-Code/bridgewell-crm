@@ -122,7 +122,7 @@ function LeadsContent() {
       if (counselorParam) {
         query = query.eq('owner_id', counselorParam)
       } else {
-        query = query.or(`owner_id.in.(${allowed.join(',')}),owner_id.is.null`)
+        query = query.in('owner_id', allowed)
       }
     } else if (counselorParam) {
       query = query.eq('owner_id', counselorParam)

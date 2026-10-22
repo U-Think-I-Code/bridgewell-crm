@@ -200,7 +200,7 @@ export default function LeadProfile() {
   async function fetchCounselors() {
     const { data } = await supabase.from('users').select('id, name, email, role, languages, active').eq('active', true)
     const activeCounselors = (data || []).filter((u: any) => u.role === 'counselor')
-    const assignable = getAssignableCounselors(currentUser, activeCounselors)
+    const assignable = getAssignableCounselors(currentUser, activeCounselors, true)
     setCounselors(assignable)
   }
 
@@ -220,16 +220,22 @@ export default function LeadProfile() {
     }))
 
     // Access Control:
-    // - Managers can view all leads.
-    // - Team Leaders can view leads belonging to their team, themselves, or unassigned.
-    // - Counselors can only view their own assigned leads or unassigned leads.
-    if (isCounselor(currentUser) && leadData?.owner_id && leadData.owner_id !== currentUser.id) {
+    // - Managers can view all leads (including unassigned).
+    // - Team Leaders can ONLY view leads assigned to themselves or their team counselors. Cannot view unassigned leads.
+    // - Counselors can only view their own assigned leads.
+    if (isCounselor(currentUser) && (!leadData?.owner_id || leadData.owner_id !== currentUser.id)) {
       console.warn('[Security] Unauthorized lead access attempt blocked for counselor:', currentUser.id)
       setLead(null)
       setLoading(false)
       return
     }
-    if (isTeamLeader(currentUser) && leadData?.owner_id) {
+    if (isTeamLeader(currentUser)) {
+      if (!leadData?.owner_id) {
+        console.warn('[Security] Unauthorized lead access: Team Leader cannot view unassigned leads:', currentUser.id)
+        setLead(null)
+        setLoading(false)
+        return
+      }
       const allowedOwners = getAllowedOwnerIds(currentUser, allUsers || [])
       if (allowedOwners && !allowedOwners.has(leadData.owner_id)) {
         console.warn('[Security] Unauthorized lead access attempt blocked for team leader outside team:', currentUser.id)
