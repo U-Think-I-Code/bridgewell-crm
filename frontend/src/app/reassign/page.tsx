@@ -545,8 +545,9 @@ export default function LeadReassignmentPage() {
   }
 
   const toggleSelectAllInColumn = (columnLeads: Lead[]) => {
+    setBulkMode(true)
     const columnIds = columnLeads.map(l => l.id)
-    const allSelected = columnIds.every(id => selectedLeadIds.includes(id))
+    const allSelected = columnIds.length > 0 && columnIds.every(id => selectedLeadIds.includes(id))
 
     if (allSelected) {
       setSelectedLeadIds(prev => prev.filter(id => !columnIds.includes(id)))
@@ -608,6 +609,40 @@ export default function LeadReassignmentPage() {
                   : `Auto-Distribute My Pool (${stats.myPool} Leads)`}
               </span>
             </button>
+
+            {/* Global Select All Leads Button */}
+            {filteredLeads.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!bulkMode) setBulkMode(true)
+                  const allIds = filteredLeads.map(l => l.id)
+                  const allSelected = allIds.length > 0 && allIds.every(id => selectedLeadIds.includes(id))
+                  if (allSelected) {
+                    setSelectedLeadIds([])
+                  } else {
+                    setSelectedLeadIds(allIds)
+                  }
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer ${
+                  selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : selectedLeadIds.length > 0
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+                title="Select all filtered leads across the entire board"
+              >
+                <CheckSquare size={13} />
+                <span>
+                  {selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                    ? `Deselect All (${filteredLeads.length})`
+                    : selectedLeadIds.length > 0
+                    ? `Selected (${selectedLeadIds.length}/${filteredLeads.length})`
+                    : `Select All Board (${filteredLeads.length})`}
+                </span>
+              </button>
+            )}
 
             {/* Bulk Mode Toggle Button */}
             <button
@@ -889,14 +924,50 @@ export default function LeadReassignmentPage() {
         {/* ──────── Bulk Action Bar (When Bulk Mode is active) ──────── */}
         {bulkMode && (
           <div className="mt-3 p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-4 animate-in fade-in duration-200 flex-wrap">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
               <span className="text-xs font-bold text-blue-900">
                 {selectedLeadIds.length} lead(s) selected
               </span>
-              <span className="text-xs text-blue-600 font-normal">
-                (Click card checkboxes to select)
-              </span>
+              <div className="flex items-center gap-1.5 ml-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = filteredLeads.map(l => l.id)
+                    setSelectedLeadIds(allIds)
+                  }}
+                  className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 rounded text-[11px] font-semibold transition-colors"
+                >
+                  Select All ({filteredLeads.length})
+                </button>
+                {isManager(user) && (leadsByCounselor.unassigned?.length || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAllInColumn(leadsByCounselor.unassigned)}
+                    className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[11px] font-semibold transition-colors"
+                  >
+                    Select Pool ({leadsByCounselor.unassigned?.length})
+                  </button>
+                )}
+                {isTeamLeader(user) && (leadsByCounselor[user.id]?.length || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAllInColumn(leadsByCounselor[user.id] || [])}
+                    className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[11px] font-semibold transition-colors"
+                  >
+                    Select My Pool ({leadsByCounselor[user.id]?.length})
+                  </button>
+                )}
+                {selectedLeadIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeadIds([])}
+                    className="px-2 py-0.5 text-gray-500 hover:text-gray-900 rounded text-[11px] font-medium transition-colors"
+                  >
+                    Deselect All
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -923,7 +994,7 @@ export default function LeadReassignmentPage() {
                 onClick={handleBulkReassign}
                 className="px-3.5 py-1 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50"
               >
-                Confirm Move
+                Confirm Move ({selectedLeadIds.length})
               </button>
             </div>
           </div>
@@ -983,12 +1054,18 @@ export default function LeadReassignmentPage() {
               </div>
 
               {/* Select All in this column */}
-              {bulkMode && (leadsByCounselor.unassigned?.length || 0) > 0 && (
+              {(leadsByCounselor.unassigned?.length || 0) > 0 && (
                 <button
+                  type="button"
                   onClick={() => toggleSelectAllInColumn(leadsByCounselor.unassigned)}
-                  className="mt-2 text-[10px] text-amber-800 font-bold hover:underline flex items-center gap-1"
+                  className="mt-2 text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-1.5"
                 >
-                  <span>Select all in pool</span>
+                  <CheckSquare size={12} className="text-amber-700" />
+                  <span>
+                    {leadsByCounselor.unassigned.every(l => selectedLeadIds.includes(l.id))
+                      ? `Deselect pool (${leadsByCounselor.unassigned.length})`
+                      : `Select all in pool (${leadsByCounselor.unassigned.length})`}
+                  </span>
                 </button>
               )}
             </div>
@@ -1051,12 +1128,18 @@ export default function LeadReassignmentPage() {
               </div>
 
               {/* Select All in this column */}
-              {bulkMode && (leadsByCounselor[user.id]?.length || 0) > 0 && (
+              {(leadsByCounselor[user.id]?.length || 0) > 0 && (
                 <button
+                  type="button"
                   onClick={() => toggleSelectAllInColumn(leadsByCounselor[user.id] || [])}
-                  className="mt-2 text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-1"
+                  className="mt-2 text-[10px] text-amber-950 font-bold hover:underline flex items-center gap-1.5"
                 >
-                  <span>Select all in my pool</span>
+                  <CheckSquare size={12} className="text-amber-700" />
+                  <span>
+                    {(leadsByCounselor[user.id] || []).every(l => selectedLeadIds.includes(l.id))
+                      ? `Deselect my pool (${leadsByCounselor[user.id]?.length || 0})`
+                      : `Select all in my pool (${leadsByCounselor[user.id]?.length || 0})`}
+                  </span>
                 </button>
               )}
             </div>
@@ -1171,12 +1254,18 @@ export default function LeadReassignmentPage() {
                 </div>
 
                 {/* Select All in this column */}
-                {bulkMode && colLeads.length > 0 && (
+                {colLeads.length > 0 && (
                   <button
+                    type="button"
                     onClick={() => toggleSelectAllInColumn(colLeads)}
-                    className="mt-2 text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-1"
+                    className="mt-2 text-[10px] text-blue-700 font-bold hover:underline flex items-center gap-1.5"
                   >
-                    <span>Select all ({colLeads.length})</span>
+                    <CheckSquare size={12} className="text-blue-600" />
+                    <span>
+                      {colLeads.every(l => selectedLeadIds.includes(l.id))
+                        ? `Deselect all (${colLeads.length})`
+                        : `Select all (${colLeads.length})`}
+                    </span>
                   </button>
                 )}
               </div>

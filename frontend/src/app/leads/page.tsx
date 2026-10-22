@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
@@ -23,6 +23,9 @@ function LeadsContent() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list'|'kanban'>('list')
   const [reassigningId, setReassigningId] = useState<string | null>(null)
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+  const [bulkTargetCounselor, setBulkTargetCounselor] = useState<string>('')
+  const [bulkProcessing, setBulkProcessing] = useState(false)
   const { user } = useAuth()
   const searchParams = useSearchParams()
   const searchQuery = searchParams?.get('search') || ''
@@ -251,6 +254,110 @@ function LeadsContent() {
       fetchLeads()
     } finally {
       setReassigningId(null)
+    }
+  }
+
+  // Bulk Selection Handlers
+  const toggleSelectLead = (leadId: string) => {
+    setSelectedLeadIds(prev =>
+      prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]
+    )
+  }
+
+  const toggleSelectAllLeads = () => {
+    const filteredIds = filteredLeads.map(l => l.id)
+    const isAll = filteredIds.length > 0 && filteredIds.every(id => selectedLeadIds.includes(id))
+    if (isAll) {
+      setSelectedLeadIds(prev => prev.filter(id => !filteredIds.includes(id)))
+    } else {
+      setSelectedLeadIds(prev => Array.from(new Set([...prev, ...filteredIds])))
+    }
+  }
+
+  const handleBulkReassignLeads = async () => {
+    if (selectedLeadIds.length === 0 || !bulkTargetCounselor) return
+
+    const targetOwnerId = bulkTargetCounselor === 'unassigned' ? null : bulkTargetCounselor
+    const targetCounselor = counselors.find(c => c.id === targetOwnerId)
+    const targetName = targetOwnerId === user?.id ? (user?.name || 'My Pool') : targetCounselor ? targetCounselor.name : 'Unassigned'
+
+    if (!confirm(`Reassign all ${selectedLeadIds.length} selected leads to ${targetName}?`)) return
+
+    setBulkProcessing(true)
+
+    // Optimistic UI update
+    setLeads(prev => prev.map(l => {
+      if (selectedLeadIds.includes(l.id)) {
+        return {
+          ...l,
+          owner_id: targetOwnerId,
+          owner: targetOwnerId ? { name: targetName } : null
+        }
+      }
+      return l
+    }))
+
+    try {
+      // 1. Bulk update in Supabase
+      const { error } = await supabase
+        .from('leads')
+        .update({ owner_id: targetOwnerId })
+        .in('id', selectedLeadIds)
+
+      if (error) throw error
+
+      // 2. Audit entries for assignments and activities
+      const assignmentInserts = selectedLeadIds.map(leadId => ({
+        lead_id: leadId,
+        assigned_to: targetOwnerId,
+        assigned_by: user?.id,
+        time: new Date().toISOString()
+      }))
+      await supabase.from('assignments').insert(assignmentInserts)
+
+      const activityInserts = selectedLeadIds.map(leadId => ({
+        lead: leadId,
+        user_id: user?.id,
+        type: 'reassigned',
+        text: `Bulk reassigned to ${targetName} by ${user?.name || 'Leader'}`
+      }))
+      await supabase.from('activities').insert(activityInserts)
+
+      // 3. Notification to the assigned counselor
+      if (targetOwnerId && targetOwnerId !== user?.id) {
+        notifyLeadAssigned({
+          recipientId: targetOwnerId,
+          leadId: selectedLeadIds[0],
+          leadName: `${selectedLeadIds.length} Leads`,
+          senderName: user?.name || (isTeamLeader(user) ? 'Team Leader' : 'Manager')
+        }).catch(console.error)
+      }
+
+      setSelectedLeadIds([])
+      setBulkTargetCounselor('')
+    } catch (err: any) {
+      console.error('Failed to bulk reassign leads:', err)
+      alert(err?.message || 'Failed to bulk reassign leads.')
+      fetchLeads()
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const handleBulkUpdatePriority = async (newPriority: string) => {
+    if (selectedLeadIds.length === 0) return
+    const val = newPriority === 'UNSET' ? null : newPriority
+
+    // Optimistic UI update
+    setLeads(prev => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, priority: val } : l))
+
+    try {
+      await supabase.from('leads').update({ priority: val }).in('id', selectedLeadIds)
+      setSelectedLeadIds([])
+    } catch (err: any) {
+      console.error('Failed to bulk update priority:', err)
+      alert(err?.message || 'Failed to update priority.')
+      fetchLeads()
     }
   }
 
@@ -850,28 +957,150 @@ function LeadsContent() {
           )}
         </div>
 
-        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
-          <button
-            onClick={() => {
-              setSelectedPriority('ALL');
-              setSelectedOutcome('ALL');
-              setSelectedCountry('ALL');
-              setSelectedProgramme('ALL');
-              setSelectedDatePreset('ALL');
-              setServiceTrack('all');
-              setCustomStartDate('');
-              setCustomEndDate('');
-              handleCounselorFilterChange('ALL');
-            }}
-            className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
-          >
-            Reset Filters
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Quick Select All in Toolbar */}
+          {filteredLeads.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleSelectAllLeads}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer ${
+                selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                  ? 'bg-blue-600 text-white border-blue-700'
+                  : selectedLeadIds.length > 0
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              <CheckSquare size={13} />
+              <span>
+                {selectedLeadIds.length === filteredLeads.length && filteredLeads.length > 0
+                  ? `Deselect All (${filteredLeads.length})`
+                  : selectedLeadIds.length > 0
+                  ? `Selected (${selectedLeadIds.length}/${filteredLeads.length})`
+                  : `Select All (${filteredLeads.length})`}
+              </span>
+            </button>
+          )}
+
+          {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
+            <button
+              onClick={() => {
+                setSelectedPriority('ALL');
+                setSelectedOutcome('ALL');
+                setSelectedCountry('ALL');
+                setSelectedProgramme('ALL');
+                setSelectedDatePreset('ALL');
+                setServiceTrack('all');
+                setCustomStartDate('');
+                setCustomEndDate('');
+                handleCounselorFilterChange('ALL');
+              }}
+              className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Area */}
       <div className="flex-1 overflow-auto p-8">
+        {/* Bulk Action Bar (Leads Page) */}
+        {selectedLeadIds.length > 0 && (
+          <div className="mb-5 p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50/50 to-blue-50 border border-blue-200 rounded-xl flex items-center justify-between gap-4 flex-wrap shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+              <span className="text-xs font-bold text-blue-950">
+                {selectedLeadIds.length} of {filteredLeads.length} lead(s) selected
+              </span>
+              {selectedLeadIds.length < filteredLeads.length ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLeadIds(filteredLeads.map(l => l.id))}
+                  className="text-xs text-blue-700 font-bold hover:underline"
+                >
+                  Select all {filteredLeads.length} leads
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLeadIds([])}
+                  className="text-xs text-gray-500 font-medium hover:underline"
+                >
+                  Deselect all
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Bulk Reassign to Counselor */}
+              {canManageLeads(user) && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-600 font-medium">Assign to:</span>
+                  <select
+                    value={bulkTargetCounselor}
+                    onChange={e => setBulkTargetCounselor(e.target.value)}
+                    className="text-xs font-bold text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-black cursor-pointer"
+                  >
+                    <option value="">Select Counselor...</option>
+                    {isManager(user) && (
+                      <option value="unassigned">⚪ Unassigned Pool</option>
+                    )}
+                    {isTeamLeader(user) && (
+                      <option value={user.id}>👑 My Allocated Pool ({user.name || 'Me'})</option>
+                    )}
+                    {assignableCounselors
+                      .filter(c => !isTeamLeader(user) || c.id !== user.id)
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          👤 {c.name}
+                        </option>
+                      ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={!bulkTargetCounselor || bulkProcessing}
+                    onClick={handleBulkReassignLeads}
+                    className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1 shadow-2xs"
+                  >
+                    <span>Reassign ({selectedLeadIds.length})</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Bulk Priority */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-600 font-medium">Priority:</span>
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    if (e.target.value) {
+                      handleBulkUpdatePriority(e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                  className="text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+                >
+                  <option value="">Set Priority...</option>
+                  <option value="Hot">🔥 Hot</option>
+                  <option value="Warm">☀️ Warm</option>
+                  <option value="Cold">❄️ Cold</option>
+                  <option value="UNSET">⚪ Unset</option>
+                </select>
+              </div>
+
+              {/* Clear button */}
+              <button
+                type="button"
+                onClick={() => setSelectedLeadIds([])}
+                className="text-xs text-gray-500 hover:text-black font-semibold px-2 py-1"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
         {activeTab === 'enrolled' && (
           <div className="mb-6 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-3.5">
@@ -910,6 +1139,20 @@ function LeadsContent() {
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="w-12 px-4 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredLeads.length > 0 && selectedLeadIds.length === filteredLeads.length}
+                      ref={input => {
+                        if (input) {
+                          input.indeterminate = selectedLeadIds.length > 0 && selectedLeadIds.length < filteredLeads.length
+                        }
+                      }}
+                      onChange={toggleSelectAllLeads}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                      title="Select all filtered leads"
+                    />
+                  </th>
                   <th className="px-6 py-3 font-medium text-gray-500">Name & Source</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Priority / Temp</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Contact</th>
@@ -921,9 +1164,24 @@ function LeadsContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredLeads.map((lead) => (
-                  <tr key={lead.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-6 py-4 font-medium text-gray-900">
+                {filteredLeads.map((lead) => {
+                  const isSelected = selectedLeadIds.includes(lead.id)
+                  return (
+                    <tr
+                      key={lead.id}
+                      className={`transition-colors group ${
+                        isSelected ? 'bg-blue-50/50 hover:bg-blue-50/70' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="w-12 px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectLead(lead.id)}
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-6 py-4 font-medium text-gray-900">
                       <div className="flex flex-col">
                         <Link href={`/leads/${lead.id}`} className="hover:underline font-semibold text-gray-900 leading-tight">
                           {lead.name}
@@ -1120,7 +1378,8 @@ function LeadsContent() {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                )
+              })}
               </tbody>
             </table>
             {filteredLeads.length === 0 && (
