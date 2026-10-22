@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
@@ -10,16 +10,19 @@ import CSVImportModal from '@/components/CSVImportModal'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { canManageLeads, isCounselor, isTeamLeader, parseUserTeamMeta } from '@/lib/teamHelper'
+import { canManageLeads, isCounselor, isTeamLeader, isManager, parseUserTeamMeta, getAssignableCounselors } from '@/lib/teamHelper'
+import { notifyLeadAssigned } from '@/lib/notifications'
 
 function LeadsContent() {
   const router = useRouter()
   const [leads, setLeads] = useState<any[]>([])
+  const [counselors, setCounselors] = useState<any[]>([])
   const [stages, setStages] = useState<string[]>([])
   const [showModal, setShowModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list'|'kanban'>('list')
+  const [reassigningId, setReassigningId] = useState<string | null>(null)
   const { user } = useAuth()
   const searchParams = useSearchParams()
   const searchQuery = searchParams?.get('search') || ''
@@ -54,6 +57,29 @@ function LeadsContent() {
     router.replace(`/leads${q}`, { scroll: false })
   }
   
+  // Counselor Filter State: 'ALL' | 'UNASSIGNED' | 'MY_POOL' | counselor_id
+  const [selectedCounselor, setSelectedCounselor] = useState<string>(counselorParam || 'ALL')
+
+  useEffect(() => {
+    if (counselorParam) {
+      setSelectedCounselor(counselorParam)
+    } else {
+      setSelectedCounselor('ALL')
+    }
+  }, [counselorParam])
+
+  const handleCounselorFilterChange = (counselorId: string) => {
+    setSelectedCounselor(counselorId)
+    const currentParams = new URLSearchParams(searchParams?.toString() || '')
+    if (counselorId === 'ALL') {
+      currentParams.delete('counselor')
+    } else {
+      currentParams.set('counselor', counselorId)
+    }
+    const q = currentParams.toString() ? `?${currentParams.toString()}` : ''
+    router.replace(`/leads${q}`, { scroll: false })
+  }
+
   // Priority Filter State: 'ALL' | 'Hot' | 'Warm' | 'Cold' | 'UNSET'
   const [selectedPriority, setSelectedPriority] = useState<string>(initialPriority)
   // Call Outcome Filter State: 'ALL' | 'Connected' | 'No Answer' | 'Busy' | 'Wrong Num' | 'UNSET'
@@ -77,36 +103,21 @@ function LeadsContent() {
     serviceParam === 'visa_process' || serviceParam === 'study_abroad' ? serviceParam : 'all'
   )
 
-  useEffect(() => {
-    fetchLeads()
-    fetchStages()
-
-    // Realtime channel for live updates across counselors and admins
-    const channel = supabase
-      .channel('leads-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
-        fetchLeads()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stages' }, () => {
-        fetchStages()
-        fetchLeads()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, () => {
-        fetchLeads()
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user, searchQuery, counselorParam])
-
   const fetchStages = async () => {
     const { data } = await supabase.from('stages').select('name').order('stage_order', { ascending: true })
     if (data) setStages(data.map(s => s.name))
   }
 
+  const fetchCounselors = async () => {
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, email, role, languages, active')
+      .order('name', { ascending: true })
+    if (data) setCounselors(data)
+  }
+
   const fetchLeads = async () => {
+    if (!user) return
     setLoading(true)
     let query = supabase
       .from('leads')
@@ -117,15 +128,18 @@ function LeadsContent() {
     if (isCounselor(user)) {
       query = query.eq('owner_id', user.id)
     } else if (isTeamLeader(user)) {
-      const meta = parseUserTeamMeta(user.languages)
-      const allowed = Array.from(new Set([user.id, ...(meta.member_ids || [])]))
-      if (counselorParam) {
-        query = query.eq('owner_id', counselorParam)
-      } else {
-        query = query.in('owner_id', allowed)
-      }
-    } else if (counselorParam) {
-      query = query.eq('owner_id', counselorParam)
+      const meta = parseUserTeamMeta(user?.languages)
+      const memberSet = new Set<string>(meta.member_ids || [])
+      // Include counselors who have team_leader_id set to user.id
+      const { data: allUsers } = await supabase.from('users').select('id, languages')
+      ;(allUsers || []).forEach(u => {
+        const uMeta = parseUserTeamMeta(u.languages)
+        if (uMeta.team_leader_id === user.id) {
+          memberSet.add(u.id)
+        }
+      })
+      memberSet.add(user.id)
+      query = query.in('owner_id', Array.from(memberSet))
     }
 
     if (searchQuery) {
@@ -140,6 +154,104 @@ function LeadsContent() {
     if (error) console.error('Supabase Error:', error)
     else setLeads(data || [])
     setLoading(false)
+  }
+
+  useEffect(() => {
+    if (user) {
+      fetchLeads()
+      fetchStages()
+      fetchCounselors()
+
+      // Realtime channel for live updates across counselors and admins
+      const channel = supabase
+        .channel('leads-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+          fetchLeads()
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'stages' }, () => {
+          fetchStages()
+          fetchLeads()
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, () => {
+          fetchLeads()
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+          fetchCounselors()
+        })
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [user, searchQuery])
+
+  // Counselors that current user is allowed to assign/reassign leads to
+  const assignableCounselors = useMemo(() => {
+    return getAssignableCounselors(user, counselors, true)
+  }, [user, counselors])
+
+  // Inline lead reassignment handler
+  const handleReassignLead = async (leadId: string, newOwnerId: string) => {
+    const targetOwnerId = newOwnerId || null
+    const targetCounselor = counselors.find(c => c.id === targetOwnerId)
+    const targetName = targetCounselor ? targetCounselor.name : targetOwnerId === user?.id ? (user?.name || 'My Pool') : 'Unassigned'
+
+    setReassigningId(leadId)
+
+    // Optimistic UI update
+    setLeads(prev => prev.map(l => {
+      if (l.id === leadId) {
+        return {
+          ...l,
+          owner_id: targetOwnerId,
+          owner: targetOwnerId ? { name: targetName } : null
+        }
+      }
+      return l
+    }))
+
+    try {
+      // 1. Update lead in DB
+      const { error } = await supabase
+        .from('leads')
+        .update({ owner_id: targetOwnerId })
+        .eq('id', leadId)
+
+      if (error) throw error
+
+      // 2. Insert activity log
+      await supabase.from('activities').insert([{
+        lead: leadId,
+        user_id: user?.id,
+        type: 'reassigned',
+        text: `Lead reassigned to ${targetName} by ${user?.name || 'Leader'}`
+      }])
+
+      // 3. Insert assignment history record
+      if (targetOwnerId) {
+        await supabase.from('assignments').insert([{
+          lead: leadId,
+          assigned_to: targetOwnerId,
+          assigned_by: user?.id
+        }])
+
+        // 4. Send notification
+        const targetLead = leads.find(l => l.id === leadId)
+        await notifyLeadAssigned({
+          recipientId: targetOwnerId,
+          leadId,
+          leadName: targetLead?.name || 'Student Lead',
+          senderName: user?.name || 'Team Leader'
+        })
+      }
+    } catch (err: any) {
+      console.error('Failed to reassign lead:', err)
+      alert(err?.message || 'Failed to reassign lead. Please try again.')
+      fetchLeads()
+    } finally {
+      setReassigningId(null)
+    }
   }
 
   const handleUpdatePriority = async (leadId: string, newPriority: string) => {
@@ -192,23 +304,31 @@ function LeadsContent() {
   }
 
   // Count calculations
-  const totalCount = leads.length
   const activeLeads = leads.filter(l => l.stage !== 'Enrolled')
   const enrolledLeads = leads.filter(l => l.stage === 'Enrolled')
-  const activeCount = activeLeads.length
-  const enrolledCount = enrolledLeads.length
 
   // Base pool depending on current tab
   const basePool = activeTab === 'active' ? activeLeads : activeTab === 'enrolled' ? enrolledLeads : leads
 
-  const hotCount = basePool.filter(l => l.priority === 'Hot').length
-  const warmCount = basePool.filter(l => l.priority === 'Warm').length
-  const coldCount = basePool.filter(l => l.priority === 'Cold').length
-  const unsetCount = basePool.filter(l => !l.priority).length
+  // Scope basePool by counselor filter so that all counts and filters align
+  const counselorScopedPool = useMemo(() => {
+    if (selectedCounselor === 'ALL') return basePool
+    if (selectedCounselor === 'UNASSIGNED') return basePool.filter(l => !l.owner_id)
+    if (selectedCounselor === 'MY_POOL') return basePool.filter(l => l.owner_id === user?.id)
+    return basePool.filter(l => l.owner_id === selectedCounselor)
+  }, [basePool, selectedCounselor, user?.id])
+
+  const hotCount = counselorScopedPool.filter(l => l.priority === 'Hot').length
+  const warmCount = counselorScopedPool.filter(l => l.priority === 'Warm').length
+  const coldCount = counselorScopedPool.filter(l => l.priority === 'Cold').length
+  const unsetCount = counselorScopedPool.filter(l => !l.priority).length
+  const totalCount = counselorScopedPool.length
+  const activeCount = counselorScopedPool.filter(l => l.stage !== 'Enrolled').length
+  const enrolledCount = counselorScopedPool.filter(l => l.stage === 'Enrolled').length
 
   // Service Track Counts
-  const studyAbroadCount = basePool.filter(l => getLeadServiceType(l) === 'study_abroad').length
-  const visaProcessCount = basePool.filter(l => getLeadServiceType(l) === 'visa_process').length
+  const studyAbroadCount = counselorScopedPool.filter(l => getLeadServiceType(l) === 'study_abroad').length
+  const visaProcessCount = counselorScopedPool.filter(l => getLeadServiceType(l) === 'visa_process').length
 
   // Helper to test if a lead created_at falls inside selected date filter
   const matchesDateFilter = (createdAtStr: string | null | undefined): boolean => {
@@ -265,7 +385,7 @@ function LeadsContent() {
   }
 
   // Filtered leads based on priority, call outcome, country, programme level, and date
-  const filteredLeads = basePool.filter(l => {
+  const filteredLeads = counselorScopedPool.filter(l => {
     if (selectedPriority !== 'ALL') {
       if (selectedPriority === 'UNSET' && l.priority) return false
       if (selectedPriority !== 'UNSET' && l.priority !== selectedPriority) return false
@@ -310,10 +430,19 @@ function LeadsContent() {
                 Search: &ldquo;{searchQuery}&rdquo;
               </span>
             )}
-            {counselorParam && (
-              <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200 flex items-center gap-1.5">
-                <span>Counselor Filter Active</span>
-                <Link href="/leads" className="text-blue-500 hover:text-blue-900 font-bold text-sm leading-none ml-0.5">×</Link>
+            {selectedCounselor !== 'ALL' && (
+              <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200 flex items-center gap-1.5 shadow-2xs">
+                <span>👤 Counselor: {
+                  selectedCounselor === 'UNASSIGNED' ? 'Unassigned Leads' :
+                  selectedCounselor === 'MY_POOL' ? 'My Allocated Pool' :
+                  counselors.find(c => c.id === selectedCounselor)?.name || 'Selected Counselor'
+                }</span>
+                <button
+                  type="button"
+                  onClick={() => handleCounselorFilterChange('ALL')}
+                  className="text-indigo-500 hover:text-indigo-900 font-bold text-sm leading-none ml-0.5 cursor-pointer"
+                  title="Clear Counselor Filter"
+                >×</button>
               </span>
             )}
             {selectedDatePreset !== 'ALL' && (
@@ -673,9 +802,55 @@ function LeadsContent() {
               </div>
             )}
           </div>
+
+          {/* Counselor Filter (For Managers & Team Leaders) */}
+          {(isManager(user) || isTeamLeader(user)) && (
+            <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+              <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+                <Users size={13} className="text-indigo-600" /> Counselor:
+              </span>
+              <select
+                value={selectedCounselor}
+                onChange={(e) => handleCounselorFilterChange(e.target.value)}
+                className="bg-white border border-indigo-200 text-indigo-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-indigo-50/50 focus:ring-2 focus:ring-indigo-200 transition-all cursor-pointer"
+              >
+                {isManager(user) ? (
+                  <>
+                    <option value="ALL">👥 All Counselors ({leads.length})</option>
+                    <option value="UNASSIGNED">⚪ Unassigned Leads ({leads.filter(l => !l.owner_id).length})</option>
+                    {counselors.map(c => {
+                      const count = leads.filter(l => l.owner_id === c.id).length
+                      return (
+                        <option key={c.id} value={c.id}>
+                          👤 {c.name} ({count})
+                        </option>
+                      )
+                    })}
+                  </>
+                ) : (
+                  <>
+                    <option value="ALL">👥 All Team Leads ({leads.length})</option>
+                    <option value="MY_POOL">
+                      👑 My Allocated Pool ({leads.filter(l => l.owner_id === user?.id).length})
+                    </option>
+                    {assignableCounselors
+                      .filter(c => c.id !== user?.id)
+                      .map(c => {
+                        const count = leads.filter(l => l.owner_id === c.id).length
+                        return (
+                          <option key={c.id} value={c.id}>
+                            👤 {c.name} ({count})
+                          </option>
+                        )
+                      })}
+                  </>
+                )}
+              </select>
+            </div>
+          )}
         </div>
 
-        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all') && (
+        {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
           <button
             onClick={() => {
               setSelectedPriority('ALL');
@@ -686,6 +861,7 @@ function LeadsContent() {
               setServiceTrack('all');
               setCustomStartDate('');
               setCustomEndDate('');
+              handleCounselorFilterChange('ALL');
             }}
             className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
           >
@@ -874,17 +1050,61 @@ function LeadsContent() {
                       </Link>
                     </td>
                     
-                    {/* Owner */}
+                    {/* Owner / Reassign Inline */}
                     <td className="px-6 py-4">
-                      {lead.owner?.name ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                          {lead.owner.name}
-                        </span>
+                      {canManageLeads(user) ? (
+                        <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+                          <select
+                            value={lead.owner_id || ''}
+                            disabled={reassigningId === lead.id}
+                            onChange={(e) => handleReassignLead(lead.id, e.target.value)}
+                            title="Click to reassign to any counselor"
+                            className={`text-xs font-semibold px-2.5 py-1 rounded-md border outline-none cursor-pointer transition-all shadow-2xs ${
+                              reassigningId === lead.id
+                                ? 'opacity-50 cursor-wait bg-gray-100 text-gray-400 border-gray-200'
+                                : lead.owner_id
+                                ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/80 hover:border-blue-300 focus:ring-2 focus:ring-blue-200'
+                                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200 focus:ring-2 focus:ring-gray-300'
+                            }`}
+                          >
+                            {isManager(user) && (
+                              <option value="">⚪ Unassigned</option>
+                            )}
+
+                            {isTeamLeader(user) && (
+                              <option value={user.id}>
+                                👑 My Pool ({user.name || 'Me'})
+                              </option>
+                            )}
+
+                            {lead.owner_id &&
+                              lead.owner_id !== user.id &&
+                              !assignableCounselors.some(c => c.id === lead.owner_id) && (
+                                <option value={lead.owner_id}>
+                                  👤 {lead.owner?.name || 'Current Owner'}
+                                </option>
+                            )}
+
+                            {assignableCounselors
+                              .filter(c => !isTeamLeader(user) || c.id !== user.id)
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  👤 {c.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-gray-400 bg-gray-100">
-                          Unassigned
-                        </span>
+                        lead.owner?.name ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            {lead.owner.name}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-gray-400 bg-gray-100">
+                            Unassigned
+                          </span>
+                        )
                       )}
                     </td>
 
