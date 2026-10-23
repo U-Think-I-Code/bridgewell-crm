@@ -94,7 +94,37 @@ export function resolveCountryName(country?: string | null): string {
   return trimmed
 }
 
+// Comprehensive Canadian Area Codes for precise NANP (+1) routing
+const CANADIAN_AREA_CODES = new Set([
+  '204', '226', '236', '249', '250', '289', '306', '343', '365', '367', '403', '416',
+  '418', '431', '437', '438', '450', '506', '514', '519', '548', '579', '581', '587',
+  '604', '613', '639', '647', '672', '705', '709', '778', '780', '782', '807', '819',
+  '825', '867', '873', '902', '905'
+])
+
+// Ordered with longer prefixes first so +966 matches before +96, +353 before +35, etc.
 export const PHONE_DIAL_CODES: [string, string][] = [
+  // 4-digit Caribbean NANP codes
+  ['+1242', 'Bahamas'],
+  ['+1246', 'Barbados'],
+  ['+1264', 'Anguilla'],
+  ['+1268', 'Antigua and Barbuda'],
+  ['+1345', 'Cayman Islands'],
+  ['+1441', 'Bermuda'],
+  ['+1473', 'Grenada'],
+  ['+1649', 'Turks and Caicos'],
+  ['+1664', 'Montserrat'],
+  ['+1721', 'Sint Maarten'],
+  ['+1758', 'Saint Lucia'],
+  ['+1767', 'Dominica'],
+  ['+1784', 'Saint Vincent'],
+  ['+1809', 'Dominican Republic'],
+  ['+1829', 'Dominican Republic'],
+  ['+1849', 'Dominican Republic'],
+  ['+1868', 'Trinidad and Tobago'],
+  ['+1869', 'Saint Kitts and Nevis'],
+  ['+1876', 'Jamaica'],
+  // 3-digit Middle East / Africa / Europe / Asia
   ['+966', 'Saudi Arabia'],
   ['+971', 'UAE'],
   ['+968', 'Oman'],
@@ -112,162 +142,258 @@ export const PHONE_DIAL_CODES: [string, string][] = [
   ['+254', 'Kenya'],
   ['+234', 'Nigeria'],
   ['+233', 'Ghana'],
+  ['+353', 'Ireland'],
+  ['+358', 'Finland'],
+  ['+420', 'Czech Republic'],
+  ['+351', 'Portugal'],
+  ['+994', 'Azerbaijan'],
+  ['+995', 'Georgia'],
+  ['+996', 'Kyrgyzstan'],
+  ['+998', 'Uzbekistan'],
+  ['+992', 'Tajikistan'],
+  ['+993', 'Turkmenistan'],
+  // 2-digit codes
   ['+91', 'India'],
   ['+92', 'Pakistan'],
   ['+93', 'Afghanistan'],
   ['+94', 'Sri Lanka'],
+  ['+90', 'Turkey'],
   ['+44', 'UK'],
-  ['+61', 'Australia'],
-  ['+64', 'New Zealand'],
   ['+49', 'Germany'],
   ['+33', 'France'],
   ['+39', 'Italy'],
   ['+34', 'Spain'],
-  ['+20', 'Egypt'],
+  ['+31', 'Netherlands'],
+  ['+46', 'Sweden'],
+  ['+47', 'Norway'],
+  ['+45', 'Denmark'],
+  ['+48', 'Poland'],
+  ['+41', 'Switzerland'],
+  ['+43', 'Austria'],
+  ['+32', 'Belgium'],
+  ['+36', 'Hungary'],
+  ['+40', 'Romania'],
+  ['+30', 'Greece'],
+  ['+61', 'Australia'],
+  ['+64', 'New Zealand'],
   ['+27', 'South Africa'],
+  ['+20', 'Egypt'],
   ['+60', 'Malaysia'],
   ['+65', 'Singapore'],
   ['+63', 'Philippines'],
-  ['+90', 'Turkey'],
+  ['+86', 'China'],
+  ['+81', 'Japan'],
+  ['+82', 'South Korea'],
+  ['+84', 'Vietnam'],
+  ['+62', 'Indonesia'],
+  ['+55', 'Brazil'],
+  ['+52', 'Mexico'],
+  // 1-digit code: +1
   ['+1', 'USA'],
 ]
 
+/**
+ * Accurately extracts Country Name from Phone Number Dial Code
+ */
 export function inferCountryFromPhone(phone?: string | null): string {
   if (!phone) return ''
-  const clean = phone.replace(/^p:/i, '').replace(/[^\d+]/g, '')
-  if (!clean.startsWith('+')) return ''
+  let clean = phone.replace(/^p:/i, '').replace(/[^\d+]/g, '')
+  if (!clean) return ''
   
+  if (clean.startsWith('00')) {
+    clean = '+' + clean.slice(2)
+  } else if (!clean.startsWith('+')) {
+    clean = '+' + clean
+  }
+
+  // Check 4-digit, 3-digit, 2-digit codes first
   for (const [code, country] of PHONE_DIAL_CODES) {
-    if (clean.startsWith(code)) {
+    if (code !== '+1' && clean.startsWith(code)) {
       return country
     }
   }
+
+  // Check North American Numbering Plan (+1): USA vs Canada
+  if (clean.startsWith('+1')) {
+    if (clean.length >= 5) {
+      const areaCode = clean.slice(2, 5)
+      if (CANADIAN_AREA_CODES.has(areaCode)) {
+        return 'Canada'
+      }
+    }
+    return 'USA'
+  }
+
+  return ''
+}
+
+/**
+ * Returns authoritative country name by checking Phone country code first, then lead.country field
+ */
+export function getLeadEffectiveCountry(lead?: {
+  country?: string | null
+  phone?: string | null
+} | null): string {
+  if (!lead) return ''
+
+  // 1. Phone number dial code (most authoritative source of truth)
+  const phoneCountry = inferCountryFromPhone(lead.phone)
+  if (phoneCountry) {
+    // If phone starts with +1 (USA), but country field explicitly specifies Canada
+    if (phoneCountry === 'USA' && lead.country) {
+      const c = lead.country.toLowerCase().trim()
+      if (c === 'canada' || c === 'ca' || c === 'can') {
+        return 'Canada'
+      }
+    }
+    return phoneCountry
+  }
+
+  // 2. Explicit country on lead profile
+  if (lead.country) {
+    const resolved = resolveCountryName(lead.country)
+    if (resolved) return resolved
+  }
+
   return ''
 }
 
 export function formatCountryBadge(country?: string | null, phone?: string | null): string {
-  let target = country ? country.trim() : ''
-  if (!target && phone) {
-    target = inferCountryFromPhone(phone)
-  }
-  if (!target) return ''
+  const effective = getLeadEffectiveCountry({ country, phone })
+  if (!effective) return ''
   
-  const flag = getCountryFlag(target)
-  const resolved = resolveCountryName(target)
-  const upper = target.toUpperCase()
-  
-  if (upper.length === 2 && resolved !== upper) {
-    return `${flag} ${resolved} (${upper})`
-  }
+  const flag = getCountryFlag(effective)
+  const resolved = resolveCountryName(effective)
   return `${flag} ${resolved}`
 }
 
 /**
- * Filter matcher for Ad Country dropdown
+ * Filter matcher for Ad Country dropdown based primarily on phone country code
  */
 export function matchesCountryFilter(
-  lead: { country?: string | null; phone?: string | null; ad_campaign_name?: string | null; source?: string | null; metadata?: any },
+  lead: {
+    country?: string | null
+    phone?: string | null
+    ad_campaign_name?: string | null
+    source?: string | null
+    metadata?: any
+  },
   filter: string
 ): boolean {
   if (!filter || filter === 'ALL' || filter === 'all') return true
 
   const normFilter = filter.toLowerCase().trim()
-  const rawCountry = (lead.country || '').toLowerCase().trim()
-  const phone = (lead.phone || '').replace(/^p:/i, '').replace(/[^\d+]/g, '')
-  const metaStr = typeof lead.metadata === 'object' ? JSON.stringify(lead.metadata).toLowerCase() : ''
-  const adSource = `${lead.ad_campaign_name || ''} ${lead.source || ''} ${metaStr}`.toLowerCase()
+  
+  // 1. Determine lead country primarily using Phone Dial Code
+  const detected = getLeadEffectiveCountry(lead)
 
-  // Saudi Arabia
-  if (normFilter === 'saudi arabia' || normFilter === 'saudi' || normFilter === 'sa') {
-    return (
-      rawCountry.includes('saudi') ||
-      rawCountry === 'sa' ||
-      rawCountry === 'ksa' ||
-      phone.startsWith('+966') ||
-      adSource.includes('saudi') ||
-      adSource.includes('ksa')
-    )
+  if (detected) {
+    const d = detected.toLowerCase().trim()
+
+    // UK
+    if (normFilter === 'uk' || normFilter === 'gb') {
+      return d === 'uk' || d === 'united kingdom'
+    }
+
+    // USA
+    if (normFilter === 'usa' || normFilter === 'us') {
+      return d === 'usa' || d === 'united states'
+    }
+
+    // Canada
+    if (normFilter === 'canada' || normFilter === 'ca') {
+      return d === 'canada'
+    }
+
+    // Australia
+    if (normFilter === 'australia' || normFilter === 'au') {
+      return d === 'australia'
+    }
+
+    // Germany
+    if (normFilter === 'germany' || normFilter === 'de') {
+      return d === 'germany'
+    }
+
+    // Ireland
+    if (normFilter === 'ireland' || normFilter === 'ie') {
+      return d === 'ireland'
+    }
+
+    // UAE
+    if (normFilter === 'uae' || normFilter === 'ae') {
+      return d === 'uae' || d === 'united arab emirates'
+    }
+
+    // India
+    if (normFilter === 'india' || normFilter === 'in') {
+      return d === 'india'
+    }
+
+    // Saudi Arabia
+    if (normFilter === 'saudi arabia' || normFilter === 'saudi' || normFilter === 'sa') {
+      return d === 'saudi arabia'
+    }
+
+    // South Africa
+    if (normFilter === 'south africa' || normFilter === 'za') {
+      return d === 'south africa'
+    }
+
+    // Europe
+    if (normFilter === 'europe' || normFilter === 'eu') {
+      const euro = [
+        'uk', 'united kingdom', 'germany', 'ireland', 'france', 'italy', 'spain',
+        'netherlands', 'sweden', 'norway', 'denmark', 'finland', 'poland',
+        'switzerland', 'austria', 'belgium', 'portugal', 'czech republic',
+        'hungary', 'romania', 'greece', 'europe'
+      ]
+      return euro.includes(d)
+    }
+
+    return d === normFilter
   }
 
-  // South Africa
-  if (normFilter === 'south africa' || normFilter === 'za') {
-    return (
-      rawCountry.includes('south africa') ||
-      rawCountry === 'za' ||
-      rawCountry === 'rsa' ||
-      phone.startsWith('+27') ||
-      adSource.includes('south africa')
-    )
-  }
+  // 2. Fallback: ONLY when lead has NO detectable phone country and NO country in DB
+  // Use strict word boundary regex on source/ad_campaign_name (NEVER loose substring in metadata!)
+  const sourceText = `${lead.ad_campaign_name || ''} ${lead.source || ''}`.toLowerCase()
+  if (!sourceText.trim()) return false
 
-  // Europe (pan-European or European destinations)
-  if (normFilter === 'europe' || normFilter === 'eu') {
-    const euroCountries = [
-      'europe', 'eu', 'germany', 'de', 'france', 'fr', 'ireland', 'ie', 'uk', 'united kingdom', 'gb',
-      'italy', 'it', 'spain', 'es', 'netherlands', 'nl', 'sweden', 'se', 'norway', 'no',
-      'denmark', 'dk', 'finland', 'fi', 'poland', 'pl', 'switzerland', 'ch', 'austria', 'at',
-      'belgium', 'be', 'portugal', 'pt', 'czech', 'hungary', 'romania', 'greece', 'gr'
-    ]
-    return (
-      euroCountries.some(c => rawCountry === c || rawCountry.includes(c)) ||
-      adSource.includes('europe') ||
-      adSource.includes('eur')
-    )
-  }
-
-  // USA
-  if (normFilter === 'usa' || normFilter === 'us') {
-    return (
-      rawCountry.includes('usa') ||
-      rawCountry === 'us' ||
-      rawCountry.includes('united states') ||
-      (phone.startsWith('+1') && !rawCountry.includes('canada')) ||
-      adSource.includes('usa')
-    )
-  }
-
-  // UK
   if (normFilter === 'uk' || normFilter === 'gb') {
-    return (
-      rawCountry.includes('uk') ||
-      rawCountry === 'gb' ||
-      rawCountry.includes('united kingdom') ||
-      phone.startsWith('+44') ||
-      adSource.includes('uk')
-    )
+    return /\b(uk|united kingdom|britain|england)\b/i.test(sourceText)
   }
-
-  // Canada
+  if (normFilter === 'usa' || normFilter === 'us') {
+    return /\b(usa|united states)\b/i.test(sourceText)
+  }
   if (normFilter === 'canada' || normFilter === 'ca') {
-    return rawCountry.includes('canada') || rawCountry === 'ca' || rawCountry === 'can' || adSource.includes('canada')
+    return /\b(canada)\b/i.test(sourceText)
   }
-
-  // Australia
   if (normFilter === 'australia' || normFilter === 'au') {
-    return rawCountry.includes('australia') || rawCountry === 'au' || rawCountry === 'aus' || phone.startsWith('+61') || adSource.includes('australia')
+    return /\b(australia|aussie)\b/i.test(sourceText)
   }
-
-  // Germany
   if (normFilter === 'germany' || normFilter === 'de') {
-    return rawCountry.includes('germany') || rawCountry === 'de' || phone.startsWith('+49') || adSource.includes('germany')
+    return /\b(germany|deutschland)\b/i.test(sourceText)
   }
-
-  // Ireland
   if (normFilter === 'ireland' || normFilter === 'ie') {
-    return rawCountry.includes('ireland') || rawCountry === 'ie' || phone.startsWith('+353') || adSource.includes('ireland')
+    return /\b(ireland)\b/i.test(sourceText)
   }
-
-  // UAE
   if (normFilter === 'uae' || normFilter === 'ae') {
-    return rawCountry.includes('uae') || rawCountry === 'ae' || rawCountry.includes('dubai') || phone.startsWith('+971') || adSource.includes('uae')
+    return /\b(uae|dubai|emirates)\b/i.test(sourceText)
   }
-
-  // India
   if (normFilter === 'india' || normFilter === 'in') {
-    return rawCountry.includes('india') || rawCountry === 'in' || phone.startsWith('+91') || adSource.includes('india')
+    return /\b(india)\b/i.test(sourceText)
+  }
+  if (normFilter === 'saudi arabia' || normFilter === 'saudi' || normFilter === 'sa') {
+    return /\b(saudi|ksa)\b/i.test(sourceText)
+  }
+  if (normFilter === 'south africa' || normFilter === 'za') {
+    return /\b(south africa)\b/i.test(sourceText)
+  }
+  if (normFilter === 'europe' || normFilter === 'eu') {
+    return /\b(europe|european)\b/i.test(sourceText)
   }
 
-  return rawCountry.includes(normFilter) || adSource.includes(normFilter)
+  return false
 }
 
 /**
