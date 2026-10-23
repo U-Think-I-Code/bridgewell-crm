@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { X } from 'lucide-react'
+import { normalizePhone } from '@/lib/phoneHelper'
 
 export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const [name, setName] = useState('')
@@ -19,21 +20,46 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
     e.preventDefault()
     setLoading(true)
     
-    // Duplicate Check
-    const { data: existing } = await supabase
+    // Normalized Duplicate Check
+    const corePhone = normalizePhone(phone)
+    const cleanEmail = email ? email.trim().toLowerCase() : ''
+    
+    let existingQuery = supabase
       .from('leads')
-      .select('id')
-      .or(`phone.eq.${phone}${email ? `,email.eq.${email}` : ''}`)
+      .select('id, name, phone, email, stage, metadata')
+
+    if (corePhone.length >= 7 && cleanEmail) {
+      existingQuery = existingQuery.or(`phone.ilike.%${corePhone}%,email.ilike.${cleanEmail}`)
+    } else if (corePhone.length >= 7) {
+      existingQuery = existingQuery.ilike('phone', `%${corePhone}%`)
+    } else if (cleanEmail) {
+      existingQuery = existingQuery.ilike('email', cleanEmail)
+    }
+
+    const { data: existing } = await existingQuery.limit(1)
     
     if (existing && existing.length > 0) {
+      const match = existing[0]
+      const isJunk = match.stage === 'Junk/duplicate'
+
+      if (isJunk) {
+        await supabase
+          .from('leads')
+          .update({ stage: 'New', priority: 'Hot' })
+          .eq('id', match.id)
+      }
+
       // Add to existing lead timeline instead of creating twice
       await supabase.from('activities').insert([{
-        lead: existing[0].id,
-        type: 'note',
-        text: `Duplicate enquiry received via ${source}.`,
+        lead: match.id,
+        type: isJunk ? 'lead_revived' : 'duplicate_merged',
+        text: isJunk
+          ? `Lead revived from Junk to New due to manual enquiry via ${source}. Course: ${programmeLevel}`
+          : `Duplicate enquiry received via ${source}. Course: ${programmeLevel}. Profile details auto-merged.`,
         time: new Date().toISOString()
       }])
-      alert('A lead with this phone/email already exists! A note has been added to their timeline.')
+
+      alert(`Lead already exists (${match.name || match.phone})!\n\n${isJunk ? 'Lead was in Junk and has been REVIVED to active "New" stage.' : 'Details added to their existing timeline without creating a duplicate.'}`)
       setLoading(false)
       onClose()
       return

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { resolveCountryName, inferCountryFromPhone } from '@/lib/countryHelper'
+import { normalizePhone } from '@/lib/phoneHelper'
 
 interface Counselor {
   id: string
@@ -76,6 +77,8 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
   const [importProgress, setImportProgress] = useState(0)
   const [successData, setSuccessData] = useState<{
     total: number
+    newCount: number
+    duplicateCount: number
     distributed: Record<string, number>
   } | null>(null)
 
@@ -288,8 +291,38 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         return
       }
 
-      // Build payload for all rows
-      const payload = csvRows.map((row, idx) => {
+      // 1. Fetch existing leads from DB to check for duplicate phone numbers and emails
+      const { data: dbLeads, error: dbFetchErr } = await supabase
+        .from('leads')
+        .select('id, name, phone, email, stage, priority, metadata, owner_id')
+
+      if (dbFetchErr) {
+        console.warn('Could not fetch existing leads for deduplication:', dbFetchErr)
+      }
+
+      const phoneMap = new Map<string, any>()
+      const emailMap = new Map<string, any>()
+
+      ;(dbLeads || []).forEach(lead => {
+        const core = normalizePhone(lead.phone)
+        if (core && core.length >= 7) {
+          phoneMap.set(core, lead)
+        }
+        if (lead.email) {
+          emailMap.set(String(lead.email).toLowerCase().trim(), lead)
+        }
+      })
+
+      const newLeadsToInsert: any[] = []
+      const duplicatesToMerge: {
+        id: string
+        lead: any
+        updates: any
+        activityText: string
+      }[] = []
+
+      // 2. Iterate through rows: separate new leads vs duplicates
+      csvRows.forEach((row) => {
         let rawName = row[nameIdx] || 'Lead'
         let rawPhone = row[phoneIdx] || ''
 
@@ -298,8 +331,10 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         if (cleanedPhone && !cleanedPhone.startsWith('+')) {
           cleanedPhone = '+' + cleanedPhone
         }
+        const corePhone = normalizePhone(cleanedPhone)
 
         const rawEmail = columnMapping.email !== undefined ? row[columnMapping.email] : ''
+        const cleanEmail = rawEmail ? String(rawEmail).toLowerCase().trim() : ''
         const rawCourse = columnMapping.course !== undefined ? row[columnMapping.course] : ''
         const rawCountry = columnMapping.country !== undefined ? row[columnMapping.country] : ''
         const rawCampus = columnMapping.campus_mode !== undefined ? row[columnMapping.campus_mode] : ''
@@ -326,46 +361,100 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                            campaignAnswers['I-20 Received From US University?'] !== undefined
         const inferredServiceType = isVisaFile ? 'visa_process' : 'study_abroad'
 
-        // Standard lead record
-        const record: any = {
-          name: rawName,
-          phone: cleanedPhone,
-          email: rawEmail || null,
-          course: rawCourse ? formatFieldValue(rawCourse) : null,
-          programme_level: rawCourse ? formatFieldValue(rawCourse) : null,
-          country: rawCountry ? resolveCountryName(rawCountry) : (inferCountryFromPhone(cleanedPhone) || null),
-          highest_qualification: rawQual || null,
-          source: rawSource,
-          stage: 'New',
-          metadata: {
-            ...rawMetadata,
-            service_type: inferredServiceType,
+        // Check if lead already exists in DB or was already encountered in this CSV batch
+        const matchedExisting = (corePhone && corePhone.length >= 7 ? phoneMap.get(corePhone) : null) || 
+                                (cleanEmail ? emailMap.get(cleanEmail) : null)
+
+        if (matchedExisting) {
+          // DUPLICATE DETECTED: Merge into existing lead
+          const existingMeta = matchedExisting.metadata || {}
+          const existingEnquiries = Array.isArray(existingMeta.duplicate_enquiries) ? existingMeta.duplicate_enquiries : []
+          const newEnquiry = {
+            source: rawSource,
+            file: file?.name || 'Spreadsheet',
+            timestamp: new Date().toISOString(),
             campaign_answers: campaignAnswers,
-            campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
-            imported_file: file?.name || 'Spreadsheet',
-            imported_at: new Date().toISOString()
-          },
-          created_at: new Date().toISOString()
-        }
+            campus_mode: rawCampus ? formatFieldValue(rawCampus) : null
+          }
 
-        // Round-robin counselor distribution
-        if (distributeEqually && shuffledTargets.length > 0) {
-          const target = shuffledTargets[idx % shuffledTargets.length]
-          record.owner_id = target.id
-          distributionStats[target.id] = (distributionStats[target.id] || 0) + 1
+          const isJunkRevival = matchedExisting.stage === 'Junk/duplicate'
+          const updatePayload: any = {
+            metadata: {
+              ...existingMeta,
+              ...rawMetadata,
+              service_type: existingMeta.service_type || inferredServiceType,
+              duplicate_enquiries: [newEnquiry, ...existingEnquiries],
+              last_enquiry_date: new Date().toISOString(),
+              campaign_answers: { ...(existingMeta.campaign_answers || {}), ...campaignAnswers },
+              campus_mode: rawCampus ? formatFieldValue(rawCampus) : existingMeta.campus_mode
+            }
+          }
+
+          // Revive junk lead automatically to active pipeline
+          if (isJunkRevival) {
+            updatePayload.stage = 'New'
+            updatePayload.priority = 'Hot'
+          }
+
+          const activityText = isJunkRevival
+            ? `Lead revived from Junk to New due to fresh enquiry in CSV (${file?.name || 'File'}). Auto-merged into profile.`
+            : `Duplicate enquiry in CSV (${file?.name || 'File'}) auto-merged into profile without creating duplicate lead.`
+
+          duplicatesToMerge.push({
+            id: matchedExisting.id,
+            lead: matchedExisting,
+            updates: updatePayload,
+            activityText
+          })
         } else {
-          record.owner_id = null
-        }
+          // BRAND NEW LEAD: Round-robin counselor distribution
+          const record: any = {
+            name: rawName,
+            phone: cleanedPhone,
+            email: rawEmail || null,
+            course: rawCourse ? formatFieldValue(rawCourse) : null,
+            programme_level: rawCourse ? formatFieldValue(rawCourse) : null,
+            country: rawCountry ? resolveCountryName(rawCountry) : (inferCountryFromPhone(cleanedPhone) || null),
+            highest_qualification: rawQual || null,
+            source: rawSource,
+            stage: 'New',
+            metadata: {
+              ...rawMetadata,
+              service_type: inferredServiceType,
+              campaign_answers: campaignAnswers,
+              campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
+              imported_file: file?.name || 'Spreadsheet',
+              imported_at: new Date().toISOString()
+            },
+            created_at: new Date().toISOString()
+          }
 
-        return record
+          if (distributeEqually && shuffledTargets.length > 0) {
+            const target = shuffledTargets[newLeadsToInsert.length % shuffledTargets.length]
+            record.owner_id = target.id
+            distributionStats[target.id] = (distributionStats[target.id] || 0) + 1
+          } else {
+            record.owner_id = null
+          }
+
+          newLeadsToInsert.push(record)
+
+          // Put into map so subsequent duplicate rows within same CSV also auto-merge!
+          if (corePhone && corePhone.length >= 7) {
+            phoneMap.set(corePhone, record)
+          }
+          if (cleanEmail) {
+            emailMap.set(cleanEmail, record)
+          }
+        }
       })
 
-      // Insert in batches of 100
+      // 3. Insert new leads in batches of 100
       const batchSize = 100
       const insertedLeads: any[] = []
 
-      for (let i = 0; i < payload.length; i += batchSize) {
-        const batch = payload.slice(i, i + batchSize)
+      for (let i = 0; i < newLeadsToInsert.length; i += batchSize) {
+        const batch = newLeadsToInsert.slice(i, i + batchSize)
         const { data: insertedBatch, error } = await supabase
           .from('leads')
           .insert(batch)
@@ -377,10 +466,29 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         if (insertedBatch) {
           insertedLeads.push(...insertedBatch)
         }
-        setImportProgress(Math.round(((i + batch.length) / payload.length) * 100))
+        setImportProgress(Math.round(((i + batch.length) / Math.max(csvRows.length, 1)) * 50))
       }
 
-      // Log bulk assignment activities
+      // 4. Update duplicates and append timeline notes
+      for (let i = 0; i < duplicatesToMerge.length; i++) {
+        const dup = duplicatesToMerge[i]
+        await supabase
+          .from('leads')
+          .update(dup.updates)
+          .eq('id', dup.id)
+
+        await supabase.from('activities').insert([{
+          lead: dup.id,
+          user_id: dup.lead.owner_id || null,
+          type: 'duplicate_merged',
+          text: dup.activityText,
+          time: new Date().toISOString()
+        }])
+
+        setImportProgress(50 + Math.round(((i + 1) / Math.max(duplicatesToMerge.length, 1)) * 50))
+      }
+
+      // 5. Log bulk assignment activities for new leads
       if (insertedLeads.length > 0 && distributeEqually && shuffledTargets.length > 0) {
         const counselorMap: Record<string, string> = {}
         counselors.forEach(c => { counselorMap[c.id] = c.name })
@@ -401,7 +509,9 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       }
 
       setSuccessData({
-        total: payload.length,
+        total: csvRows.length,
+        newCount: newLeadsToInsert.length,
+        duplicateCount: duplicatesToMerge.length,
         distributed: distributionStats
       })
 
@@ -447,21 +557,35 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
 
             <div>
               <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
-                {successData.total} Leads Imported Successfully!
+                {successData.total} Leads Processed!
               </h2>
-              <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
-                {distributeEqually && activeSelectedCounselors.length > 0
+              
+              <div className="flex items-center justify-center gap-2.5 mt-3 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                  🚀 {successData.newCount} New Leads Created
+                </span>
+                {successData.duplicateCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs" title="Matched existing phone/email; merged campaign notes and revived junk status without creating duplicate entries">
+                    🛡️ {successData.duplicateCount} Duplicates Auto-Merged
+                  </span>
+                )}
+              </div>
+
+              <p className="text-sm text-gray-500 mt-3 max-w-md mx-auto leading-relaxed">
+                {successData.duplicateCount > 0 
+                  ? `Duplicate phones/emails were safely merged into existing student profiles without creating duplicate rows. Any junk leads were auto-revived.`
+                  : distributeEqually && activeSelectedCounselors.length > 0
                   ? `All leads with their complete campaign details have been divided equally among your ${activeSelectedCounselors.length} counselors.`
                   : 'All leads and campaign questions have been saved to your pipeline.'}
               </p>
             </div>
 
             {/* Distribution Breakdown */}
-            {distributeEqually && activeSelectedCounselors.length > 0 && (
+            {distributeEqually && activeSelectedCounselors.length > 0 && successData.newCount > 0 && (
               <div className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-left">
                 <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   <Users size={14} className="text-gray-500" />
-                  <span>Counselor Distribution Breakdown</span>
+                  <span>Counselor Distribution Breakdown (New Leads)</span>
                 </h4>
                 <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
                   {activeSelectedCounselors.map(c => {

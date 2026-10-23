@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { normalizePhone } from '@/lib/phoneHelper'
+import { notifyLeadAssigned } from '@/lib/notifications'
 import crypto from 'crypto'
 
 // Verify token for Meta webhook handshake (configurable via env)
@@ -271,40 +273,100 @@ export async function POST(request: NextRequest) {
       ? `Meta Ads - ${targetCountry}`
       : (leadData.source || 'Meta Ads')
 
-    // 1. Check for duplicates in leads table
-    if (cleanPhone || leadData.email) {
-      let filter = ''
-      if (cleanPhone && leadData.email) {
-        filter = `phone.eq.${cleanPhone},email.eq.${leadData.email}`
-      } else if (cleanPhone) {
-        filter = `phone.eq.${cleanPhone}`
-      } else {
-        filter = `email.eq.${leadData.email}`
+    // 1. Robust Phone & Email Duplicate Detection & Auto-Merge
+    const corePhone = normalizePhone(cleanPhone)
+    const cleanEmail = (leadData.email || '').trim().toLowerCase()
+
+    if (corePhone.length >= 7 || cleanEmail) {
+      // Find matches in leads table (checking core 10 digits or exact email)
+      const query = supabase
+        .from('leads')
+        .select('id, name, phone, email, owner_id, country, stage, priority, metadata')
+
+      let existingLead: any = null
+
+      if (corePhone.length >= 7) {
+        const { data: phoneMatches } = await query.ilike('phone', `%${corePhone}%`).limit(5)
+        if (phoneMatches && phoneMatches.length > 0) {
+          existingLead = phoneMatches[0]
+        }
       }
 
-      const { data: existingLeads } = await supabase
-        .from('leads')
-        .select('id, name, owner_id, country')
-        .or(filter)
+      if (!existingLead && cleanEmail) {
+        const { data: emailMatches } = await supabase
+          .from('leads')
+          .select('id, name, phone, email, owner_id, country, stage, priority, metadata')
+          .eq('email', cleanEmail)
+          .limit(1)
 
-      if (existingLeads && existingLeads.length > 0) {
-        const existing = existingLeads[0]
-        // Add note to existing lead's timeline
+        if (emailMatches && emailMatches.length > 0) {
+          existingLead = emailMatches[0]
+        }
+      }
+
+      // If lead already exists, AUTO-MERGE into existing profile instead of creating redundant duplicate!
+      if (existingLead) {
+        const isJunk = existingLead.stage === 'Junk/duplicate'
+        const existingMeta = existingLead.metadata || {}
+        const prevDuplicates = Array.isArray(existingMeta.duplicate_enquiries) ? existingMeta.duplicate_enquiries : []
+
+        const newEnquiryRecord = {
+          received_at: new Date().toISOString(),
+          campaign_name: leadData.campaign_name || '',
+          ad_name: leadData.ad_name || '',
+          form_name: leadData.form_name || '',
+          target_country: targetCountry,
+          raw_meta: leadData.raw_meta || null,
+        }
+
+        const updatePayload: any = {
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...existingMeta,
+            duplicate_enquiries: [newEnquiryRecord, ...prevDuplicates].slice(0, 10),
+            last_re_enquiry_at: new Date().toISOString(),
+          }
+        }
+
+        // If previously Junk, automatically revive back to 'New' and prioritize as 'Hot'
+        if (isJunk) {
+          updatePayload.stage = 'New'
+          updatePayload.priority = 'Hot'
+        } else if (!existingLead.priority || existingLead.priority === 'Cold') {
+          // Boost priority to Hot since the student re-engaged
+          updatePayload.priority = 'Hot'
+        }
+
+        await supabase.from('leads').update(updatePayload).eq('id', existingLead.id)
+
+        // Add clear audit trail activity to lead's timeline
         await supabase.from('activities').insert([
           {
-            lead: existing.id,
-            type: 'system',
-            text: `Duplicate enquiry received from [${targetCountry}] Ad campaign: ${leadData.campaign_name || formattedSource}.`,
+            lead: existingLead.id,
+            type: isJunk ? 'STAGE_CHANGE' : 'system',
+            text: isJunk
+              ? `Re-enquired via Meta Ad campaign "${leadData.campaign_name || formattedSource}"! Lead automatically revived from Junk/duplicate back to 'New' (Priority: 🔥 Hot).`
+              : `Duplicate re-enquiry received via Meta Ad campaign "${leadData.campaign_name || formattedSource}". Auto-merged with existing profile. Priority updated to Hot.`,
             time: new Date().toISOString(),
           },
         ])
 
+        // Notify counselor if lead was already assigned
+        if (existingLead.owner_id) {
+          notifyLeadAssigned({
+            recipientId: existingLead.owner_id,
+            leadId: existingLead.id,
+            leadName: `${existingLead.name} (Re-enquired on Meta Ad!)`,
+            senderName: 'Meta Ads Auto-Merge',
+          }).catch(console.error)
+        }
+
         return NextResponse.json({
           success: true,
-          action: 'duplicate_updated',
-          leadId: existing.id,
-          country: existing.country || targetCountry,
-          message: `Lead already exists. Noted under ${existing.country || targetCountry}.`,
+          action: 'duplicate_merged',
+          leadId: existingLead.id,
+          country: existingLead.country || targetCountry,
+          message: `Lead already exists (${existingLead.phone}). Profile auto-merged with fresh enquiry data.`,
         })
       }
     }
