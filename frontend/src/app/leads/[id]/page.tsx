@@ -770,7 +770,7 @@ export default function LeadProfile() {
 
     let junkReason = ''
     if (newStage === 'Junk/duplicate') {
-      const isPrioritySet = lead.priority === 'Hot' || lead.priority === 'Warm' || lead.priority === 'Cold'
+      const isPrioritySet = lead.priority === 'Hot' || lead.priority === 'Warm' || lead.priority === 'Cold' || lead.priority === 'Callback' || lead.priority === 'Ringing'
       const confirmMsg = isPrioritySet
         ? `⚠️ Warning: This lead is currently marked as "${lead.priority}". Moving it to "Junk/duplicate" will reset its priority to Unset and clear follow-up reminders.\n\nAre you sure you want to move this lead to Junk?`
         : `Are you sure you want to mark this lead as Junk/duplicate?`
@@ -932,6 +932,7 @@ export default function LeadProfile() {
       )
       if (!shouldRevive) return
 
+      const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
       setSavingAction(true)
       await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', id)
       await supabase.from('activities').insert([
@@ -939,7 +940,7 @@ export default function LeadProfile() {
           lead: id, 
           user_id: currentUser?.id || lead?.owner_id,
           type: 'lead_revived', 
-          text: `Revived from Junk/duplicate to New and priority set to ${val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : '❄️ Cold'}`, 
+          text: `Revived from Junk/duplicate to New and priority set to ${priorityLabel}`, 
           time: new Date().toISOString() 
         }
       ])
@@ -950,13 +951,14 @@ export default function LeadProfile() {
     }
 
     setSavingAction(true)
+    const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
     await supabase.from('leads').update({ priority: val }).eq('id', id)
     await supabase.from('activities').insert([
       { 
         lead: id, 
         user_id: currentUser?.id || lead?.owner_id,
         type: 'priority change', 
-        text: `Priority updated to ${val ? (val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : '❄️ Cold') : '⚪ Unset'}`, 
+        text: `Priority updated to ${val ? priorityLabel : '⚪ Unset'}`, 
         time: new Date().toISOString() 
       }
     ])
@@ -1336,9 +1338,15 @@ export default function LeadProfile() {
                       ? 'bg-rose-50 text-rose-700 border-rose-200'
                       : lead.priority === 'Warm'
                       ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                      : lead.priority === 'Cold'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : lead.priority === 'Callback'
+                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                      : lead.priority === 'Ringing'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-gray-50 text-gray-700 border-gray-200'
                   }`}>
-                    {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : '❄️ Cold'}
+                    {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
                   </span>
                 )}
                 {/* Service Track Badge */}
@@ -1434,6 +1442,10 @@ export default function LeadProfile() {
                       ? 'border-amber-300 text-amber-800 bg-amber-50/70 focus:ring-2 focus:ring-amber-200' 
                       : lead.priority === 'Cold' 
                       ? 'border-blue-300 text-blue-700 bg-blue-50/70 focus:ring-2 focus:ring-blue-200' 
+                      : lead.priority === 'Callback'
+                      ? 'border-purple-300 text-purple-700 bg-purple-50/70 focus:ring-2 focus:ring-purple-200'
+                      : lead.priority === 'Ringing'
+                      ? 'border-emerald-300 text-emerald-700 bg-emerald-50/70 focus:ring-2 focus:ring-emerald-200'
                       : 'border-gray-200 text-gray-800 bg-white hover:bg-gray-50'
                   }`}
                 >
@@ -1441,6 +1453,8 @@ export default function LeadProfile() {
                   <option value="Hot">🔥 Hot</option>
                   <option value="Warm">☀️ Warm</option>
                   <option value="Cold">❄️ Cold</option>
+                  <option value="Callback">📞 Callback</option>
+                  <option value="Ringing">🔔 Ringing</option>
                 </select>
               </div>
 

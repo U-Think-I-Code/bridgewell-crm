@@ -270,9 +270,15 @@ export default function Dashboard() {
                         ? 'bg-rose-50 text-rose-700 border-rose-200'
                         : lead.priority === 'Warm'
                         ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                        : lead.priority === 'Cold'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : lead.priority === 'Callback'
+                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                        : lead.priority === 'Ringing'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-gray-50 text-gray-700 border-gray-200'
                     }`}>
-                      {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : '❄️ Cold'}
+                      {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
                     </span>
                   )}
                 </div>

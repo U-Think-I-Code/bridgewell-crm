@@ -19,7 +19,7 @@ const STAGE_COLORS = [
   '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e',
   '#f97316', '#ef4444', '#a855f7'
 ]
-const PRIORITY_COLORS = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6', Unset: '#d1d5db' }
+const PRIORITY_COLORS = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6', Callback: '#9333ea', Ringing: '#10b981', Unset: '#d1d5db' }
 const OUTCOME_COLORS = { Connected: '#10b981', 'No Answer': '#ef4444', Busy: '#f59e0b', 'Wrong Num': '#8b5cf6', None: '#d1d5db' }
 
 type TimeRange = 'today' | 'week' | 'month' | 'quarter' | 'all'
@@ -170,11 +170,15 @@ export default function AnalyticsPage() {
     const hot = filteredLeads.filter(l => l.priority === 'Hot').length
     const warm = filteredLeads.filter(l => l.priority === 'Warm').length
     const cold = filteredLeads.filter(l => l.priority === 'Cold').length
+    const callback = filteredLeads.filter(l => l.priority === 'Callback').length
+    const ringing = filteredLeads.filter(l => l.priority === 'Ringing').length
     const unset = filteredLeads.filter(l => !l.priority).length
     return [
       { name: '🔥 Hot', value: hot, fill: PRIORITY_COLORS.Hot },
       { name: '☀️ Warm', value: warm, fill: PRIORITY_COLORS.Warm },
       { name: '❄️ Cold', value: cold, fill: PRIORITY_COLORS.Cold },
+      { name: '📞 Callback', value: callback, fill: PRIORITY_COLORS.Callback },
+      { name: '🔔 Ringing', value: ringing, fill: PRIORITY_COLORS.Ringing },
       { name: '⚪ Unset', value: unset, fill: PRIORITY_COLORS.Unset },
     ].filter(d => d.value > 0)
   }, [filteredLeads])

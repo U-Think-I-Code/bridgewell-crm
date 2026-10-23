@@ -464,11 +464,12 @@ function LeadsContent() {
 
       setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: val, stage: 'New' } : l))
       await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', leadId)
+      const formattedPriority = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
       await supabase.from('activities').insert([{
         lead: leadId,
         user_id: user?.id,
         type: 'lead_revived',
-        text: `Lead revived from Junk/duplicate to New and priority marked as ${val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : '❄️ Cold'}`,
+        text: `Lead revived from Junk/duplicate to New and priority marked as ${formattedPriority}`,
         time: new Date().toISOString()
       }])
       await fetchLeads()
@@ -482,7 +483,7 @@ function LeadsContent() {
     await supabase.from('leads').update({ priority: val }).eq('id', leadId)
     
     // Log activity
-    const label = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : '⚪ Unset'
+    const label = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : '⚪ Unset'
     await supabase.from('activities').insert([{
       lead: leadId,
       user_id: user?.id,
@@ -554,6 +555,8 @@ function LeadsContent() {
   const hotCount = counselorScopedPool.filter(l => l.priority === 'Hot').length
   const warmCount = counselorScopedPool.filter(l => l.priority === 'Warm').length
   const coldCount = counselorScopedPool.filter(l => l.priority === 'Cold').length
+  const callbackCount = counselorScopedPool.filter(l => l.priority === 'Callback').length
+  const ringingCount = counselorScopedPool.filter(l => l.priority === 'Ringing').length
   const unsetCount = counselorScopedPool.filter(l => !l.priority).length
 
   // Service Track Counts
@@ -937,6 +940,40 @@ function LeadsContent() {
             </span>
           </button>
 
+          {/* Callback */}
+          <button
+            onClick={() => setSelectedPriority('Callback')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedPriority === 'Callback'
+                ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-200 font-semibold'
+                : 'bg-white border border-purple-200 text-purple-700 hover:bg-purple-50'
+            }`}
+          >
+            <span>📞 Callback</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              selectedPriority === 'Callback' ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-800'
+            }`}>
+              {callbackCount}
+            </span>
+          </button>
+
+          {/* Ringing */}
+          <button
+            onClick={() => setSelectedPriority('Ringing')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedPriority === 'Ringing'
+                ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-200 font-semibold'
+                : 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+            }`}
+          >
+            <span>🔔 Ringing</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              selectedPriority === 'Ringing' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {ringingCount}
+            </span>
+          </button>
+
           {/* Unset */}
           {unsetCount > 0 && (
             <button
@@ -1299,6 +1336,30 @@ function LeadsContent() {
                     Clear selection
                   </button>
                 )}
+
+                {selectedLeadIds.length > 0 && (
+                  <div className="flex items-center gap-1.5 border-l border-gray-200 pl-3">
+                    <span className="text-xs font-semibold text-gray-600">Priority:</span>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleBulkUpdatePriority(e.target.value)
+                          e.target.value = ''
+                        }
+                      }}
+                      className="text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 outline-none cursor-pointer shadow-2xs hover:bg-gray-50"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Set Priority ({selectedLeadIds.length})...</option>
+                      <option value="Hot">🔥 Hot</option>
+                      <option value="Warm">☀️ Warm</option>
+                      <option value="Cold">❄️ Cold</option>
+                      <option value="Callback">📞 Callback</option>
+                      <option value="Ringing">🔔 Ringing</option>
+                      <option value="UNSET">⚪ Unset</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Bulk Reassign to Counselor (Always visible for TL & Admin) */}
@@ -1488,6 +1549,10 @@ function LeadsContent() {
                             ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100 focus:ring-2 focus:ring-amber-200'
                             : lead.priority === 'Cold'
                             ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 focus:ring-2 focus:ring-blue-200'
+                            : lead.priority === 'Callback'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 focus:ring-2 focus:ring-purple-200'
+                            : lead.priority === 'Ringing'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 focus:ring-2 focus:ring-emerald-200'
                             : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
                         }`}
                       >
@@ -1495,6 +1560,8 @@ function LeadsContent() {
                         <option value="Hot">🔥 Hot</option>
                         <option value="Warm">☀️ Warm</option>
                         <option value="Cold">❄️ Cold</option>
+                        <option value="Callback">📞 Callback</option>
+                        <option value="Ringing">🔔 Ringing</option>
                       </select>
                     </td>
 
@@ -1657,9 +1724,15 @@ function LeadsContent() {
                                 ? 'bg-rose-50 text-rose-700 border-rose-200'
                                 : lead.priority === 'Warm'
                                 ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                                : lead.priority === 'Cold'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : lead.priority === 'Callback'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : lead.priority === 'Ringing'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-gray-50 text-gray-700 border-gray-200'
                             }`}>
-                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : '❄️ Cold'}
+                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
                             </span>
                           )}
                         </div>
