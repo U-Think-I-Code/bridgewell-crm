@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
@@ -15,6 +15,7 @@ import { notifyLeadAssigned } from '@/lib/notifications'
 
 function LeadsContent() {
   const router = useRouter()
+  const [, startTransition] = useTransition()
   const [leads, setLeads] = useState<any[]>([])
   const [counselors, setCounselors] = useState<any[]>([])
   const [stages, setStages] = useState<string[]>([])
@@ -51,7 +52,10 @@ function LeadsContent() {
   }, [tabParam])
 
   const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
-    setActiveTab(t)
+    startTransition(() => {
+      setActiveTab(t)
+      setDisplayLimit(100)
+    })
     const currentParams = new URLSearchParams(searchParams?.toString() || '')
     if (t === 'active') {
       currentParams.delete('tab')
@@ -74,7 +78,10 @@ function LeadsContent() {
   }, [counselorParam])
 
   const handleCounselorFilterChange = (counselorId: string) => {
-    setSelectedCounselor(counselorId)
+    startTransition(() => {
+      setSelectedCounselor(counselorId)
+      setDisplayLimit(100)
+    })
     const currentParams = new URLSearchParams(searchParams?.toString() || '')
     if (counselorId === 'ALL') {
       currentParams.delete('counselor')
@@ -101,6 +108,9 @@ function LeadsContent() {
   const [selectedDatePreset, setSelectedDatePreset] = useState<string>(dateParam)
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
+
+  // Progressive display limit to render table in < 16ms while maintaining instant interactivity
+  const [displayLimit, setDisplayLimit] = useState<number>(100)
 
   // Service Stream Track: 'all' | 'study_abroad' | 'visa_process'
   const serviceParam = (searchParams?.get('service') as ServiceTrack) || 'all'
@@ -195,6 +205,43 @@ function LeadsContent() {
   const assignableCounselors = useMemo(() => {
     return getAssignableCounselors(user, counselors, true)
   }, [user, counselors])
+
+  // Precompute lead counts per counselor in a single O(N) pass for instant O(1) lookup
+  const leadCountsByCounselor = useMemo(() => {
+    const counts: Record<string, number> = {}
+    let unassigned = 0
+    for (let i = 0; i < leads.length; i++) {
+      const oId = leads[i].owner_id
+      if (!oId) unassigned++
+      else counts[oId] = (counts[oId] || 0) + 1
+    }
+    return { counts, unassigned }
+  }, [leads])
+
+  // Pre-render counselor option lists once so rows don't repeat array allocations
+  const counselorSelectOptions = useMemo(() => {
+    return assignableCounselors
+      .filter(c => !isTeamLeader(user) || c.id !== user?.id)
+      .map(c => (
+        <option key={c.id} value={c.id}>
+          👤 {c.name}
+        </option>
+      ))
+  }, [assignableCounselors, user?.id])
+
+  // Pre-render counselor bulk assignment dropdown options
+  const counselorBulkOptions = useMemo(() => {
+    return assignableCounselors
+      .filter(c => !isTeamLeader(user) || c.id !== user?.id)
+      .map(c => {
+        const count = leadCountsByCounselor.counts[c.id] || 0
+        return (
+          <option key={c.id} value={c.id}>
+            👤 {c.name} ({count} leads)
+          </option>
+        )
+      })
+  }, [assignableCounselors, user?.id, leadCountsByCounselor])
 
   // Inline lead reassignment handler
   const handleReassignLead = async (leadId: string, newOwnerId: string) => {
@@ -552,19 +599,44 @@ function LeadsContent() {
 
   const basePool = counselorScopedPool
 
-  const hotCount = counselorScopedPool.filter(l => l.priority === 'Hot').length
-  const warmCount = counselorScopedPool.filter(l => l.priority === 'Warm').length
-  const coldCount = counselorScopedPool.filter(l => l.priority === 'Cold').length
-  const callbackCount = counselorScopedPool.filter(l => l.priority === 'Callback').length
-  const ringingCount = counselorScopedPool.filter(l => l.priority === 'Ringing').length
-  const unsetCount = counselorScopedPool.filter(l => !l.priority).length
+  // Single-pass memoized count calculation across priorities and service tracks
+  const {
+    hotCount,
+    warmCount,
+    coldCount,
+    callbackCount,
+    ringingCount,
+    unsetCount,
+    studyAbroadCount,
+    visaProcessCount
+  } = useMemo(() => {
+    let hot = 0, warm = 0, cold = 0, callback = 0, ringing = 0, unset = 0, study = 0, visa = 0
+    for (let i = 0; i < counselorScopedPool.length; i++) {
+      const l = counselorScopedPool[i]
+      if (l.priority === 'Hot') hot++
+      else if (l.priority === 'Warm') warm++
+      else if (l.priority === 'Cold') cold++
+      else if (l.priority === 'Callback') callback++
+      else if (l.priority === 'Ringing') ringing++
+      else if (!l.priority) unset++
 
-  // Service Track Counts
-  const studyAbroadCount = counselorScopedPool.filter(l => getLeadServiceType(l) === 'study_abroad').length
-  const visaProcessCount = counselorScopedPool.filter(l => getLeadServiceType(l) === 'visa_process').length
+      if (getLeadServiceType(l) === 'visa_process') visa++
+      else study++
+    }
+    return {
+      hotCount: hot,
+      warmCount: warm,
+      coldCount: cold,
+      callbackCount: callback,
+      ringingCount: ringing,
+      unsetCount: unset,
+      studyAbroadCount: study,
+      visaProcessCount: visa
+    }
+  }, [counselorScopedPool])
 
   // Helper to test if a lead created_at falls inside selected date filter
-  const matchesDateFilter = (createdAtStr: string | null | undefined): boolean => {
+  const matchesDateFilter = useCallback((createdAtStr: string | null | undefined): boolean => {
     if (selectedDatePreset === 'ALL') return true
     if (!createdAtStr) return false
 
@@ -615,39 +687,57 @@ function LeadsContent() {
     }
 
     return true
-  }
+  }, [selectedDatePreset, customStartDate, customEndDate])
 
-  // Filtered leads based on priority, call outcome, country, programme level, and date
-  const filteredLeads = counselorScopedPool.filter(l => {
-    if (selectedPriority !== 'ALL') {
-      if (selectedPriority === 'UNSET' && l.priority) return false
-      if (selectedPriority !== 'UNSET' && l.priority !== selectedPriority) return false
+  // Memoized filtered leads based on priority, call outcome, country, programme level, and date
+  const filteredLeads = useMemo(() => {
+    return counselorScopedPool.filter(l => {
+      if (selectedPriority !== 'ALL') {
+        if (selectedPriority === 'UNSET' && l.priority) return false
+        if (selectedPriority !== 'UNSET' && l.priority !== selectedPriority) return false
+      }
+
+      if (selectedOutcome !== 'ALL') {
+        if (selectedOutcome === 'UNSET' && l.last_call_outcome) return false
+        if (selectedOutcome !== 'UNSET' && l.last_call_outcome !== selectedOutcome) return false
+      }
+
+      if (selectedCountry !== 'ALL') {
+        if (!matchesCountryFilter(l, selectedCountry)) return false
+      }
+
+      if (selectedProgramme !== 'ALL') {
+        if (!matchesProgrammeFilter(l, selectedProgramme)) return false
+      }
+
+      if (!matchesDateFilter(l.created_at)) {
+        return false
+      }
+
+      // Service Stream Track Filter: Study Abroad vs Visa Process
+      if (serviceTrack !== 'all') {
+        if (getLeadServiceType(l) !== serviceTrack) return false
+      }
+
+      return true
+    })
+  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter])
+
+  // Progressive slice of leads for instant initial and filtered table paints (< 16ms INP)
+  const visibleLeads = useMemo(() => {
+    return filteredLeads.slice(0, displayLimit)
+  }, [filteredLeads, displayLimit])
+
+  // Single-pass stage grouping for Kanban board view
+  const leadsByStage = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    for (let i = 0; i < filteredLeads.length; i++) {
+      const s = filteredLeads[i].stage || 'New'
+      if (!map[s]) map[s] = []
+      map[s].push(filteredLeads[i])
     }
-
-    if (selectedOutcome !== 'ALL') {
-      if (selectedOutcome === 'UNSET' && l.last_call_outcome) return false
-      if (selectedOutcome !== 'UNSET' && l.last_call_outcome !== selectedOutcome) return false
-    }
-
-    if (selectedCountry !== 'ALL') {
-      if (!matchesCountryFilter(l, selectedCountry)) return false
-    }
-
-    if (selectedProgramme !== 'ALL') {
-      if (!matchesProgrammeFilter(l, selectedProgramme)) return false
-    }
-
-    if (!matchesDateFilter(l.created_at)) {
-      return false
-    }
-
-    // Service Stream Track Filter: Study Abroad vs Visa Process
-    if (serviceTrack !== 'all') {
-      if (getLeadServiceType(l) !== serviceTrack) return false
-    }
-
-    return true
-  })
+    return map
+  }, [filteredLeads])
 
   return (
     <div className="flex flex-col h-full bg-[#FDFDFD]">
@@ -767,7 +857,12 @@ function LeadsContent() {
           {/* Service Stream Switcher: Study Abroad vs Visa Process */}
           <div className="flex items-center gap-1 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/70 p-1 rounded-xl w-fit shadow-2xs">
             <button
-              onClick={() => setServiceTrack('all')}
+              onClick={() => {
+                startTransition(() => {
+                  setServiceTrack('all')
+                  setDisplayLimit(100)
+                })
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 serviceTrack === 'all'
                   ? 'bg-white text-gray-900 shadow-xs ring-1 ring-black/5 font-bold'
@@ -780,7 +875,12 @@ function LeadsContent() {
             </button>
 
             <button
-              onClick={() => setServiceTrack('study_abroad')}
+              onClick={() => {
+                startTransition(() => {
+                  setServiceTrack('study_abroad')
+                  setDisplayLimit(100)
+                })
+              }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                 serviceTrack === 'study_abroad'
                   ? 'bg-blue-600 text-white shadow-xs font-bold'
@@ -798,7 +898,12 @@ function LeadsContent() {
             </button>
 
             <button
-              onClick={() => setServiceTrack('visa_process')}
+              onClick={() => {
+                startTransition(() => {
+                  setServiceTrack('visa_process')
+                  setDisplayLimit(100)
+                })
+              }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                 serviceTrack === 'visa_process'
                   ? 'bg-indigo-600 text-white shadow-xs font-bold'
@@ -875,7 +980,12 @@ function LeadsContent() {
 
           {/* All */}
           <button
-            onClick={() => setSelectedPriority('ALL')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('ALL')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               selectedPriority === 'ALL'
                 ? 'bg-black text-white shadow-sm'
@@ -891,7 +1001,12 @@ function LeadsContent() {
 
           {/* Hot */}
           <button
-            onClick={() => setSelectedPriority('Hot')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('Hot')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
               selectedPriority === 'Hot'
                 ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-200 font-semibold'
@@ -908,7 +1023,12 @@ function LeadsContent() {
 
           {/* Warm */}
           <button
-            onClick={() => setSelectedPriority('Warm')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('Warm')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
               selectedPriority === 'Warm'
                 ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-200 font-semibold'
@@ -925,7 +1045,12 @@ function LeadsContent() {
 
           {/* Cold */}
           <button
-            onClick={() => setSelectedPriority('Cold')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('Cold')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
               selectedPriority === 'Cold'
                 ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-200 font-semibold'
@@ -942,7 +1067,12 @@ function LeadsContent() {
 
           {/* Callback */}
           <button
-            onClick={() => setSelectedPriority('Callback')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('Callback')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
               selectedPriority === 'Callback'
                 ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-200 font-semibold'
@@ -959,7 +1089,12 @@ function LeadsContent() {
 
           {/* Ringing */}
           <button
-            onClick={() => setSelectedPriority('Ringing')}
+            onClick={() => {
+              startTransition(() => {
+                setSelectedPriority('Ringing')
+                setDisplayLimit(100)
+              })
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
               selectedPriority === 'Ringing'
                 ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-200 font-semibold'
@@ -977,7 +1112,12 @@ function LeadsContent() {
           {/* Unset */}
           {unsetCount > 0 && (
             <button
-              onClick={() => setSelectedPriority('UNSET')}
+              onClick={() => {
+                startTransition(() => {
+                  setSelectedPriority('UNSET')
+                  setDisplayLimit(100)
+                })
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 selectedPriority === 'UNSET'
                   ? 'bg-gray-800 text-white shadow-sm font-semibold'
@@ -993,7 +1133,13 @@ function LeadsContent() {
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Call Status:</span>
             <select
               value={selectedOutcome}
-              onChange={(e) => setSelectedOutcome(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => {
+                  setSelectedOutcome(val)
+                  setDisplayLimit(100)
+                })
+              }}
               className="bg-white border border-gray-200 text-gray-700 text-xs rounded-lg px-2.5 py-1.5 font-medium outline-none shadow-xs hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 transition-all cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
@@ -1012,7 +1158,13 @@ function LeadsContent() {
             </span>
             <select
               value={selectedCountry}
-              onChange={(e) => setSelectedCountry(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => {
+                  setSelectedCountry(val)
+                  setDisplayLimit(100)
+                })
+              }}
               className="bg-white border border-blue-200 text-blue-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-blue-50/50 focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
             >
               <option value="ALL">🌐 All Countries</option>
@@ -1037,7 +1189,13 @@ function LeadsContent() {
             </span>
             <select
               value={selectedProgramme}
-              onChange={(e) => setSelectedProgramme(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => {
+                  setSelectedProgramme(val)
+                  setDisplayLimit(100)
+                })
+              }}
               className="bg-white border border-purple-200 text-purple-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-purple-50/50 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer"
             >
               <option value="ALL">🎓 All Degrees</option>
@@ -1054,7 +1212,13 @@ function LeadsContent() {
             </span>
             <select
               value={selectedDatePreset}
-              onChange={(e) => setSelectedDatePreset(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => {
+                  setSelectedDatePreset(val)
+                  setDisplayLimit(100)
+                })
+              }}
               className="bg-white border border-emerald-300 text-emerald-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-emerald-50/50 focus:ring-2 focus:ring-emerald-200 transition-all cursor-pointer"
             >
               <option value="ALL">📅 All Dates</option>
@@ -1071,7 +1235,13 @@ function LeadsContent() {
                 <input
                   type="date"
                   value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => {
+                      setCustomStartDate(val)
+                      setDisplayLimit(100)
+                    })
+                  }}
                   className="text-[11px] font-medium text-gray-700 outline-none px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded"
                   title="Start Date (From)"
                 />
@@ -1079,7 +1249,13 @@ function LeadsContent() {
                 <input
                   type="date"
                   value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => {
+                      setCustomEndDate(val)
+                      setDisplayLimit(100)
+                    })
+                  }}
                   className="text-[11px] font-medium text-gray-700 outline-none px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded"
                   title="End Date (To)"
                 />
@@ -1101,9 +1277,9 @@ function LeadsContent() {
                 {isManager(user) ? (
                   <>
                     <option value="ALL">👥 All Counselors ({leads.length})</option>
-                    <option value="UNASSIGNED">⚪ Unassigned Leads ({leads.filter(l => !l.owner_id).length})</option>
+                    <option value="UNASSIGNED">⚪ Unassigned Leads ({leadCountsByCounselor.unassigned})</option>
                     {counselors.map(c => {
-                      const count = leads.filter(l => l.owner_id === c.id).length
+                      const count = leadCountsByCounselor.counts[c.id] || 0
                       return (
                         <option key={c.id} value={c.id}>
                           👤 {c.name} ({count})
@@ -1115,12 +1291,12 @@ function LeadsContent() {
                   <>
                     <option value="ALL">👥 All Team Leads ({leads.length})</option>
                     <option value="MY_POOL">
-                      👑 My Allocated Pool ({leads.filter(l => l.owner_id === user?.id).length})
+                      👑 My Allocated Pool ({leadCountsByCounselor.counts[user?.id || ''] || 0})
                     </option>
                     {assignableCounselors
                       .filter(c => c.id !== user?.id)
                       .map(c => {
-                        const count = leads.filter(l => l.owner_id === c.id).length
+                        const count = leadCountsByCounselor.counts[c.id] || 0
                         return (
                           <option key={c.id} value={c.id}>
                             👤 {c.name} ({count})
@@ -1382,16 +1558,7 @@ function LeadsContent() {
                     {isTeamLeader(user) && (
                       <option value={user.id}>👑 My Allocated Pool ({user.name || 'Me'})</option>
                     )}
-                    {assignableCounselors
-                      .filter(c => !isTeamLeader(user) || c.id !== user.id)
-                      .map(c => {
-                        const count = leads.filter(l => l.owner_id === c.id).length
-                        return (
-                          <option key={c.id} value={c.id}>
-                            👤 {c.name} ({count} leads)
-                          </option>
-                        )
-                      })}
+                    {counselorBulkOptions}
                   </select>
 
                   <button
@@ -1461,7 +1628,7 @@ function LeadsContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredLeads.map((lead) => {
+                {visibleLeads.map((lead) => {
                   const isSelected = selectedLeadIds.includes(lead.id)
                   return (
                     <tr
@@ -1646,13 +1813,7 @@ function LeadsContent() {
                                 </option>
                             )}
 
-                            {assignableCounselors
-                              .filter(c => !isTeamLeader(user) || c.id !== user.id)
-                              .map(c => (
-                                <option key={c.id} value={c.id}>
-                                  👤 {c.name}
-                                </option>
-                              ))}
+                            {counselorSelectOptions}
                           </select>
                         </div>
                       ) : (
@@ -1685,6 +1846,29 @@ function LeadsContent() {
               })}
               </tbody>
             </table>
+            {filteredLeads.length > displayLimit && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3.5 bg-gray-50/90 border-t border-gray-200">
+                <span className="text-xs text-gray-500 font-medium">
+                  Showing first <strong className="text-gray-900">{visibleLeads.length}</strong> of <strong className="text-gray-900">{filteredLeads.length}</strong> filtered leads
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLimit(prev => prev + 100)}
+                    className="px-3.5 py-1.5 bg-white border border-gray-300 text-gray-800 hover:bg-gray-100 rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                  >
+                    Load Next 100 Leads
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLimit(filteredLeads.length)}
+                    className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                  >
+                    Show All ({filteredLeads.length})
+                  </button>
+                </div>
+              </div>
+            )}
             {filteredLeads.length === 0 && (
               <div className="text-center py-16 text-gray-500 text-sm">
                 No leads match the selected filter.
@@ -1697,7 +1881,7 @@ function LeadsContent() {
             {stages
               .filter(stage => activeTab !== 'active' || stage !== 'Enrolled')
               .map(stage => {
-              const stageLeads = filteredLeads.filter(l => l.stage === stage)
+              const stageLeads = leadsByStage[stage] || []
               if (stageLeads.length === 0) return null
               return (
                 <div key={stage} className="w-80 shrink-0 flex flex-col">
