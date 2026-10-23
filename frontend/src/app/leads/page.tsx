@@ -524,12 +524,11 @@ function LeadsContent() {
 
   // Scope all leads by counselor filter first so tab counts are always accurate
   const counselorFilteredAllLeads = useMemo(() => {
-    if (isCounselor(user)) return leads.filter(l => l.owner_id === user?.id)
     if (selectedCounselor === 'ALL') return leads
     if (selectedCounselor === 'UNASSIGNED') return leads.filter(l => !l.owner_id)
     if (selectedCounselor === 'MY_POOL') return leads.filter(l => l.owner_id === user?.id)
     return leads.filter(l => l.owner_id === selectedCounselor)
-  }, [leads, selectedCounselor, user?.id, user])
+  }, [leads, selectedCounselor, user?.id])
 
   // Counts for the primary view switcher tabs (scoped by selected counselor)
   const activeCount = counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate').length
@@ -657,29 +656,8 @@ function LeadsContent() {
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>
-                {isCounselor(user)
-                  ? activeTab === 'enrolled'
-                    ? '🎯 My Calling Desk • Enrolled'
-                    : activeTab === 'junk'
-                    ? '🎯 My Calling Desk • Junk'
-                    : activeTab === 'all'
-                    ? '🎯 My Calling Desk • All Leads'
-                    : '🎯 My Calling Desk'
-                  : activeTab === 'enrolled'
-                  ? '🎓 Enrolled Students'
-                  : activeTab === 'junk'
-                  ? '🗑️ Junk Leads Archive'
-                  : activeTab === 'all'
-                  ? 'All Leads Master'
-                  : 'Active Leads Pipeline'}
-              </span>
+              <span>{activeTab === 'enrolled' ? '🎓 Enrolled Students' : activeTab === 'junk' ? '🗑️ Junk Leads Archive' : activeTab === 'all' ? 'All Leads Master' : 'Active Leads Pipeline'}</span>
             </h1>
-            {isCounselor(user) && (
-              <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200 shadow-2xs">
-                👤 {user?.name || 'Counselor'} (Calling Desk)
-              </span>
-            )}
             {searchQuery && (
               <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">
                 Search: &ldquo;{searchQuery}&rdquo;
@@ -1027,51 +1005,47 @@ function LeadsContent() {
             </select>
           </div>
 
-          {/* Country / Ad Campaign Filter (Manager & Team Leader only) */}
-          {canManageLeads(user) && (
-            <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
-              <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
-                <Globe size={12} className="text-gray-400" /> Ad Country:
-              </span>
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="bg-white border border-blue-200 text-blue-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-blue-50/50 focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
-              >
-                <option value="ALL">🌐 All Countries</option>
-                <option value="USA">🇺🇸 USA Ad Leads</option>
-                <option value="UK">🇬🇧 UK Ad Leads</option>
-                <option value="Canada">🇨🇦 Canada Ad Leads</option>
-                <option value="Australia">🇦🇺 Australia Ad Leads</option>
-                <option value="Germany">🇩🇪 Germany Ad Leads</option>
-                <option value="Ireland">🇮🇪 Ireland Ad Leads</option>
-                <option value="Europe">🇪🇺 Europe Ad Leads</option>
-                <option value="Saudi Arabia">🇸🇦 Saudi Arabia Leads</option>
-                <option value="South Africa">🇿🇦 South Africa Leads</option>
-                <option value="UAE">🇦🇪 UAE Ad Leads</option>
-                <option value="India">🇮🇳 India Leads</option>
-              </select>
-            </div>
-          )}
+          {/* Country / Ad Campaign Filter */}
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+              <Globe size={12} className="text-gray-400" /> Ad Country:
+            </span>
+            <select
+              value={selectedCountry}
+              onChange={(e) => setSelectedCountry(e.target.value)}
+              className="bg-white border border-blue-200 text-blue-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-blue-50/50 focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
+            >
+              <option value="ALL">🌐 All Countries</option>
+              <option value="USA">🇺🇸 USA Ad Leads</option>
+              <option value="UK">🇬🇧 UK Ad Leads</option>
+              <option value="Canada">🇨🇦 Canada Ad Leads</option>
+              <option value="Australia">🇦🇺 Australia Ad Leads</option>
+              <option value="Germany">🇩🇪 Germany Ad Leads</option>
+              <option value="Ireland">🇮🇪 Ireland Ad Leads</option>
+              <option value="Europe">🇪🇺 Europe Ad Leads</option>
+              <option value="Saudi Arabia">🇸🇦 Saudi Arabia Leads</option>
+              <option value="South Africa">🇿🇦 South Africa Leads</option>
+              <option value="UAE">🇦🇪 UAE Ad Leads</option>
+              <option value="India">🇮🇳 India Leads</option>
+            </select>
+          </div>
 
-          {/* Programme / Degree Level Filter (Manager & Team Leader only) */}
-          {canManageLeads(user) && (
-            <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
-              <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
-                <GraduationCap size={13} className="text-purple-600" /> Degree:
-              </span>
-              <select
-                value={selectedProgramme}
-                onChange={(e) => setSelectedProgramme(e.target.value)}
-                className="bg-white border border-purple-200 text-purple-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-purple-50/50 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer"
-              >
-                <option value="ALL">🎓 All Degrees</option>
-                <option value="Master">🎓 Master</option>
-                <option value="Bachelor">🎓 Bachelor</option>
-                <option value="Doctorate">🎓 Doctorate</option>
-              </select>
-            </div>
-          )}
+          {/* Programme / Degree Level Filter */}
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+              <GraduationCap size={13} className="text-purple-600" /> Degree:
+            </span>
+            <select
+              value={selectedProgramme}
+              onChange={(e) => setSelectedProgramme(e.target.value)}
+              className="bg-white border border-purple-200 text-purple-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-purple-50/50 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer"
+            >
+              <option value="ALL">🎓 All Degrees</option>
+              <option value="Master">🎓 Master</option>
+              <option value="Bachelor">🎓 Bachelor</option>
+              <option value="Doctorate">🎓 Doctorate</option>
+            </select>
+          </div>
 
           {/* Date Filter */}
           <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
@@ -1480,9 +1454,7 @@ function LeadsContent() {
                   <th className="px-6 py-3 font-medium text-gray-500">Priority / Temp</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Contact</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Call Outcome</th>
-                  {canManageLeads(user) && (
-                    <th className="px-6 py-3 font-medium text-gray-500">Assigned To</th>
-                  )}
+                  <th className="px-6 py-3 font-medium text-gray-500">Assigned To</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Stage</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Added</th>
                   <th className="px-6 py-3"></th>
@@ -1639,9 +1611,9 @@ function LeadsContent() {
                       </Link>
                     </td>
                     
-                    {/* Owner / Reassign Inline - Manager & Team Leader only */}
-                    {canManageLeads(user) && (
-                      <td className="px-6 py-4">
+                    {/* Owner / Reassign Inline */}
+                    <td className="px-6 py-4">
+                      {canManageLeads(user) ? (
                         <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
                           <select
                             value={lead.owner_id || ''}
@@ -1683,8 +1655,19 @@ function LeadsContent() {
                               ))}
                           </select>
                         </div>
-                      </td>
-                    )}
+                      ) : (
+                        lead.owner?.name ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            {lead.owner.name}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-gray-400 bg-gray-100">
+                            Unassigned
+                          </span>
+                        )
+                      )}
+                    </td>
 
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
@@ -1798,14 +1781,12 @@ function LeadsContent() {
                               </span>
                             )}
                           </div>
-                          {canManageLeads(user) && (
-                            lead.owner?.name ? (
-                              <span className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 truncate max-w-[120px]">
-                                {lead.owner.name}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">Unassigned</span>
-                            )
+                          {lead.owner?.name ? (
+                            <span className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 truncate max-w-[120px]">
+                              {lead.owner.name}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">Unassigned</span>
                           )}
                         </div>
                       </Link>
