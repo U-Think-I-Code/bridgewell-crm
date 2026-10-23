@@ -32,6 +32,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // @ts-ignore
+    agentUpgrade: "security",
+  },
   turbopack: {
     rules: {
       "*.css": {
