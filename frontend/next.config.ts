@@ -32,6 +32,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   experimental: {
     // @ts-ignore
     agentUpgrade: "security",
