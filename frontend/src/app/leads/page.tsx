@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
 import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
@@ -33,14 +33,16 @@ function LeadsContent() {
   const counselorParam = searchParams?.get('counselor') || ''
   const tabParam = searchParams?.get('tab')
 
-  // Tab State: 'active' (Default: excludes Enrolled) | 'enrolled' (Only Enrolled) | 'all' (Master)
-  const [activeTab, setActiveTab] = useState<'active' | 'enrolled' | 'all'>(
-    tabParam === 'enrolled' ? 'enrolled' : tabParam === 'all' ? 'all' : 'active'
+  // Tab State: 'active' (Default: excludes Enrolled & Junk) | 'enrolled' (Only Enrolled) | 'junk' (Only Junk) | 'all' (Master)
+  const [activeTab, setActiveTab] = useState<'active' | 'enrolled' | 'junk' | 'all'>(
+    tabParam === 'enrolled' ? 'enrolled' : tabParam === 'junk' ? 'junk' : tabParam === 'all' ? 'all' : 'active'
   )
 
   useEffect(() => {
     if (tabParam === 'enrolled') {
       setActiveTab('enrolled')
+    } else if (tabParam === 'junk') {
+      setActiveTab('junk')
     } else if (tabParam === 'all') {
       setActiveTab('all')
     } else {
@@ -48,7 +50,7 @@ function LeadsContent() {
     }
   }, [tabParam])
 
-  const handleTabChange = (t: 'active' | 'enrolled' | 'all') => {
+  const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
     setActiveTab(t)
     const currentParams = new URLSearchParams(searchParams?.toString() || '')
     if (t === 'active') {
@@ -202,12 +204,17 @@ function LeadsContent() {
 
     setReassigningId(leadId)
 
+    const targetLead = leads.find(l => l.id === leadId)
+    const isJunkRevival = targetLead?.stage === 'Junk/duplicate'
+    const newStage = isJunkRevival ? 'New' : targetLead?.stage
+
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
       if (l.id === leadId) {
         return {
           ...l,
           owner_id: targetOwnerId,
+          stage: newStage,
           owner: targetOwnerId ? { name: targetName } : null
         }
       }
@@ -215,10 +222,15 @@ function LeadsContent() {
     }))
 
     try {
-      // 1. Update lead in DB
+      // 1. Update lead in DB (auto-revive stage to 'New' if junk!)
+      const updatePayload: any = { owner_id: targetOwnerId }
+      if (isJunkRevival) {
+        updatePayload.stage = 'New'
+      }
+
       const { error } = await supabase
         .from('leads')
-        .update({ owner_id: targetOwnerId })
+        .update(updatePayload)
         .eq('id', leadId)
 
       if (error) throw error
@@ -227,8 +239,10 @@ function LeadsContent() {
       await supabase.from('activities').insert([{
         lead: leadId,
         user_id: user?.id,
-        type: 'reassigned',
-        text: `Lead reassigned to ${targetName} by ${user?.name || 'Leader'}`
+        type: isJunkRevival ? 'lead_revived' : 'reassigned',
+        text: isJunkRevival
+          ? `Lead revived from Junk/duplicate and reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
+          : `Lead reassigned to ${targetName} by ${user?.name || 'Leader'}`
       }])
 
       // 3. Insert assignment history record
@@ -300,9 +314,11 @@ function LeadsContent() {
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
       if (idsToReassign.includes(l.id)) {
+        const isJunk = l.stage === 'Junk/duplicate'
         return {
           ...l,
           owner_id: targetOwnerId,
+          stage: isJunk ? 'New' : l.stage,
           owner: targetOwnerId ? { name: targetName } : null
         }
       }
@@ -310,13 +326,29 @@ function LeadsContent() {
     }))
 
     try {
-      // 1. Bulk update in Supabase
-      const { error } = await supabase
-        .from('leads')
-        .update({ owner_id: targetOwnerId })
-        .in('id', idsToReassign)
+      // 1. Separate regular leads and junk leads needing revival
+      const junkIds = idsToReassign.filter(id => {
+        const l = leads.find(lead => lead.id === id)
+        return l?.stage === 'Junk/duplicate'
+      })
+      const nonJunkIds = idsToReassign.filter(id => !junkIds.includes(id))
 
-      if (error) throw error
+      if (nonJunkIds.length > 0) {
+        const { error } = await supabase
+          .from('leads')
+          .update({ owner_id: targetOwnerId })
+          .in('id', nonJunkIds)
+        if (error) throw error
+      }
+
+      if (junkIds.length > 0) {
+        // Auto-revive stage to 'New' when moving from Junk!
+        const { error } = await supabase
+          .from('leads')
+          .update({ owner_id: targetOwnerId, stage: 'New' })
+          .in('id', junkIds)
+        if (error) throw error
+      }
 
       // 2. Audit entries for assignments and activities
       const assignmentInserts = idsToReassign.map(leadId => {
@@ -332,12 +364,18 @@ function LeadsContent() {
       })
       await supabase.from('assignments').insert(assignmentInserts)
 
-      const activityInserts = idsToReassign.map(leadId => ({
-        lead: leadId,
-        user_id: user?.id,
-        type: 'reassigned',
-        text: `Bulk reassigned to ${targetName} by ${user?.name || 'Leader'}`
-      }))
+      const activityInserts = idsToReassign.map(leadId => {
+        const l = leads.find(lead => lead.id === leadId)
+        const isJunkRevival = l?.stage === 'Junk/duplicate'
+        return {
+          lead: leadId,
+          user_id: user?.id,
+          type: isJunkRevival ? 'lead_revived' : 'reassigned',
+          text: isJunkRevival
+            ? `Lead revived from Junk/duplicate and reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
+            : `Bulk reassigned to ${targetName} by ${user?.name || 'Leader'}`
+        }
+      })
       await supabase.from('activities').insert(activityInserts)
 
       // 3. Notification to the assigned counselor
@@ -366,6 +404,41 @@ function LeadsContent() {
     if (selectedLeadIds.length === 0) return
     const val = newPriority === 'UNSET' ? null : newPriority
 
+    // Check if any selected lead is in Junk/duplicate
+    const junkSelected = selectedLeadIds.filter(id => {
+      const l = leads.find(lead => lead.id === id)
+      return l?.stage === 'Junk/duplicate'
+    })
+
+    if (val && junkSelected.length > 0) {
+      const shouldRevive = confirm(
+        `${junkSelected.length} of the selected leads are currently in "Junk/duplicate" stage.\n\nSetting their priority to "${val}" will automatically revive them back to "New" stage so they appear in active calling.\n\nProceed and revive them to New?`
+      )
+      if (!shouldRevive) return
+
+      try {
+        await supabase
+          .from('leads')
+          .update({ priority: val, stage: 'New' })
+          .in('id', junkSelected)
+
+        const nonJunk = selectedLeadIds.filter(id => !junkSelected.includes(id))
+        if (nonJunk.length > 0) {
+          await supabase
+            .from('leads')
+            .update({ priority: val })
+            .in('id', nonJunk)
+        }
+
+        setSelectedLeadIds([])
+        await fetchLeads()
+      } catch (err: any) {
+        console.error('Failed to bulk update priority:', err)
+        alert(err?.message || 'Failed to update priority.')
+      }
+      return
+    }
+
     // Optimistic UI update
     setLeads(prev => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, priority: val } : l))
 
@@ -381,6 +454,26 @@ function LeadsContent() {
 
   const handleUpdatePriority = async (leadId: string, newPriority: string) => {
     const val = newPriority || null
+    const lead = leads.find(l => l.id === leadId)
+
+    if (val && lead?.stage === 'Junk/duplicate') {
+      const shouldRevive = confirm(
+        `This lead is currently in "Junk/duplicate" stage.\n\nSetting priority to "${val}" will automatically revive this lead back to "New" stage so it appears in active calling.\n\nProceed and revive to New?`
+      )
+      if (!shouldRevive) return
+
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: val, stage: 'New' } : l))
+      await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', leadId)
+      await supabase.from('activities').insert([{
+        lead: leadId,
+        user_id: user?.id,
+        type: 'lead_revived',
+        text: `Lead revived from Junk/duplicate to New and priority marked as ${val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : '❄️ Cold'}`,
+        time: new Date().toISOString()
+      }])
+      await fetchLeads()
+      return
+    }
     
     // Optimistic UI update
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: val } : l))
@@ -428,28 +521,40 @@ function LeadsContent() {
     }
   }
 
-  // Count calculations
-  const activeLeads = leads.filter(l => l.stage !== 'Enrolled')
-  const enrolledLeads = leads.filter(l => l.stage === 'Enrolled')
+  // Scope all leads by counselor filter first so tab counts are always accurate
+  const counselorFilteredAllLeads = useMemo(() => {
+    if (selectedCounselor === 'ALL') return leads
+    if (selectedCounselor === 'UNASSIGNED') return leads.filter(l => !l.owner_id)
+    if (selectedCounselor === 'MY_POOL') return leads.filter(l => l.owner_id === user?.id)
+    return leads.filter(l => l.owner_id === selectedCounselor)
+  }, [leads, selectedCounselor, user?.id])
+
+  // Counts for the primary view switcher tabs (scoped by selected counselor)
+  const activeCount = counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate').length
+  const enrolledCount = counselorFilteredAllLeads.filter(l => l.stage === 'Enrolled').length
+  const junkCount = counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate').length
+  const totalCount = counselorFilteredAllLeads.length
 
   // Base pool depending on current tab
-  const basePool = activeTab === 'active' ? activeLeads : activeTab === 'enrolled' ? enrolledLeads : leads
-
-  // Scope basePool by counselor filter so that all counts and filters align
   const counselorScopedPool = useMemo(() => {
-    if (selectedCounselor === 'ALL') return basePool
-    if (selectedCounselor === 'UNASSIGNED') return basePool.filter(l => !l.owner_id)
-    if (selectedCounselor === 'MY_POOL') return basePool.filter(l => l.owner_id === user?.id)
-    return basePool.filter(l => l.owner_id === selectedCounselor)
-  }, [basePool, selectedCounselor, user?.id])
+    if (activeTab === 'active') {
+      return counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate')
+    }
+    if (activeTab === 'enrolled') {
+      return counselorFilteredAllLeads.filter(l => l.stage === 'Enrolled')
+    }
+    if (activeTab === 'junk') {
+      return counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate')
+    }
+    return counselorFilteredAllLeads
+  }, [counselorFilteredAllLeads, activeTab])
+
+  const basePool = counselorScopedPool
 
   const hotCount = counselorScopedPool.filter(l => l.priority === 'Hot').length
   const warmCount = counselorScopedPool.filter(l => l.priority === 'Warm').length
   const coldCount = counselorScopedPool.filter(l => l.priority === 'Cold').length
   const unsetCount = counselorScopedPool.filter(l => !l.priority).length
-  const totalCount = counselorScopedPool.length
-  const activeCount = counselorScopedPool.filter(l => l.stage !== 'Enrolled').length
-  const enrolledCount = counselorScopedPool.filter(l => l.stage === 'Enrolled').length
 
   // Service Track Counts
   const studyAbroadCount = counselorScopedPool.filter(l => getLeadServiceType(l) === 'study_abroad').length
@@ -548,7 +653,7 @@ function LeadsContent() {
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>{activeTab === 'enrolled' ? '🎓 Enrolled Students' : activeTab === 'all' ? 'All Leads Master' : 'Active Leads Pipeline'}</span>
+              <span>{activeTab === 'enrolled' ? '🎓 Enrolled Students' : activeTab === 'junk' ? '🗑️ Junk Leads Archive' : activeTab === 'all' ? 'All Leads Master' : 'Active Leads Pipeline'}</span>
             </h1>
             {searchQuery && (
               <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">
@@ -590,8 +695,8 @@ function LeadsContent() {
             </span>
           </div>
 
-          {/* Primary View Switcher: Active Leads vs Enrolled Students vs All */}
-          <div className="flex items-center gap-1.5 bg-gray-100/90 p-1 rounded-xl w-fit">
+          {/* Primary View Switcher: Active Leads vs Enrolled Students vs Junk vs All */}
+          <div className="flex items-center gap-1.5 bg-gray-100/90 p-1 rounded-xl w-fit flex-wrap">
             <button
               onClick={() => handleTabChange('active')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
@@ -626,13 +731,30 @@ function LeadsContent() {
             </button>
 
             <button
+              onClick={() => handleTabChange('junk')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'junk'
+                  ? 'bg-red-600 text-white shadow-xs font-bold'
+                  : 'text-gray-600 hover:text-red-700 hover:bg-red-50/50'
+              }`}
+            >
+              <Trash2 size={14} className={activeTab === 'junk' ? 'text-white' : 'text-red-500'} />
+              <span>🗑️ Junk Leads</span>
+              <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
+                activeTab === 'junk' ? 'bg-white text-red-800' : 'bg-red-100 text-red-800'
+              }`}>
+                {junkCount}
+              </span>
+            </button>
+
+            <button
               onClick={() => handleTabChange('all')}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'all'
                   ? 'bg-white text-gray-900 shadow-xs ring-1 ring-black/5 font-bold'
                   : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200/50'
               }`}
-              title="Show all leads including both active and enrolled"
+              title="Show all leads including active, enrolled, and junk"
             >
               <span>All Master</span>
               <span className="text-[10px] text-gray-400">({totalCount})</span>
@@ -1049,6 +1171,73 @@ function LeadsContent() {
               <span>Full Enrolled Portal</span>
               <ArrowRight size={13} />
             </Link>
+          </div>
+        )}
+
+        {activeTab === 'junk' && (
+          <div className="mb-6 bg-gradient-to-r from-red-500/10 via-amber-500/5 to-rose-500/10 border border-red-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-red-950 flex items-center gap-2">
+                  <span>🗑️ Junk &amp; Duplicate Leads Archive</span>
+                  <span className="text-[10px] font-semibold bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded-full">
+                    {junkCount} Leads
+                  </span>
+                </h3>
+                <p className="text-xs text-red-800 mt-0.5">
+                  These leads were marked as junk, invalid, or duplicate. Their priorities and follow-up schedules are cleared to protect active pipeline metrics.
+                </p>
+              </div>
+            </div>
+            {canManageLeads(user) && filteredLeads.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetIds = selectedLeadIds.length > 0 ? selectedLeadIds : filteredLeads.map(l => l.id)
+                  if (!confirm(`Revive ${targetIds.length} junk lead(s) back to active pipeline (Stage = 'New')?`)) return
+                  setBulkProcessing(true)
+                  try {
+                    const { error } = await supabase
+                      .from('leads')
+                      .update({ stage: 'New', updated_at: new Date().toISOString() })
+                      .in('id', targetIds)
+                    if (error) throw error
+
+                    // Audit trail log
+                    await supabase.from('activities').insert(
+                      targetIds.map(id => ({
+                        lead_id: id,
+                        type: 'STAGE_CHANGE',
+                        title: 'Lead Revived from Junk',
+                        description: `Lead revived from Junk/duplicate back to 'New' pipeline by ${user?.name || 'User'}`,
+                        created_by: user?.id,
+                        created_at: new Date().toISOString()
+                      }))
+                    )
+
+                    setLeads(prev => prev.map(l => targetIds.includes(l.id) ? { ...l, stage: 'New' } : l))
+                    setSelectedLeadIds([])
+                    alert(`Successfully revived ${targetIds.length} lead(s) to 'New'!`)
+                  } catch (err: any) {
+                    alert(`Failed to revive leads: ${err.message}`)
+                  } finally {
+                    setBulkProcessing(false)
+                  }
+                }}
+                disabled={bulkProcessing}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-700 hover:bg-red-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all w-fit shrink-0 cursor-pointer"
+              >
+                <Sparkles size={13} />
+                <span>
+                  {selectedLeadIds.length > 0
+                    ? `Revive Selected (${selectedLeadIds.length}) to 'New'`
+                    : `Revive All (${filteredLeads.length}) to 'New'`}
+                </span>
+              </button>
+            )}
           </div>
         )}
 

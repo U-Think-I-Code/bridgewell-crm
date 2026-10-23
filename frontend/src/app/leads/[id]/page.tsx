@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3 } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -767,15 +767,51 @@ export default function LeadProfile() {
 
   const changeStage = async (newStage: string) => {
     if (newStage === lead.stage) return
-    
+
+    let junkReason = ''
+    if (newStage === 'Junk/duplicate') {
+      const isPrioritySet = lead.priority === 'Hot' || lead.priority === 'Warm' || lead.priority === 'Cold'
+      const confirmMsg = isPrioritySet
+        ? `⚠️ Warning: This lead is currently marked as "${lead.priority}". Moving it to "Junk/duplicate" will reset its priority to Unset and clear follow-up reminders.\n\nAre you sure you want to move this lead to Junk?`
+        : `Are you sure you want to mark this lead as Junk/duplicate?`
+
+      if (!confirm(confirmMsg)) return
+
+      const reasonInput = prompt('Reason for marking this lead as Junk/Duplicate? (Optional, e.g. Wrong Number, Fake, Duplicate, No Budget):')
+      if (reasonInput === null) return
+      junkReason = reasonInput.trim()
+    }
+
     setSavingAction(true)
-    
+
+    const updatePayload: any = { stage: newStage }
+    if (newStage === 'Enrolled') {
+      updatePayload.next_follow_up = null
+    } else if (newStage === 'Junk/duplicate') {
+      updatePayload.priority = null // Auto-reset priority!
+      updatePayload.next_follow_up = null // Clear reminders!
+      if (junkReason) {
+        updatePayload.metadata = {
+          ...(lead.metadata || {}),
+          junk_reason: junkReason,
+          junk_marked_at: new Date().toISOString(),
+          junk_marked_by: currentUser?.name || 'User'
+        }
+      }
+    }
+
+    const activityText = newStage === 'Junk/duplicate'
+      ? `Moved to Junk/duplicate. Priority reset to Unset.${junkReason ? ` Reason: ${junkReason}` : ''}`
+      : lead.stage === 'Junk/duplicate'
+      ? `Revived from Junk/duplicate to ${newStage}`
+      : `Changed stage to ${newStage}`
+
     await supabase.from('activities').insert([
       { 
         lead: id, 
         user_id: currentUser?.id || lead?.owner_id,
-        type: 'stage change', 
-        text: `Changed stage to ${newStage}`, 
+        type: newStage === 'Junk/duplicate' ? 'junk_marked' : 'stage change', 
+        text: activityText, 
         time: new Date().toISOString() 
       }
     ])
@@ -787,15 +823,11 @@ export default function LeadProfile() {
       fieldName: 'stage',
       oldValue: lead.stage,
       newValue: newStage,
-      summary: `Stage changed from "${lead.stage}" to "${newStage}"`
+      summary: activityText
     })
-    
-    const updatePayload: any = { stage: newStage }
-    if (newStage === 'Enrolled') {
-      updatePayload.next_follow_up = null
-    }
+
     await supabase.from('leads').update(updatePayload).eq('id', id)
-    
+
     // Auto-notify enrollment
     if (newStage === 'Enrolled') {
       setFollowUpDate('')
@@ -805,6 +837,22 @@ export default function LeadProfile() {
         leadName: lead.name,
         counselorName: currentUser?.name || 'Counselor',
       }).catch(console.error)
+    }
+
+    if (newStage === 'Junk/duplicate') {
+      setFollowUpDate('')
+      setLead((prev: any) => ({
+        ...prev,
+        stage: newStage,
+        priority: null,
+        next_follow_up: null,
+        metadata: updatePayload.metadata || prev.metadata
+      }))
+    } else {
+      setLead((prev: any) => ({
+        ...prev,
+        stage: newStage
+      }))
     }
 
     fetchLeadAndActivities()
@@ -817,17 +865,24 @@ export default function LeadProfile() {
     if (reason === null) return 
     
     setSavingAction(true)
+
+    const isJunkRevival = lead.stage === 'Junk/duplicate'
+    const newStage = isJunkRevival ? 'New' : lead.stage
     
     await supabase.from('assignments').insert([
       { lead_id: id, from_user: lead.owner_id, to_user: counselorId, assigned_by: currentUser.id, reason, time: new Date().toISOString() }
     ])
 
+    const activityText = isJunkRevival
+      ? `Lead revived from Junk/duplicate and assigned to ${counselorName}. Stage reset to New. ${reason ? `Reason: ${reason}` : ''}`
+      : `Assigned to ${counselorName}. ${reason ? `Reason: ${reason}` : ''}`
+
     await supabase.from('activities').insert([
       { 
         lead: id, 
         user_id: currentUser?.id || lead?.owner_id,
-        type: 'assignment', 
-        text: `Assigned to ${counselorName}. ${reason ? `Reason: ${reason}` : ''}`, 
+        type: isJunkRevival ? 'lead_revived' : 'assignment', 
+        text: activityText, 
         time: new Date().toISOString() 
       }
     ])
@@ -839,10 +894,15 @@ export default function LeadProfile() {
       fieldName: 'owner_id',
       oldValue: lead?.owner?.name || 'Unassigned',
       newValue: counselorName,
-      summary: `Assigned to ${counselorName}. ${reason ? `Reason: ${reason}` : ''}`
+      summary: activityText
     })
+
+    const updatePayload: any = { owner_id: counselorId }
+    if (isJunkRevival) {
+      updatePayload.stage = 'New'
+    }
     
-    await supabase.from('leads').update({ owner_id: counselorId }).eq('id', id)
+    await supabase.from('leads').update(updatePayload).eq('id', id)
     
     // Auto-notify assigned counselor
     notifyLeadAssigned({
@@ -852,12 +912,43 @@ export default function LeadProfile() {
       senderName: currentUser?.name || 'Manager',
     }).catch(console.error)
 
+    setLead((prev: any) => ({
+      ...prev,
+      owner_id: counselorId,
+      stage: newStage,
+      owner: { name: counselorName }
+    }))
+
     fetchLeadAndActivities()
     setSavingAction(false)
   }
 
   const changePriority = async (newPriority: string) => {
     const val = newPriority || null
+
+    if (val && lead.stage === 'Junk/duplicate') {
+      const shouldRevive = confirm(
+        `This lead is currently in "Junk/duplicate" stage.\n\nSetting priority to "${val}" will automatically revive this lead back to "New" stage so it appears in the active calling pipeline.\n\nProceed and revive to New?`
+      )
+      if (!shouldRevive) return
+
+      setSavingAction(true)
+      await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', id)
+      await supabase.from('activities').insert([
+        { 
+          lead: id, 
+          user_id: currentUser?.id || lead?.owner_id,
+          type: 'lead_revived', 
+          text: `Revived from Junk/duplicate to New and priority set to ${val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : '❄️ Cold'}`, 
+          time: new Date().toISOString() 
+        }
+      ])
+      setLead((prev: any) => ({ ...prev, priority: val, stage: 'New' }))
+      fetchLeadAndActivities()
+      setSavingAction(false)
+      return
+    }
+
     setSavingAction(true)
     await supabase.from('leads').update({ priority: val }).eq('id', id)
     await supabase.from('activities').insert([
@@ -1292,6 +1383,37 @@ export default function LeadProfile() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Junk / Duplicate Status Warning Banner */}
+          {lead.stage === 'Junk/duplicate' && (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-rose-500/10 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-xs animate-in fade-in duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0 font-bold">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-amber-950 uppercase tracking-wider">🗑️ Junk / Duplicate Lead</span>
+                    {lead.metadata?.junk_reason && (
+                      <span className="text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                        Reason: {lead.metadata.junk_reason}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    This lead is excluded from active calling pipelines. Reassigning or clicking &quot;Revive&quot; will reset it to &quot;New&quot;.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => changeStage('New')}
+                className="px-3.5 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer w-fit"
+              >
+                ⚡ Revive to New
+              </button>
             </div>
           )}
 
