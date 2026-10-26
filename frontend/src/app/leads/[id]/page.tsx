@@ -706,10 +706,14 @@ export default function LeadProfile() {
         ])
       }
 
+      const isUnanswered = ['No Answer', 'Busy', 'Ringing'].includes(outcome)
+      const newAttempts = isUnanswered ? (lead?.attempts || 0) + 1 : (lead?.attempts || 0)
+
       await supabase
         .from('leads')
         .update({
           last_call_outcome: outcome,
+          attempts: newAttempts,
           metadata: {
             ...(lead?.metadata || {}),
             last_call_duration: formattedDuration,
@@ -1524,52 +1528,56 @@ export default function LeadProfile() {
 
                 <button
                   type="button"
-                  onClick={() => handleCallEnded('Connected')}
+                  onClick={() => handleCallEnded('Ringing')}
                   className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1 shrink-0 active:scale-95"
-                  title="Disconnect & Log Call"
+                  title="Hang up without answer (Mark as Ringing)"
                 >
                   <PhoneOff size={11} className="shrink-0" />
-                  <span>End Call</span>
+                  <span>Hang Up (Ringing)</span>
                 </button>
               </div>
 
               <p className="text-[10px] text-gray-300/90 mb-2.5">
-                Call in progress... Select outcome to finish:
+                Call in progress... Select outcome to finish &amp; log call:
               </p>
 
-              {/* 2x2 Outcome Grid - Spacious & Clean on all screen widths */}
+              {/* 2x2 Outcome Grid - Spacious & Clean with Clear Hindi/English Labels */}
               <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Connected')}
-                  className="py-2 px-2.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  className="py-2.5 px-2 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  title="Call Connect Hui aur Student se Baat Hui"
                 >
                   <PhoneCall size={13} className="text-emerald-400 shrink-0" />
-                  <span className="truncate">Connected</span>
+                  <span className="truncate">Connected (Baat Hui)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Ringing')}
-                  className="py-2 px-2.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-400/30 text-amber-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  className="py-2.5 px-2 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  title="Ghanti Baji par Student ne Pick Nahi Kiya"
                 >
                   <span className="text-xs shrink-0">🔔</span>
-                  <span className="truncate">Ringing</span>
+                  <span className="truncate">Ringing (No Pick)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Callback')}
-                  className="py-2 px-2.5 bg-blue-500/15 hover:bg-blue-500/30 border border-blue-400/30 text-blue-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  className="py-2.5 px-2 bg-blue-500/20 hover:bg-blue-500/35 border border-blue-400/40 text-blue-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  title="Student ne Bola Baad Me Call Karein"
                 >
                   <PhoneForwarded size={13} className="text-blue-400 shrink-0" />
-                  <span className="truncate">Callback</span>
+                  <span className="truncate">Callback (Baad Me)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Busy')}
-                  className="py-2 px-2.5 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 text-rose-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  className="py-2.5 px-2 bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                  title="Phone Busy ya Switch Off Tha"
                 >
                   <PhoneOff size={13} className="text-rose-400 shrink-0" />
-                  <span className="truncate">Busy / No Ans</span>
+                  <span className="truncate">Busy / Reject</span>
                 </button>
               </div>
             </div>
