@@ -1067,6 +1067,13 @@ export default function SettingsPage() {
                     placeholder="+91 98765 43210"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-purple-200"
                   />
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] text-gray-500 font-mono">
+                    <span className="font-semibold text-purple-700">Preview:</span>
+                    <span className="bg-gray-100 px-1.5 py-0.5 rounded font-bold text-gray-800">
+                      {getMicroSipDialerUrl(microsipTestPhone, microsipProtocol)}
+                    </span>
+                    <span className="text-emerald-600 font-sans font-medium">(+ automatically stripped)</span>
+                  </div>
                 </div>
 
                 <div className="w-32">
@@ -1105,7 +1112,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="font-bold">MicroSIP Dial Triggered!</p>
                     <p className="text-purple-800 mt-0.5">
-                      Windows should open MicroSIP with <strong>{microsipTestPhone}</strong> ready to dial. If it did not open, follow the 3 setup steps below.
+                      Windows opened MicroSIP with <strong>{getMicroSipDialerUrl(microsipTestPhone, microsipProtocol)}</strong> (no '+' prefix).
                     </p>
                   </div>
                 </div>

@@ -9,12 +9,9 @@ export type MicroSipProtocol = 'sip' | 'tel' | 'callto'
 
 export function formatCleanPhoneNumber(phone: string): string {
   if (!phone) return ''
-  // Clean phone: keep only digits and leading +
-  let clean = phone.trim().replace(/[^0-9+]/g, '')
-  if (!clean.startsWith('+')) {
-    clean = '+' + clean
-  }
-  return clean
+  // MicroSIP & PBX SIP lines do NOT accept '+' prefix.
+  // Strip '+' and all non-digit characters so PBX/SIP trunks route cleanly.
+  return phone.trim().replace(/[^0-9]/g, '')
 }
 
 export function getMicroSipDialerUrl(phone: string, protocol: MicroSipProtocol = 'sip'): string {
