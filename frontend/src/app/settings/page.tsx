@@ -3,24 +3,31 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import { 
-  PhoneCall, Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
+  Phone, PhoneCall, Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
   Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle,
   Database, Download, FileSpreadsheet, HardDrive, RefreshCw, FileJson,
-  CheckCircle, AlertCircle, Clock, ShieldCheck, FileDown, Eye, Server
+  CheckCircle, AlertCircle, Clock, ShieldCheck, FileDown, Eye, Server, Headphones, Radio, ExternalLink
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { openMicroSipDialer, getMicroSipDialerUrl, getPreferredDialer, setPreferredDialer, DialerType } from '@/lib/dialer'
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'backup'>('pipeline')
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'microsip' | 'backup'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newStageName, setNewStageName] = useState('')
   const [isAdding, setIsAdding] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
+
+  // Dialer Preferences & MicroSIP State
+  const [preferredDialer, setPreferredDialerState] = useState<DialerType>('justcall')
+  const [microsipTestPhone, setMicrosipTestPhone] = useState('+91 98765 43210')
+  const [microsipProtocol, setMicrosipProtocol] = useState<'sip' | 'tel'>('sip')
+  const [microsipTested, setMicrosipTested] = useState(false)
 
   // Meta Integration State
   const [copiedUrl, setCopiedUrl] = useState(false)
@@ -66,6 +73,7 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') {
       const storedLastBackup = localStorage.getItem('bridgewell_last_backup_time')
       if (storedLastBackup) setLastBackupTime(storedLastBackup)
+      setPreferredDialerState(getPreferredDialer())
     }
 
     // Realtime listener for pipeline stages
@@ -374,7 +382,22 @@ export default function SettingsPage() {
             <PhoneCall size={16} className="text-emerald-600" />
             <span>JustCall Dialer</span>
             <span className="ml-1 px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold">
-              Auto Call Logger
+              Auto Logger
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('microsip')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'microsip'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Headphones size={16} className="text-purple-600" />
+            <span>MicroSIP Softphone</span>
+            <span className="ml-1 px-2 py-0.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-full font-bold">
+              VoIP / SIP
             </span>
           </button>
 
@@ -886,6 +909,225 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-xs font-bold text-gray-900">Paste Webhook URL &amp; Save</p>
                     <p className="text-xs text-gray-600 mt-0.5">Paste the Webhook URL copied from above into the Endpoint URL field and click <strong>Save</strong>. Done!</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Tab 3.5: MicroSIP Softphone Integration */}
+        {activeTab === 'microsip' && (
+          <div className="space-y-6">
+            {/* MicroSIP Hero Banner */}
+            <div className="bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-950 text-white rounded-2xl p-6 shadow-sm border border-purple-800">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-200 border border-purple-400/30 mb-3">
+                    <Headphones size={12} />
+                    <span>Free &amp; Open-Source Windows SIP Softphone</span>
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-tight mb-2">MicroSIP Softphone Integration</h2>
+                  <p className="text-purple-100/80 text-sm max-w-2xl leading-relaxed">
+                    Connect your team&apos;s Windows desktop to <a href="https://www.microsip.org/" target="_blank" rel="noreferrer" className="text-purple-300 underline font-semibold hover:text-white">MicroSIP (microsip.org)</a>. Counselors can click to dial any student number instantly using high-quality VoIP SIP trunks without needing browser extensions.
+                  </p>
+                </div>
+                <div className="hidden sm:block">
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center">
+                    <Headphones size={28} className="text-purple-300" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Preferred Default Dialer Preference */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-base font-semibold text-gray-900">Your Preferred Default Dialer</h3>
+                <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  Saved on this device
+                </span>
+              </div>
+              <p className="text-gray-500 text-xs mb-4">
+                Choose which dialer should be your primary 1-click calling tool. Both dialers remain accessible on every lead profile and table row!
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div 
+                  onClick={() => {
+                    setPreferredDialerState('justcall')
+                    setPreferredDialer('justcall')
+                  }}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                    preferredDialer === 'justcall'
+                      ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    preferredDialer === 'justcall' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <Phone size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-gray-900">JustCall (Cloud Dialer)</h4>
+                      {preferredDialer === 'justcall' && (
+                        <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                      Opens official JustCall browser popup with automatic call duration sync &amp; recording playback.
+                    </p>
+                  </div>
+                </div>
+
+                <div 
+                  onClick={() => {
+                    setPreferredDialerState('microsip')
+                    setPreferredDialer('microsip')
+                  }}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                    preferredDialer === 'microsip'
+                      ? 'border-purple-600 bg-purple-50/40 shadow-xs'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    preferredDialer === 'microsip' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <Headphones size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-gray-900">MicroSIP (Desktop Softphone)</h4>
+                      {preferredDialer === 'microsip' && (
+                        <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                      Launches Windows MicroSIP softphone application via <code>sip:</code> protocol to place direct PBX calls.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Test MicroSIP Click-to-Dial */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Test MicroSIP Connection</h3>
+              <p className="text-gray-500 text-xs mb-4">
+                Click below to test whether your computer launches MicroSIP and prepares the dial screen.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                    Test Phone Number:
+                  </label>
+                  <input
+                    type="text"
+                    value={microsipTestPhone}
+                    onChange={(e) => setMicrosipTestPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-purple-200"
+                  />
+                </div>
+
+                <div className="w-32">
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                    URI Protocol:
+                  </label>
+                  <select
+                    value={microsipProtocol}
+                    onChange={(e) => setMicrosipProtocol(e.target.value as 'sip' | 'tel')}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-gray-800 outline-none cursor-pointer focus:ring-2 focus:ring-purple-200"
+                  >
+                    <option value="sip">sip: (Standard)</option>
+                    <option value="tel">tel: (RFC 3966)</option>
+                  </select>
+                </div>
+
+                <div className="self-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openMicroSipDialer(microsipTestPhone, undefined, microsipProtocol)
+                      setMicrosipTested(true)
+                      setTimeout(() => setMicrosipTested(false), 5000)
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Headphones size={14} />
+                    <span>Test Dial MicroSIP</span>
+                  </button>
+                </div>
+              </div>
+
+              {microsipTested && (
+                <div className="mt-4 p-3.5 bg-purple-50 border border-purple-200 rounded-xl flex items-start gap-2.5 text-xs text-purple-900 animate-in fade-in duration-200">
+                  <CheckCircle2 size={16} className="text-purple-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">MicroSIP Dial Triggered!</p>
+                    <p className="text-purple-800 mt-0.5">
+                      Windows should open MicroSIP with <strong>{microsipTestPhone}</strong> ready to dial. If it did not open, follow the 3 setup steps below.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Step-by-Step MicroSIP Setup Instructions */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">How to Set Up MicroSIP on Counselor PCs</h3>
+              <p className="text-gray-500 text-xs mb-4">Follow these simple instructions to enable click-to-dial on any Windows computer:</p>
+
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                      <span>Download &amp; Install MicroSIP</span>
+                      <a href="https://www.microsip.org/downloads" target="_blank" rel="noreferrer" className="text-purple-600 inline-flex items-center gap-0.5 hover:underline font-semibold">
+                        <span>microsip.org/downloads</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">Download either the Installer or the Portable version for Windows (lightweight ~3 MB).</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Add your VoIP / SIP PBX Account</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Open MicroSIP &rarr; Click top-right arrow (<strong>▼</strong>) &rarr; Select <strong>Add Account</strong> &rarr; Fill in your SIP Server / IP, Extension Username, and Password provided by your VoIP PBX administrator. Status will turn green (<strong>Online</strong>).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Enable &quot;Integrate with Windows&quot; (Crucial Step)</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      In MicroSIP, click top-right menu (<strong>▼</strong>) &rarr; click <strong>Settings</strong> &rarr; scroll down to <strong>Integrate with Windows</strong> &rarr; ensure <strong>Associate with URL protocol (sip:, tel:, callto:)</strong> is checked and click <strong>Save</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">✓</span>
+                  <div>
+                    <p className="text-xs font-bold text-emerald-950">You&apos;re All Set!</p>
+                    <p className="text-xs text-emerald-800 mt-0.5">
+                      Whenever any counselor clicks the <strong>MicroSIP</strong> button on a lead profile or table row, Windows immediately triggers MicroSIP to dial the student number!
+                    </p>
                   </div>
                 </div>
               </div>

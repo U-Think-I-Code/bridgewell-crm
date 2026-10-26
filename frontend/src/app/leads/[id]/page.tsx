@@ -2,12 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
-import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, DialerType } from '@/lib/dialer'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
@@ -125,6 +125,7 @@ export default function LeadProfile() {
   const [activeCallTimer, setActiveCallTimer] = useState<number | null>(null)
   const callStartTimeRef = useRef<number | null>(null)
   const activeCallActIdRef = useRef<string | null>(null)
+  const activeDialerRef = useRef<DialerType>('justcall')
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false)
   const [isNotesOpen, setIsNotesOpen] = useState(true)
@@ -607,7 +608,7 @@ export default function LeadProfile() {
     setSavingAction(false)
   }
 
-  const handleStartCall = async (e?: React.MouseEvent) => {
+  const handleStartCall = async (dialer: DialerType = 'justcall', e?: React.MouseEvent) => {
     if (e) {
       if ('preventDefault' in e && typeof e.preventDefault === 'function') {
         e.preventDefault()
@@ -615,12 +616,19 @@ export default function LeadProfile() {
     }
     if (!lead?.phone) return
 
+    activeDialerRef.current = dialer
     const now = Date.now()
     callStartTimeRef.current = now
     setActiveCallTimer(0)
 
-    // Open JustCall dialer popup
-    const popup = openJustCallDialer(lead.phone, e)
+    let popup: Window | null = null
+    const dialerLabel = dialer === 'microsip' ? 'MicroSIP' : 'JustCall'
+
+    if (dialer === 'justcall') {
+      popup = openJustCallDialer(lead.phone, e)
+    } else {
+      openMicroSipDialer(lead.phone, e)
+    }
 
     try {
       const { data: actData } = await supabase
@@ -631,7 +639,7 @@ export default function LeadProfile() {
             user_id: currentUser?.id || lead?.owner_id,
             type: 'call',
             outcome: 'Calling',
-            text: '📞 Calling via JustCall... (Call in progress)',
+            text: `📞 Calling via ${dialerLabel}... (Call in progress)`,
             time: new Date().toISOString()
           }
         ])
@@ -666,13 +674,14 @@ export default function LeadProfile() {
     const formattedDuration = formatCallDuration(elapsedSecs)
     const outcome = explicitOutcome || 'No Answer'
     const actId = activeCallActIdRef.current
+    const dialerLabel = activeDialerRef.current === 'microsip' ? 'MicroSIP' : 'JustCall'
 
     callStartTimeRef.current = null
     activeCallActIdRef.current = null
     setActiveCallTimer(null)
 
     try {
-      const newText = `📞 JustCall Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
+      const newText = `📞 ${dialerLabel} Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
 
       if (actId) {
         await supabase
@@ -1495,15 +1504,25 @@ export default function LeadProfile() {
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="grid grid-cols-3 gap-2 pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
              <button 
                type="button"
-               onClick={handleStartCall}
-               className="flex justify-center items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-               title="Call via JustCall (Auto Duration & Status Tracker)"
+               onClick={(e) => handleStartCall('justcall', e)}
+               className="flex justify-center items-center gap-1.5 bg-blue-50/70 border border-blue-200/80 hover:bg-blue-100/70 text-blue-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+               title="Call via JustCall Web Dialer (Auto popup & live logger)"
              >
-                <Phone size={13} className="text-gray-500 shrink-0" />
-                <span>Call</span>
+                <Phone size={13} className="text-blue-600 shrink-0" />
+                <span>JustCall</span>
+             </button>
+
+             <button 
+               type="button"
+               onClick={(e) => handleStartCall('microsip', e)}
+               className="flex justify-center items-center gap-1.5 bg-purple-50/70 border border-purple-200/80 hover:bg-purple-100/70 text-purple-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+               title="Call via MicroSIP Desktop Softphone (SIP/VoIP softphone)"
+             >
+                <Headphones size={13} className="text-purple-600 shrink-0" />
+                <span>MicroSIP</span>
              </button>
 
              <a 
@@ -1835,7 +1854,7 @@ export default function LeadProfile() {
                                   Connected
                                 </span>
                               )}
-                              {(act.outcome === 'Calling' || act.outcome === 'In Progress' || act.text?.includes('Calling via JustCall...')) && (
+                              {(act.outcome === 'Calling' || act.outcome === 'In Progress' || act.text?.includes('Calling via')) && (
                                 <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
                                   <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping" />
                                   Calling {activeCallTimer !== null ? `(${formatCallDuration(activeCallTimer)})` : '...'}

@@ -8,7 +8,7 @@ import {
   AlarmClock, Clock, Phone, MessageCircle, ExternalLink,
   Flame, CheckCircle2, AlertTriangle, RefreshCw, Settings,
   Calendar, User, Search, Filter, RotateCcw, ArrowRight,
-  Sparkles, Check, ChevronRight, X
+  Sparkles, Check, ChevronRight, X, Headphones
 } from 'lucide-react'
 import {
   calculateAutoFollowUp,
@@ -17,7 +17,7 @@ import {
   FollowUpRuleConfig,
   toLocalDatetimeString,
 } from '@/lib/followupRules'
-import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
 
 interface LeadItem {
   id: string
@@ -623,15 +623,26 @@ export default function RemindersPage() {
 
                 {/* Actions Row */}
                 <div className="flex items-center gap-2 flex-wrap self-end lg:self-center shrink-0">
-                  {/* Call Button */}
+                  {/* JustCall Button */}
                   <a
                     href={getJustCallDialerUrl(lead.phone)}
                     onClick={(e) => openJustCallDialer(lead.phone, e)}
-                    className="px-3.5 py-2 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    title="Call via JustCall"
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    title="Call via JustCall (Web Popup)"
                   >
                     <Phone size={13} />
-                    <span>Call Now</span>
+                    <span>JustCall</span>
+                  </a>
+
+                  {/* MicroSIP Button */}
+                  <a
+                    href={getMicroSipDialerUrl(lead.phone)}
+                    onClick={(e) => openMicroSipDialer(lead.phone, e)}
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    title="Call via MicroSIP (Softphone app)"
+                  >
+                    <Headphones size={13} />
+                    <span>MicroSIP</span>
                   </a>
 
                   {/* WhatsApp */}

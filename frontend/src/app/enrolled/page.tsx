@@ -5,9 +5,9 @@ import { useAuth } from '@/components/AuthWrapper'
 import Link from 'next/link'
 import { 
   GraduationCap, Search, Phone, MessageCircle, Mail, ArrowRight, 
-  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles 
+  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles, Headphones 
 } from 'lucide-react'
-import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
 
 interface EnrolledStudent {
   id: string
@@ -346,16 +346,26 @@ export default function EnrolledStudentsPage() {
                     {/* Contact details */}
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-gray-800">{student.phone}</span>
-                          <a
-                            href={getJustCallDialerUrl(student.phone)}
-                            onClick={(e) => openJustCallDialer(student.phone, e)}
-                            className="p-1 text-gray-400 hover:text-black hover:bg-gray-100 rounded transition-colors cursor-pointer"
-                            title="Call via JustCall"
-                          >
-                            <Phone size={12} />
-                          </a>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-semibold text-gray-900">{student.phone}</span>
+                          <div className="inline-flex items-center gap-0.5 bg-gray-100/90 p-0.5 rounded-lg border border-gray-200">
+                            <a
+                              href={getJustCallDialerUrl(student.phone)}
+                              onClick={(e) => openJustCallDialer(student.phone, e)}
+                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-white rounded transition-all cursor-pointer shadow-2xs"
+                              title="Call via JustCall (Web Popup)"
+                            >
+                              <Phone size={12} />
+                            </a>
+                            <a
+                              href={getMicroSipDialerUrl(student.phone)}
+                              onClick={(e) => openMicroSipDialer(student.phone, e)}
+                              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-white rounded transition-all cursor-pointer shadow-2xs"
+                              title="Call via MicroSIP (Softphone app)"
+                            >
+                              <Headphones size={12} />
+                            </a>
+                          </div>
                           <a
                             href={`https://wa.me/${student.phone.replace(/[^0-9]/g, '')}`}
                             target="_blank"

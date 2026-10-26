@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   AlarmClock, Clock, Phone, MessageCircle, X, ChevronRight,
-  Flame, AlertTriangle, CheckCircle2, RotateCcw
+  Flame, AlertTriangle, CheckCircle2, RotateCcw, Headphones
 } from 'lucide-react'
 import { playNotificationSound, startContinuousAlarm, stopContinuousAlarm } from '@/lib/notifications'
 import { getFollowUpStatus } from '@/lib/followupRules'
-import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
 
 interface DueLead {
   id: string
@@ -267,7 +267,7 @@ export default function AutoReminderWatcher() {
             </div>
 
             {/* Direct Calling & Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
               <a
                 id="alarm-popup-call-btn"
                 href={getJustCallDialerUrl(activePopupLead.phone)}
@@ -276,10 +276,26 @@ export default function AutoReminderWatcher() {
                   setActivePopupLead(null)
                   openJustCallDialer(activePopupLead.phone, e)
                 }}
-                className="py-2.5 px-3 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98 cursor-pointer"
+                className="py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                title="Call via JustCall"
               >
-                <Phone size={14} />
-                <span>Call (JustCall)</span>
+                <Phone size={13} />
+                <span className="truncate">JustCall</span>
+              </a>
+
+              <a
+                id="alarm-popup-microsip-btn"
+                href={getMicroSipDialerUrl(activePopupLead.phone)}
+                onClick={(e) => {
+                  stopContinuousAlarm()
+                  setActivePopupLead(null)
+                  openMicroSipDialer(activePopupLead.phone, e)
+                }}
+                className="py-2 px-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                title="Call via MicroSIP (Softphone app)"
+              >
+                <Headphones size={13} />
+                <span className="truncate">MicroSIP</span>
               </a>
 
               <a
@@ -291,10 +307,10 @@ export default function AutoReminderWatcher() {
                   stopContinuousAlarm()
                   setActivePopupLead(null)
                 }}
-                className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98 cursor-pointer"
+                className="py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
               >
-                <MessageCircle size={14} />
-                <span>WhatsApp</span>
+                <MessageCircle size={13} />
+                <span className="truncate">WhatsApp</span>
               </a>
             </div>
 

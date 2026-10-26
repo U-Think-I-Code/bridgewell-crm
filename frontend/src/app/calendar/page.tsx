@@ -8,9 +8,9 @@ import {
   Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight,
   Phone, MessageCircle, ExternalLink, Filter, Plus, Search,
   Flame, SunMedium, Snowflake, CheckCircle2, AlertCircle,
-  X, RefreshCw, User, CalendarDays, CalendarRange, ListFilter
+  X, RefreshCw, User, CalendarDays, CalendarRange, ListFilter, Headphones
 } from 'lucide-react'
-import { openJustCallDialer, getJustCallDialerUrl } from '@/lib/justcall'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
 
 type ViewMode = 'month' | 'week' | 'day'
 
@@ -952,15 +952,25 @@ export default function CalendarPage() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                         <a
                           href={getJustCallDialerUrl(lead.phone)}
                           onClick={(e) => openJustCallDialer(lead.phone, e)}
-                          className="px-3 py-1.5 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-                          title="Call via JustCall"
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                          title="Call via JustCall (Web Popup)"
                         >
                           <Phone size={12} />
-                          <span>Call</span>
+                          <span>JustCall</span>
+                        </a>
+
+                        <a
+                          href={getMicroSipDialerUrl(lead.phone)}
+                          onClick={(e) => openMicroSipDialer(lead.phone, e)}
+                          className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                          title="Call via MicroSIP (Softphone app)"
+                        >
+                          <Headphones size={12} />
+                          <span>MicroSIP</span>
                         </a>
 
                         <a
@@ -1057,15 +1067,25 @@ export default function CalendarPage() {
                 </div>
 
                 {/* Direct Action Buttons */}
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-3 gap-2">
                   <a
                     href={getJustCallDialerUrl(activeLead.phone)}
                     onClick={(e) => openJustCallDialer(activeLead.phone, e)}
-                    className="py-2.5 px-4 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                    className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                     title="Call via JustCall"
                   >
-                    <Phone size={14} />
-                    <span>Call ({activeLead.phone})</span>
+                    <Phone size={13} />
+                    <span>JustCall</span>
+                  </a>
+
+                  <a
+                    href={getMicroSipDialerUrl(activeLead.phone)}
+                    onClick={(e) => openMicroSipDialer(activeLead.phone, e)}
+                    className="py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                    title="Call via MicroSIP (Softphone app)"
+                  >
+                    <Headphones size={13} />
+                    <span>MicroSIP</span>
                   </a>
 
                   <a
