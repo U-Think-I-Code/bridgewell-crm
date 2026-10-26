@@ -6,7 +6,8 @@ import {
   Phone, PhoneCall, Plus, GripVertical, Trash2, Check, X, Copy, Share2, 
   Send, ArrowRight, Sparkles, CheckCircle2, Shield, Layers, HelpCircle,
   Database, Download, FileSpreadsheet, HardDrive, RefreshCw, FileJson,
-  CheckCircle, AlertCircle, Clock, ShieldCheck, FileDown, Eye, Server, Headphones, Radio, ExternalLink
+  CheckCircle, AlertCircle, Clock, ShieldCheck, FileDown, Eye, Server, Headphones, Radio, ExternalLink,
+  Mail, Key, EyeOff
 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
@@ -16,12 +17,31 @@ import { openMicroSipDialer, getMicroSipDialerUrl, getPreferredDialer, setPrefer
 export default function SettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'microsip' | 'backup'>('pipeline')
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'microsip' | 'backup' | 'email'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newStageName, setNewStageName] = useState('')
   const [isAdding, setIsAdding] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
+
+  // Email & Direct SMTP Dispatch State
+  const [smtpConfig, setSmtpConfig] = useState({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    user: '',
+    pass: '',
+    fromEmail: '',
+    fromName: 'Bridgewell Academic'
+  })
+  const [isSmtpConfigured, setIsSmtpConfigured] = useState(false)
+  const [smtpSource, setSmtpSource] = useState<string>('')
+  const [loadingSmtp, setLoadingSmtp] = useState(false)
+  const [savingSmtp, setSavingSmtp] = useState(false)
+  const [testingSmtp, setTestingSmtp] = useState(false)
+  const [testRecipient, setTestRecipient] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [smtpStatusMessage, setSmtpStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Dialer Preferences & MicroSIP State
   const [preferredDialer, setPreferredDialerState] = usePreferredDialer()
@@ -69,6 +89,7 @@ export default function SettingsPage() {
     }
     fetchStages()
     fetchBackupStats()
+    fetchSmtpConfig()
 
     if (typeof window !== 'undefined') {
       const storedLastBackup = localStorage.getItem('bridgewell_last_backup_time')
@@ -324,6 +345,106 @@ export default function SettingsPage() {
     reader.readAsText(file)
   }
 
+  const fetchSmtpConfig = async () => {
+    setLoadingSmtp(true)
+    try {
+      const res = await fetch('/api/email/config')
+      const data = await res.json()
+      if (data.configured) {
+        setIsSmtpConfigured(true)
+        setSmtpSource(data.source)
+        setSmtpConfig(prev => ({
+          ...prev,
+          host: data.config.host || 'smtp.gmail.com',
+          port: data.config.port || 465,
+          secure: data.config.secure ?? true,
+          user: data.config.user || '',
+          fromEmail: data.config.fromEmail || data.config.user || '',
+          fromName: data.config.fromName || 'Bridgewell Academic',
+          pass: ''
+        }))
+        if (data.config.user && !testRecipient) {
+          setTestRecipient(data.config.user)
+        }
+      } else {
+        setIsSmtpConfigured(false)
+      }
+    } catch (e) {
+      console.error('Failed to load SMTP config', e)
+    } finally {
+      setLoadingSmtp(false)
+    }
+  }
+
+  const handleSaveSmtp = async (sendTest = false) => {
+    if (!smtpConfig.user || !smtpConfig.host) {
+      alert('Please fill in your SMTP Host and User email')
+      return
+    }
+    if (!smtpConfig.pass && !isSmtpConfigured) {
+      alert('Please enter your SMTP password / App Password')
+      return
+    }
+
+    if (sendTest) setTestingSmtp(true)
+    else setSavingSmtp(true)
+    setSmtpStatusMessage(null)
+
+    try {
+      const res = await fetch('/api/email/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...smtpConfig,
+          testRecipient: sendTest ? (testRecipient || smtpConfig.user) : undefined
+        })
+      })
+
+      const result = await res.json()
+      if (result.success) {
+        setIsSmtpConfigured(true)
+        setSmtpStatusMessage({
+          type: 'success',
+          text: sendTest
+            ? `✅ Connection verified! Test email successfully sent to ${testRecipient || smtpConfig.user}!`
+            : '✅ SMTP Configuration successfully saved and verified!'
+        })
+        await fetchSmtpConfig()
+      } else {
+        setSmtpStatusMessage({
+          type: 'error',
+          text: `❌ Error: ${result.error || 'Failed to connect to SMTP server'}`
+        })
+      }
+    } catch (err: any) {
+      setSmtpStatusMessage({
+        type: 'error',
+        text: `❌ Connection failed: ${err.message}`
+      })
+    } finally {
+      setSavingSmtp(false)
+      setTestingSmtp(false)
+    }
+  }
+
+  const applyPreset = (preset: 'gmail' | 'm365' | 'custom') => {
+    if (preset === 'gmail') {
+      setSmtpConfig(prev => ({
+        ...prev,
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true
+      }))
+    } else if (preset === 'm365') {
+      setSmtpConfig(prev => ({
+        ...prev,
+        host: 'smtp.office365.com',
+        port: 587,
+        secure: false
+      }))
+    }
+  }
+
   if (loading) return <div className="p-8 h-full flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div></div>
 
   return (
@@ -413,6 +534,25 @@ export default function SettingsPage() {
             <span>Database Backup & Vault</span>
             <span className="ml-1 px-2 py-0.5 text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-full font-bold">
               Safety Vault
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('email')}
+            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'email'
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Mail size={16} className="text-rose-600" />
+            <span>Email Service (SMTP)</span>
+            <span className={`ml-1 px-2 py-0.5 text-xs rounded-full font-bold ${
+              isSmtpConfigured
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-rose-50 text-rose-700 border border-rose-200'
+            }`}>
+              {isSmtpConfigured ? 'Direct Send Active' : 'Configure'}
             </span>
           </button>
         </div>
@@ -1476,7 +1616,328 @@ export default function SettingsPage() {
             </section>
           </div>
         )}
+
+        {/* Tab 6: Direct Email & SMTP Dispatch Service */}
+        {activeTab === 'email' && (
+          <div className="space-y-6">
+            {/* Status Hero Card */}
+            <div className={`p-6 rounded-2xl border transition-all ${
+              isSmtpConfigured
+                ? 'bg-gradient-to-br from-emerald-50/60 to-white border-emerald-200'
+                : 'bg-gradient-to-br from-rose-50/60 to-white border-rose-200'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                    isSmtpConfigured ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-rose-600 text-white shadow-md shadow-rose-200'
+                  }`}>
+                    <Mail size={24} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-bold text-gray-900">Direct CRM Email Dispatching</h2>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        isSmtpConfigured 
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        {isSmtpConfigured ? '🟢 Active & Ready' : '🟡 Using Web Gmail Fallback'}
+                      </span>
+                      {smtpSource && (
+                        <span className="text-[11px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
+                          Source: {smtpSource}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1 max-w-xl leading-relaxed">
+                      Send student admission emails, offer letters, and follow-ups <strong>directly from the CRM</strong> with 1-click. 
+                      No desktop Outlook/Mail app required. Sent emails are automatically logged to the student's activity timeline.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    onClick={() => fetchSmtpConfig()}
+                    disabled={loadingSmtp}
+                    className="px-3 py-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all"
+                  >
+                    <RefreshCw size={12} className={loadingSmtp ? 'animate-spin' : ''} />
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Provider Quick Presets */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                <Sparkles size={14} className="text-amber-500" />
+                Quick Provider Setup
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => applyPreset('gmail')}
+                  className={`p-3.5 rounded-xl border text-left transition-all hover:border-blue-500 hover:bg-blue-50/30 ${
+                    smtpConfig.host === 'smtp.gmail.com' ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-gray-900">Google Workspace / Gmail</span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Recommended</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">smtp.gmail.com (Port 465 SSL)</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyPreset('m365')}
+                  className={`p-3.5 rounded-xl border text-left transition-all hover:border-sky-500 hover:bg-sky-50/30 ${
+                    smtpConfig.host === 'smtp.office365.com' ? 'border-sky-500 bg-sky-50/50 ring-2 ring-sky-100' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-gray-900">Microsoft 365 / Outlook</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">smtp.office365.com (Port 587 STARTTLS)</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyPreset('custom')}
+                  className={`p-3.5 rounded-xl border text-left transition-all hover:border-gray-400 hover:bg-gray-50 ${
+                    smtpConfig.host !== 'smtp.gmail.com' && smtpConfig.host !== 'smtp.office365.com' ? 'border-black bg-gray-50 ring-2 ring-gray-100' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-gray-900">Custom SMTP Server</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">Zoho, Sendgrid, Amazon SES, or Private Host</p>
+                </button>
+              </div>
+            </div>
+
+            {/* SMTP Settings Form */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-5">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Server size={16} className="text-rose-600" />
+                SMTP Server Credentials
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">SMTP Host</label>
+                  <input
+                    type="text"
+                    value={smtpConfig.host}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, host: e.target.value }))}
+                    placeholder="smtp.gmail.com"
+                    className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Port</label>
+                  <input
+                    type="number"
+                    value={smtpConfig.port}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, port: parseInt(e.target.value) || 465 }))}
+                    placeholder="465"
+                    className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Sender Email / Username</label>
+                  <input
+                    type="email"
+                    value={smtpConfig.user}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, user: e.target.value }))}
+                    placeholder="admissions@bridgewell.edu"
+                    className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">The email account used to authenticate with the SMTP server.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    App Password / SMTP Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={smtpConfig.pass}
+                      onChange={(e) => setSmtpConfig(prev => ({ ...prev, pass: e.target.value }))}
+                      placeholder={isSmtpConfigured ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter 16-character App Password'}
+                      className="w-full text-xs px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">For Gmail, use a 16-character <strong>App Password</strong> (see guide below).</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">From Display Name</label>
+                  <input
+                    type="text"
+                    value={smtpConfig.fromName}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, fromName: e.target.value }))}
+                    placeholder="Bridgewell Academic Admissions"
+                    className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">From Email (Optional if different)</label>
+                  <input
+                    type="email"
+                    value={smtpConfig.fromEmail}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, fromEmail: e.target.value }))}
+                    placeholder={smtpConfig.user || 'admissions@bridgewell.edu'}
+                    className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="smtpSecure"
+                  checked={smtpConfig.secure}
+                  onChange={(e) => setSmtpConfig(prev => ({ ...prev, secure: e.target.checked }))}
+                  className="rounded border-gray-300 text-black focus:ring-black h-4 w-4"
+                />
+                <label htmlFor="smtpSecure" className="text-xs font-medium text-gray-700 cursor-pointer">
+                  Use SSL/TLS (Always enabled for Port 465; uncheck for Port 587 STARTTLS)
+                </label>
+              </div>
+
+              {/* Status Message */}
+              {smtpStatusMessage && (
+                <div className={`p-3.5 rounded-xl text-xs font-medium border flex items-start gap-2 ${
+                  smtpStatusMessage.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-50 text-rose-800 border-rose-300'
+                }`}>
+                  {smtpStatusMessage.type === 'success' ? (
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <span className="leading-relaxed">{smtpStatusMessage.text}</span>
+                </div>
+              )}
+
+              {/* Test & Save Actions */}
+              <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 flex-1 max-w-sm">
+                  <input
+                    type="email"
+                    value={testRecipient}
+                    onChange={(e) => setTestRecipient(e.target.value)}
+                    placeholder="Test recipient email (e.g. your email)"
+                    className="text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveSmtp(true)}
+                    disabled={testingSmtp || savingSmtp || !smtpConfig.user}
+                    className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Send size={13} className={testingSmtp ? 'animate-pulse' : ''} />
+                    {testingSmtp ? 'Sending...' : 'Send Test'}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveSmtp(false)}
+                    disabled={savingSmtp || testingSmtp}
+                    className="w-full sm:w-auto px-5 py-2 bg-black hover:bg-gray-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <Check size={14} />
+                    {savingSmtp ? 'Verifying & Saving...' : 'Save Configuration'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick 60-Second Setup Guide for Google Workspace / Gmail */}
+            <div className="bg-gradient-to-br from-amber-50/50 to-orange-50/30 border border-amber-200 rounded-2xl p-6">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                  <Key size={16} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 mb-1">
+                    How to get a Gmail / Google Workspace App Password (60 Seconds)
+                  </h4>
+                  <p className="text-xs text-amber-800 leading-relaxed mb-3">
+                    Google requires an <strong>App Password</strong> instead of your regular password to protect your Google account:
+                  </p>
+                  <ol className="text-xs text-amber-900 space-y-2 list-decimal list-inside bg-white/70 p-3.5 rounded-xl border border-amber-200/80">
+                    <li>
+                      Go to your Google Account at{' '}
+                      <a
+                        href="https://myaccount.google.com/security"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-bold underline text-blue-700 hover:text-blue-900 inline-flex items-center gap-0.5"
+                      >
+                        myaccount.google.com/security <ExternalLink size={10} />
+                      </a>{' '}
+                      and ensure <strong>2-Step Verification</strong> is turned ON.
+                    </li>
+                    <li>
+                      Search for <strong>"App passwords"</strong> in the top search bar (or visit{' '}
+                      <a
+                        href="https://myaccount.google.com/apppasswords"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-bold underline text-blue-700 hover:text-blue-900 inline-flex items-center gap-0.5"
+                      >
+                        myaccount.google.com/apppasswords <ExternalLink size={10} />
+                      </a>
+                      ).
+                    </li>
+                    <li>
+                      Type <strong>"Bridgewell CRM"</strong> as the app name and click <strong>Create</strong>.
+                    </li>
+                    <li>
+                      Copy the generated <strong>16-character code</strong> (e.g., <code>abcd efgh ijkl mnop</code>) and paste it into the password box above!
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Counselor Experience Explainer */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 text-xs text-gray-600 flex items-start gap-3">
+              <Sparkles size={16} className="text-rose-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-900 mb-0.5">How Counselors Send Emails</p>
+                <p className="leading-relaxed">
+                  On any student profile, counselors can click <strong>"✉️ Email Student"</strong>. 
+                  With this SMTP configured, clicking <strong>"🚀 Send Email from CRM"</strong> immediately sends the email in the background, logs the activity to the CRM, and shows a confirmation toast. 
+                  Counselors also have a 1-click <strong>"🌐 Web Gmail"</strong> fallback button to open the draft in Gmail web if they prefer!
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+

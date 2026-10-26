@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones, Send, AlertCircle, ExternalLink } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -145,6 +145,9 @@ export default function LeadProfile() {
   const [newTemplateName, setNewTemplateName] = useState('')
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [copiedEmailText, setCopiedEmailText] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailSentSuccess, setEmailSentSuccess] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   // Live timer tick for active call
   useEffect(() => {
@@ -1095,21 +1098,62 @@ export default function LeadProfile() {
       return
     }
 
-    const mailtoUrl = `mailto:${lead.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`
-    window.location.href = mailtoUrl
+    setSendingEmail(true)
+    setEmailError(null)
+    setEmailSentSuccess(null)
 
-    await supabase.from('activities').insert([
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: lead.email,
+          subject: emailSubject,
+          body: emailBody,
+          leadId: id,
+          senderName: currentUser?.name || 'Bridgewell Team',
+          senderEmail: currentUser?.email,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setEmailSentSuccess(`✅ Email sent directly to ${lead.email}!`)
+        fetchLeadAndActivities()
+        setTimeout(() => {
+          setShowEmailModal(false)
+          setEmailSentSuccess(null)
+        }, 1800)
+      } else {
+        const errorMsg = data.message || data.error || 'Failed to send email'
+        setEmailError(errorMsg)
+      }
+    } catch (err: any) {
+      console.error('Error sending email:', err)
+      setEmailError(err.message || 'Network error while attempting to send email.')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  const handleOpenWebGmail = () => {
+    if (!lead?.email) return
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(lead.email)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`
+    window.open(gmailUrl, '_blank')
+
+    // Also log to activities
+    supabase.from('activities').insert([
       { 
         lead: id, 
         user_id: currentUser?.id || lead?.owner_id, 
         type: 'email', 
-        text: `✉️ Sent email: "${emailSubject}"\n\n--- Content ---\n${emailBody}`, 
+        text: `✉️ Opened email in Web Gmail: "${emailSubject}"\n• To: ${lead.email}`, 
         time: new Date().toISOString() 
       }
-    ])
-
-    setShowEmailModal(false)
-    fetchLeadAndActivities()
+    ]).then(() => {
+      fetchLeadAndActivities()
+    })
   }
 
   if (loading) return <div className="p-8 h-full flex items-center justify-center bg-[#FDFDFD]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div></div>
@@ -1284,27 +1328,78 @@ export default function LeadProfile() {
                   </div>
                 </div>
 
+                {/* Status Messages */}
+                {emailSentSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-in fade-in duration-200">
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    <span className="font-bold">{emailSentSuccess}</span>
+                  </div>
+                )}
+
+                {emailError && (
+                  <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl text-xs space-y-2 animate-in fade-in duration-200">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-bold text-rose-950">Direct Send Issue</p>
+                        <p className="text-[11px] text-rose-800 mt-0.5 leading-relaxed">{emailError}</p>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-rose-200 flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] text-rose-700 font-medium">Alternative: Send directly via Web Gmail:</span>
+                      <button
+                        type="button"
+                        onClick={handleOpenWebGmail}
+                        className="px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Open Web Gmail (1-Click)</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2 pt-2">
+                <div className="flex items-center gap-2 pt-2 flex-wrap">
                   <button 
                     type="button"
                     onClick={handleSendEmail} 
-                    disabled={!emailSubject.trim() || !emailBody.trim()}
-                    className="flex-1 bg-black hover:bg-gray-800 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                    disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                    className="flex-1 min-w-[200px] bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                   >
-                    <Mail size={14} />
-                    <span>Open in Email Client (Gmail / Outlook)</span>
+                    {sendingEmail ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Sending Directly from CRM...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={14} />
+                        <span>Send Email from CRM</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenWebGmail}
+                    disabled={!emailSubject.trim() && !emailBody.trim()}
+                    className="px-3.5 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 text-gray-800 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Open in Web Gmail in browser (No desktop app needed)"
+                  >
+                    <ExternalLink size={13} className="text-gray-500" />
+                    <span>Web Gmail</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleCopyEmail}
                     disabled={!emailSubject.trim() && !emailBody.trim()}
-                    className="px-3 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
                     title="Copy email subject and body to clipboard"
                   >
                     {copiedEmailText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                    <span>{copiedEmailText ? 'Copied!' : 'Copy Text'}</span>
+                    <span>{copiedEmailText ? 'Copied!' : 'Copy'}</span>
                   </button>
                 </div>
 
