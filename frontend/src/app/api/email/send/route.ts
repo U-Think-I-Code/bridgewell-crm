@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import nodemailer from 'nodemailer'
+import nodemailer, { type Transporter } from 'nodemailer'
 import { getSmtpConfig } from '@/lib/emailService'
 import { supabase } from '@/lib/supabase'
 
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { to, subject, body: emailBody, leadId, senderName, senderEmail } = body
+    const { to, subject, body: emailBody, leadId, senderName, senderEmail, counselorSmtp } = body
 
     if (!to || !subject || !emailBody) {
       return NextResponse.json(
@@ -17,38 +17,67 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const config = getSmtpConfig()
+    // 1. Check if the counselor has provided their own personal SMTP credentials
+    let transporter: Transporter
+    let fromAddress: string
+    let replyToAddress: string
 
-    if (!config) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'SMTP_NOT_CONFIGURED',
-          message: 'Direct SMTP sending is not configured yet. Please configure your Gmail/SMTP in Settings.'
+    if (counselorSmtp && counselorSmtp.user && counselorSmtp.pass) {
+      // Counselor personal SMTP (e.g. counselor's personal Gmail App Password)
+      const portNum = Number(counselorSmtp.port) || 465
+      const isSecure = counselorSmtp.secure ?? (portNum === 465)
+      transporter = nodemailer.createTransport({
+        host: counselorSmtp.host || 'smtp.gmail.com',
+        port: portNum,
+        secure: isSecure,
+        auth: {
+          user: counselorSmtp.user,
+          pass: counselorSmtp.pass,
         },
-        { status: 400 }
-      )
+      })
+      fromAddress = senderName 
+        ? `"${senderName}" <${counselorSmtp.user}>` 
+        : counselorSmtp.user
+      replyToAddress = counselorSmtp.user
+    } else {
+      // Fallback to central organization SMTP
+      const config = getSmtpConfig()
+
+      if (!config) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'SMTP_NOT_CONFIGURED',
+            message: 'Direct CRM sending is not configured yet. You can use the "🌐 Send via My Gmail" button or ask Admin to setup SMTP in Settings.'
+          },
+          { status: 400 }
+        )
+      }
+
+      transporter = nodemailer.createTransport({
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        auth: {
+          user: config.user,
+          pass: config.pass,
+        },
+      })
+
+      // Show counselor name as the sender with company domain
+      const displayName = senderName 
+        ? `${senderName} (Bridgewell)` 
+        : (config.fromName || 'Bridgewell Education Advisory')
+
+      fromAddress = `"${displayName}" <${config.fromEmail}>`
+      // Replies from student go directly to the specific counselor's personal inbox!
+      replyToAddress = senderEmail || config.fromEmail
     }
-
-    // Create Transporter
-    const transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: {
-        user: config.user,
-        pass: config.pass,
-      },
-    })
-
-    const fromAddress = config.fromName 
-      ? `"${config.fromName}" <${config.fromEmail}>` 
-      : config.fromEmail
 
     const mailOptions = {
       from: fromAddress,
       to,
-      replyTo: senderEmail || config.fromEmail,
+      replyTo: replyToAddress,
       subject,
       text: emailBody,
       html: emailBody

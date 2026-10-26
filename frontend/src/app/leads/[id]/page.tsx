@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones, Send, AlertCircle, ExternalLink } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones, Send, AlertCircle, ExternalLink, Key, Lock, Settings2 } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -148,6 +148,20 @@ export default function LeadProfile() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailSentSuccess, setEmailSentSuccess] = useState<string | null>(null)
   const [emailError, setEmailError] = useState<string | null>(null)
+  const [counselorAppPass, setCounselorAppPass] = useState('')
+  const [tempAppPass, setTempAppPass] = useState('')
+  const [showPersonalSmtpConfig, setShowPersonalSmtpConfig] = useState(false)
+
+  // Load counselor's personal App Password from local browser storage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && currentUser?.id) {
+      const stored = localStorage.getItem(`bridgewell_counselor_app_pass_${currentUser.id}`)
+      if (stored) {
+        setCounselorAppPass(stored)
+        setTempAppPass(stored)
+      }
+    }
+  }, [currentUser?.id])
 
   // Live timer tick for active call
   useEffect(() => {
@@ -1113,6 +1127,10 @@ export default function LeadProfile() {
           leadId: id,
           senderName: currentUser?.name || 'Bridgewell Team',
           senderEmail: currentUser?.email,
+          counselorSmtp: counselorAppPass ? {
+            user: currentUser?.email,
+            pass: counselorAppPass,
+          } : undefined
         }),
       })
 
@@ -1156,6 +1174,19 @@ export default function LeadProfile() {
     })
   }
 
+  const handleSaveCounselorPass = () => {
+    const trimmed = tempAppPass.trim()
+    setCounselorAppPass(trimmed)
+    if (typeof window !== 'undefined' && currentUser?.id) {
+      if (trimmed) {
+        localStorage.setItem(`bridgewell_counselor_app_pass_${currentUser.id}`, trimmed)
+      } else {
+        localStorage.removeItem(`bridgewell_counselor_app_pass_${currentUser.id}`)
+      }
+    }
+    setShowPersonalSmtpConfig(false)
+  }
+
   if (loading) return <div className="p-8 h-full flex items-center justify-center bg-[#FDFDFD]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div></div>
   if (!lead) return <div className="p-8 text-gray-900 bg-[#FDFDFD]">Lead not found.</div>
 
@@ -1193,6 +1224,96 @@ export default function LeadProfile() {
               </div>
             ) : (
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
+
+                {/* Counselor Sending Identity Bar */}
+                <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white border border-blue-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs shadow-xs">
+                      {currentUser?.name?.[0] || 'C'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-gray-900">{currentUser?.name || 'Counselor'}</span>
+                        <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">
+                          {counselorAppPass ? 'Personal Gmail Active' : 'Logged-in Account'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 font-medium">
+                        {currentUser?.email || 'No email associated'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <div className="text-right hidden sm:block">
+                      <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Student Replies Go To</span>
+                      <span className="font-bold text-blue-700 text-[11px]">{currentUser?.email || 'Your Inbox'}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPersonalSmtpConfig(!showPersonalSmtpConfig)}
+                      className="px-2.5 py-1 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="Configure personal App Password for direct CRM sending"
+                    >
+                      <Key size={11} className={counselorAppPass ? 'text-emerald-600' : 'text-gray-400'} />
+                      <span>{counselorAppPass ? 'Personal Key Set' : 'My Gmail Pass'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Optional Counselor Personal App Password Drawer */}
+                {showPersonalSmtpConfig && (
+                  <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3.5 space-y-2 text-xs animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-amber-950 flex items-center gap-1.5">
+                        <Key size={13} className="text-amber-600" />
+                        <span>Use Your Personal Gmail App Password</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowPersonalSmtpConfig(false)}
+                        className="text-amber-700 hover:text-amber-900 text-xs cursor-pointer"
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Enter your 16-character Google App Password if you want the <strong>"Send Email from CRM"</strong> button to send directly from your personal Gmail (<code>{currentUser?.email}</code>). It is saved securely in your browser only.
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="password"
+                        value={tempAppPass}
+                        onChange={e => setTempAppPass(e.target.value)}
+                        placeholder="16-character app password (e.g. abcd efgh ijkl mnop)"
+                        className="flex-1 bg-white border border-amber-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 outline-none focus:ring-2 focus:ring-amber-200 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveCounselorPass}
+                        className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+                      >
+                        Save Key
+                      </button>
+                      {counselorAppPass && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTempAppPass('')
+                            setCounselorAppPass('')
+                            if (typeof window !== 'undefined' && currentUser?.id) {
+                              localStorage.removeItem(`bridgewell_counselor_app_pass_${currentUser.id}`)
+                            }
+                          }}
+                          className="px-2 py-1.5 text-xs text-rose-600 hover:text-rose-800 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 {/* Template Selector & Action Bar */}
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
@@ -1360,47 +1481,56 @@ export default function LeadProfile() {
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2 pt-2 flex-wrap">
-                  <button 
-                    type="button"
-                    onClick={handleSendEmail} 
-                    disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
-                    className="flex-1 min-w-[200px] bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-                  >
-                    {sendingEmail ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Sending Directly from CRM...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send size={14} />
-                        <span>Send Email from CRM</span>
-                      </>
-                    )}
-                  </button>
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Option 1: Web Gmail (1-Click, uses counselor's logged in Gmail) */}
+                    <button
+                      type="button"
+                      onClick={handleOpenWebGmail}
+                      disabled={!emailSubject.trim() && !emailBody.trim()}
+                      className="flex-1 min-w-[200px] bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                      title="Opens in your browser with your logged-in Gmail. Sent from your personal email address!"
+                    >
+                      <ExternalLink size={14} />
+                      <span>Send via My Gmail (1-Click)</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleOpenWebGmail}
-                    disabled={!emailSubject.trim() && !emailBody.trim()}
-                    className="px-3.5 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 text-gray-800 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    title="Open in Web Gmail in browser (No desktop app needed)"
-                  >
-                    <ExternalLink size={13} className="text-gray-500" />
-                    <span>Web Gmail</span>
-                  </button>
+                    {/* Option 2: Direct CRM Dispatch */}
+                    <button 
+                      type="button"
+                      onClick={handleSendEmail} 
+                      disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                      className="flex-1 min-w-[200px] bg-black hover:bg-gray-800 text-white font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                      title="Dispatches directly in the background. Shows your name and student replies come to your email."
+                    >
+                      {sendingEmail ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Sending from CRM...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={14} />
+                          <span>{counselorAppPass ? 'Direct Send (My Gmail)' : 'Send Direct from CRM'}</span>
+                        </>
+                      )}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleCopyEmail}
-                    disabled={!emailSubject.trim() && !emailBody.trim()}
-                    className="px-3 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    title="Copy email subject and body to clipboard"
-                  >
-                    {copiedEmailText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                    <span>{copiedEmailText ? 'Copied!' : 'Copy'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyEmail}
+                      disabled={!emailSubject.trim() && !emailBody.trim()}
+                      className="px-3 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                      title="Copy email subject and body to clipboard"
+                    >
+                      {copiedEmailText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      <span>{copiedEmailText ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-gray-500 text-center leading-relaxed">
+                    💡 <strong>Counselor Tip:</strong> Click <strong>"Send via My Gmail"</strong> to send from your personal Gmail with zero setup, or click <strong>"Send Direct from CRM"</strong> for instant background sending with replies directed to your inbox.
+                  </p>
                 </div>
 
               </div>
