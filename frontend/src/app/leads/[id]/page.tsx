@@ -1506,66 +1506,70 @@ export default function LeadProfile() {
 
           {/* Active Call Live Duration & Outcome Controller */}
           {activeCallTimer !== null && (
-            <div className="bg-gradient-to-r from-gray-900 to-indigo-950 text-white rounded-2xl p-4 shadow-xl border border-indigo-500/30 animate-in fade-in slide-in-from-top-2 duration-300 mb-3">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2.5">
-                  <span className="relative flex h-3 w-3">
+            <div className="bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950 text-white rounded-2xl p-3.5 shadow-xl border border-indigo-500/30 animate-in fade-in slide-in-from-top-2 duration-300 mb-3">
+              {/* Header: Title + Duration + End Call */}
+              <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-200">
-                        {activeDialerRef.current === 'microsip' ? '🎧 MicroSIP Call Active' : '📞 JustCall Active'}
-                      </span>
-                      <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold text-emerald-300 border border-emerald-400/30">
-                        {formatCallDuration(activeCallTimer)}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-300 mt-0.5">Live duration tracking... Select outcome to finish &amp; log call:</p>
-                  </div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 truncate">
+                    {activeDialerRef.current === 'microsip' ? '🎧 MicroSIP' : '📞 JustCall'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                    {formatCallDuration(activeCallTimer)}
+                  </span>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Connected')}
-                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1 shrink-0 active:scale-95"
                   title="Disconnect & Log Call"
                 >
-                  <PhoneOff size={13} />
+                  <PhoneOff size={11} className="shrink-0" />
                   <span>End Call</span>
                 </button>
               </div>
 
-              {/* 1-Click Outcome Buttons */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10 text-xs font-bold">
+              <p className="text-[10px] text-gray-300/90 mb-2.5">
+                Call in progress... Select outcome to finish:
+              </p>
+
+              {/* 2x2 Outcome Grid - Spacious & Clean on all screen widths */}
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Connected')}
-                  className="py-2 px-2.5 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                  className="py-2 px-2.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
                 >
-                  <PhoneCall size={13} className="text-emerald-400" />
-                  <span>Connected</span>
+                  <PhoneCall size={13} className="text-emerald-400 shrink-0" />
+                  <span className="truncate">Connected</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Ringing')}
-                  className="py-2 px-2.5 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                  className="py-2 px-2.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-400/30 text-amber-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
                 >
-                  <span>🔔 Ringing</span>
+                  <span className="text-xs shrink-0">🔔</span>
+                  <span className="truncate">Ringing</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Callback')}
-                  className="py-2 px-2.5 bg-blue-500/20 hover:bg-blue-500/35 border border-blue-400/40 text-blue-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                  className="py-2 px-2.5 bg-blue-500/15 hover:bg-blue-500/30 border border-blue-400/30 text-blue-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
                 >
-                  <span>📞 Callback</span>
+                  <PhoneForwarded size={13} className="text-blue-400 shrink-0" />
+                  <span className="truncate">Callback</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCallEnded('Busy')}
-                  className="py-2 px-2.5 bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                  className="py-2 px-2.5 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 text-rose-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
                 >
-                  <span>⏳ Busy / No Ans</span>
+                  <PhoneOff size={13} className="text-rose-400 shrink-0" />
+                  <span className="truncate">Busy / No Ans</span>
                 </button>
               </div>
             </div>
