@@ -1504,6 +1504,73 @@ export default function LeadProfile() {
             </div>
           </div>
 
+          {/* Active Call Live Duration & Outcome Controller */}
+          {activeCallTimer !== null && (
+            <div className="bg-gradient-to-r from-gray-900 to-indigo-950 text-white rounded-2xl p-4 shadow-xl border border-indigo-500/30 animate-in fade-in slide-in-from-top-2 duration-300 mb-3">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-200">
+                        {activeDialerRef.current === 'microsip' ? '🎧 MicroSIP Call Active' : '📞 JustCall Active'}
+                      </span>
+                      <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold text-emerald-300 border border-emerald-400/30">
+                        {formatCallDuration(activeCallTimer)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 mt-0.5">Live duration tracking... Select outcome to finish &amp; log call:</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCallEnded('Connected')}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                  title="Disconnect & Log Call"
+                >
+                  <PhoneOff size={13} />
+                  <span>End Call</span>
+                </button>
+              </div>
+
+              {/* 1-Click Outcome Buttons */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleCallEnded('Connected')}
+                  className="py-2 px-2.5 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                >
+                  <PhoneCall size={13} className="text-emerald-400" />
+                  <span>Connected</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCallEnded('Ringing')}
+                  className="py-2 px-2.5 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                >
+                  <span>🔔 Ringing</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCallEnded('Callback')}
+                  className="py-2 px-2.5 bg-blue-500/20 hover:bg-blue-500/35 border border-blue-400/40 text-blue-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                >
+                  <span>📞 Callback</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCallEnded('Busy')}
+                  className="py-2 px-2.5 bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs hover:scale-102"
+                >
+                  <span>⏳ Busy / No Ans</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Quick Action Buttons */}
           <div className={`grid ${preferredDialer === 'both' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 pt-1`}>
              {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
