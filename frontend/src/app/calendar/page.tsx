@@ -10,7 +10,7 @@ import {
   Flame, SunMedium, Snowflake, CheckCircle2, AlertCircle,
   X, RefreshCw, User, CalendarDays, CalendarRange, ListFilter, Headphones
 } from 'lucide-react'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer } from '@/lib/dialer'
 
 type ViewMode = 'month' | 'week' | 'day'
 
@@ -33,6 +33,7 @@ interface LeadFollowUp {
 export default function CalendarPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const [preferredDialer] = usePreferredDialer()
 
   const [leads, setLeads] = useState<LeadFollowUp[]>([])
   const [counselors, setCounselors] = useState<any[]>([])
@@ -953,25 +954,29 @@ export default function CalendarPage() {
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-                        <a
-                          href={getJustCallDialerUrl(lead.phone)}
-                          onClick={(e) => openJustCallDialer(lead.phone, e)}
-                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                          title="Call via JustCall (Web Popup)"
-                        >
-                          <Phone size={12} />
-                          <span>JustCall</span>
-                        </a>
+                        {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
+                          <a
+                            href={getJustCallDialerUrl(lead.phone)}
+                            onClick={(e) => openJustCallDialer(lead.phone, e)}
+                            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                            title="Call via JustCall (Web Popup)"
+                          >
+                            <Phone size={12} />
+                            <span>JustCall</span>
+                          </a>
+                        )}
 
-                        <a
-                          href={getMicroSipDialerUrl(lead.phone)}
-                          onClick={(e) => openMicroSipDialer(lead.phone, e)}
-                          className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                          title="Call via MicroSIP (Softphone app)"
-                        >
-                          <Headphones size={12} />
-                          <span>MicroSIP</span>
-                        </a>
+                        {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
+                          <a
+                            href={getMicroSipDialerUrl(lead.phone)}
+                            onClick={(e) => openMicroSipDialer(lead.phone, e)}
+                            className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                            title="Call via MicroSIP (Softphone app)"
+                          >
+                            <Headphones size={12} />
+                            <span>MicroSIP</span>
+                          </a>
+                        )}
 
                         <a
                           href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`}
@@ -1067,26 +1072,30 @@ export default function CalendarPage() {
                 </div>
 
                 {/* Direct Action Buttons */}
-                <div className="grid grid-cols-3 gap-2">
-                  <a
-                    href={getJustCallDialerUrl(activeLead.phone)}
-                    onClick={(e) => openJustCallDialer(activeLead.phone, e)}
-                    className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                    title="Call via JustCall"
-                  >
-                    <Phone size={13} />
-                    <span>JustCall</span>
-                  </a>
+                <div className={`grid ${preferredDialer === 'both' ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                  {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
+                    <a
+                      href={getJustCallDialerUrl(activeLead.phone)}
+                      onClick={(e) => openJustCallDialer(activeLead.phone, e)}
+                      className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      title="Call via JustCall"
+                    >
+                      <Phone size={13} />
+                      <span>JustCall</span>
+                    </a>
+                  )}
 
-                  <a
-                    href={getMicroSipDialerUrl(activeLead.phone)}
-                    onClick={(e) => openMicroSipDialer(activeLead.phone, e)}
-                    className="py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                    title="Call via MicroSIP (Softphone app)"
-                  >
-                    <Headphones size={13} />
-                    <span>MicroSIP</span>
-                  </a>
+                  {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
+                    <a
+                      href={getMicroSipDialerUrl(activeLead.phone)}
+                      onClick={(e) => openMicroSipDialer(activeLead.phone, e)}
+                      className="py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      title="Call via MicroSIP (Softphone app)"
+                    >
+                      <Headphones size={13} />
+                      <span>MicroSIP</span>
+                    </a>
+                  )}
 
                   <a
                     href={`https://wa.me/${activeLead.phone.replace(/[^0-9]/g, '')}`}

@@ -11,7 +11,7 @@ import {
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { openMicroSipDialer, getMicroSipDialerUrl, getPreferredDialer, setPreferredDialer, DialerType } from '@/lib/dialer'
+import { openMicroSipDialer, getMicroSipDialerUrl, getPreferredDialer, setPreferredDialer, usePreferredDialer, DialerType } from '@/lib/dialer'
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const [savingId, setSavingId] = useState<string | null>(null)
 
   // Dialer Preferences & MicroSIP State
-  const [preferredDialer, setPreferredDialerState] = useState<DialerType>('justcall')
+  const [preferredDialer, setPreferredDialerState] = usePreferredDialer()
   const [microsipTestPhone, setMicrosipTestPhone] = useState('+91 98765 43210')
   const [microsipProtocol, setMicrosipProtocol] = useState<'sip' | 'tel'>('sip')
   const [microsipTested, setMicrosipTested] = useState(false)
@@ -943,75 +943,106 @@ export default function SettingsPage() {
             {/* Preferred Default Dialer Preference */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-base font-semibold text-gray-900">Your Preferred Default Dialer</h3>
+                <h3 className="text-base font-semibold text-gray-900">Your Preferred Calling Tool</h3>
                 <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
                   Saved on this device
                 </span>
               </div>
               <p className="text-gray-500 text-xs mb-4">
-                Choose which dialer should be your primary 1-click calling tool. Both dialers remain accessible on every lead profile and table row!
+                Counselor jo dialer select karenge, CRM me sirf wahi dialer dikhega (dusra automatically hide ho jayega). Jab chahein tab switch kar sakte hain!
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* JustCall Only */}
                 <div 
-                  onClick={() => {
-                    setPreferredDialerState('justcall')
-                    setPreferredDialer('justcall')
-                  }}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                  onClick={() => setPreferredDialerState('justcall')}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
                     preferredDialer === 'justcall'
-                      ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                      ? 'border-blue-600 bg-blue-50/40 shadow-xs ring-2 ring-blue-500/20'
                       : 'border-gray-200 hover:border-gray-300 bg-white'
                   }`}
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                    preferredDialer === 'justcall' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <Phone size={16} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-gray-900">JustCall (Cloud Dialer)</h4>
-                      {preferredDialer === 'justcall' && (
-                        <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
-                          Selected
-                        </span>
-                      )}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      preferredDialer === 'justcall' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      <Phone size={16} />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                      Opens official JustCall browser popup with automatic call duration sync &amp; recording playback.
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-gray-900">JustCall Only</h4>
+                        {preferredDialer === 'justcall' && (
+                          <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        Sirf JustCall dialer dikhega. MicroSIP buttons CRM se hide ho jayenge.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
+                {/* MicroSIP Only */}
                 <div 
-                  onClick={() => {
-                    setPreferredDialerState('microsip')
-                    setPreferredDialer('microsip')
-                  }}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                  onClick={() => setPreferredDialerState('microsip')}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
                     preferredDialer === 'microsip'
-                      ? 'border-purple-600 bg-purple-50/40 shadow-xs'
+                      ? 'border-purple-600 bg-purple-50/40 shadow-xs ring-2 ring-purple-500/20'
                       : 'border-gray-200 hover:border-gray-300 bg-white'
                   }`}
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                    preferredDialer === 'microsip' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <Headphones size={16} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-gray-900">MicroSIP (Desktop Softphone)</h4>
-                      {preferredDialer === 'microsip' && (
-                        <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
-                          Selected
-                        </span>
-                      )}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      preferredDialer === 'microsip' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      <Headphones size={16} />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                      Launches Windows MicroSIP softphone application via <code>sip:</code> protocol to place direct PBX calls.
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-gray-900">MicroSIP Only</h4>
+                        {preferredDialer === 'microsip' && (
+                          <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        Sirf MicroSIP softphone dikhega. JustCall buttons CRM se hide ho jayenge.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Both Dialers */}
+                <div 
+                  onClick={() => setPreferredDialerState('both')}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                    preferredDialer === 'both'
+                      ? 'border-emerald-600 bg-emerald-50/40 shadow-xs ring-2 ring-emerald-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      preferredDialer === 'both' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      <Radio size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-gray-900">Both Dialers</h4>
+                        {preferredDialer === 'both' && (
+                          <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        Dono JustCall (📞) aur MicroSIP (🎧) icons side-by-side dikhenge.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

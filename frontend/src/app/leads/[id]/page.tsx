@@ -7,7 +7,7 @@ import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, DialerType } from '@/lib/dialer'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer, DialerType } from '@/lib/dialer'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
@@ -111,6 +111,7 @@ export default function LeadProfile() {
   const router = useRouter()
   const id = params?.id as string
   const { user: currentUser } = useAuth()
+  const [preferredDialer] = usePreferredDialer()
   
   const [lead, setLead] = useState<any>(null)
   const [activities, setActivities] = useState<any[]>([])
@@ -1504,26 +1505,30 @@ export default function LeadProfile() {
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-             <button 
-               type="button"
-               onClick={(e) => handleStartCall('justcall', e)}
-               className="flex justify-center items-center gap-1.5 bg-blue-50/70 border border-blue-200/80 hover:bg-blue-100/70 text-blue-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-               title="Call via JustCall Web Dialer (Auto popup & live logger)"
-             >
-                <Phone size={13} className="text-blue-600 shrink-0" />
-                <span>JustCall</span>
-             </button>
+          <div className={`grid ${preferredDialer === 'both' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 pt-1`}>
+             {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
+               <button 
+                 type="button"
+                 onClick={(e) => handleStartCall('justcall', e)}
+                 className="flex justify-center items-center gap-1.5 bg-blue-50/70 border border-blue-200/80 hover:bg-blue-100/70 text-blue-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+                 title="Call via JustCall Web Dialer (Auto popup & live logger)"
+               >
+                  <Phone size={13} className="text-blue-600 shrink-0" />
+                  <span>JustCall</span>
+               </button>
+             )}
 
-             <button 
-               type="button"
-               onClick={(e) => handleStartCall('microsip', e)}
-               className="flex justify-center items-center gap-1.5 bg-purple-50/70 border border-purple-200/80 hover:bg-purple-100/70 text-purple-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-               title="Call via MicroSIP Desktop Softphone (SIP/VoIP softphone)"
-             >
-                <Headphones size={13} className="text-purple-600 shrink-0" />
-                <span>MicroSIP</span>
-             </button>
+             {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
+               <button 
+                 type="button"
+                 onClick={(e) => handleStartCall('microsip', e)}
+                 className="flex justify-center items-center gap-1.5 bg-purple-50/70 border border-purple-200/80 hover:bg-purple-100/70 text-purple-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+                 title="Call via MicroSIP Desktop Softphone (SIP/VoIP softphone)"
+               >
+                  <Headphones size={13} className="text-purple-600 shrink-0" />
+                  <span>MicroSIP</span>
+               </button>
+             )}
 
              <a 
                target="_blank" 

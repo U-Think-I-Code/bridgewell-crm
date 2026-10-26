@@ -17,7 +17,7 @@ import {
   FollowUpRuleConfig,
   toLocalDatetimeString,
 } from '@/lib/followupRules'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl } from '@/lib/dialer'
+import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer } from '@/lib/dialer'
 
 interface LeadItem {
   id: string
@@ -39,6 +39,7 @@ interface LeadItem {
 export default function RemindersPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const [preferredDialer] = usePreferredDialer()
 
   const [leads, setLeads] = useState<LeadItem[]>([])
   const [counselors, setCounselors] = useState<any[]>([])
@@ -624,26 +625,30 @@ export default function RemindersPage() {
                 {/* Actions Row */}
                 <div className="flex items-center gap-2 flex-wrap self-end lg:self-center shrink-0">
                   {/* JustCall Button */}
-                  <a
-                    href={getJustCallDialerUrl(lead.phone)}
-                    onClick={(e) => openJustCallDialer(lead.phone, e)}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    title="Call via JustCall (Web Popup)"
-                  >
-                    <Phone size={13} />
-                    <span>JustCall</span>
-                  </a>
+                  {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
+                    <a
+                      href={getJustCallDialerUrl(lead.phone)}
+                      onClick={(e) => openJustCallDialer(lead.phone, e)}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      title="Call via JustCall (Web Popup)"
+                    >
+                      <Phone size={13} />
+                      <span>JustCall</span>
+                    </a>
+                  )}
 
                   {/* MicroSIP Button */}
-                  <a
-                    href={getMicroSipDialerUrl(lead.phone)}
-                    onClick={(e) => openMicroSipDialer(lead.phone, e)}
-                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    title="Call via MicroSIP (Softphone app)"
-                  >
-                    <Headphones size={13} />
-                    <span>MicroSIP</span>
-                  </a>
+                  {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
+                    <a
+                      href={getMicroSipDialerUrl(lead.phone)}
+                      onClick={(e) => openMicroSipDialer(lead.phone, e)}
+                      className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      title="Call via MicroSIP (Softphone app)"
+                    >
+                      <Headphones size={13} />
+                      <span>MicroSIP</span>
+                    </a>
+                  )}
 
                   {/* WhatsApp */}
                   <a
