@@ -7,7 +7,7 @@ import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer, DialerType } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
@@ -111,7 +111,6 @@ export default function LeadProfile() {
   const router = useRouter()
   const id = params?.id as string
   const { user: currentUser } = useAuth()
-  const [preferredDialer] = usePreferredDialer()
   
   const [lead, setLead] = useState<any>(null)
   const [activities, setActivities] = useState<any[]>([])
@@ -126,7 +125,6 @@ export default function LeadProfile() {
   const [activeCallTimer, setActiveCallTimer] = useState<number | null>(null)
   const callStartTimeRef = useRef<number | null>(null)
   const activeCallActIdRef = useRef<string | null>(null)
-  const activeDialerRef = useRef<DialerType>('justcall')
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false)
   const [isNotesOpen, setIsNotesOpen] = useState(true)
@@ -626,7 +624,7 @@ export default function LeadProfile() {
     setSavingAction(false)
   }
 
-  const handleStartCall = async (dialer: DialerType = 'justcall', e?: React.MouseEvent) => {
+  const handleStartCall = async (e?: React.MouseEvent) => {
     if (e) {
       if ('preventDefault' in e && typeof e.preventDefault === 'function') {
         e.preventDefault()
@@ -634,19 +632,11 @@ export default function LeadProfile() {
     }
     if (!lead?.phone) return
 
-    activeDialerRef.current = dialer
     const now = Date.now()
     callStartTimeRef.current = now
     setActiveCallTimer(0)
 
-    let popup: Window | null = null
-    const dialerLabel = dialer === 'microsip' ? 'MicroSIP' : 'JustCall'
-
-    if (dialer === 'justcall') {
-      popup = openJustCallDialer(lead.phone, e)
-    } else {
-      openMicroSipDialer(lead.phone, e)
-    }
+    const popup = openCallHippoDialer(lead.phone, e)
 
     try {
       const { data: actData } = await supabase
@@ -657,7 +647,7 @@ export default function LeadProfile() {
             user_id: currentUser?.id || lead?.owner_id,
             type: 'call',
             outcome: 'Calling',
-            text: `📞 Calling via ${dialerLabel}... (Call in progress)`,
+            text: `📞 Calling via CallHippo... (Call in progress)`,
             time: new Date().toISOString()
           }
         ])
@@ -692,14 +682,13 @@ export default function LeadProfile() {
     const formattedDuration = formatCallDuration(elapsedSecs)
     const outcome = explicitOutcome || 'No Answer'
     const actId = activeCallActIdRef.current
-    const dialerLabel = activeDialerRef.current === 'microsip' ? 'MicroSIP' : 'JustCall'
 
     callStartTimeRef.current = null
     activeCallActIdRef.current = null
     setActiveCallTimer(null)
 
     try {
-      const newText = `📞 ${dialerLabel} Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
+      const newText = `📞 CallHippo Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
 
       if (actId) {
         await supabase
@@ -1743,8 +1732,9 @@ export default function LeadProfile() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 truncate">
-                    {activeDialerRef.current === 'microsip' ? '🎧 MicroSIP' : '📞 JustCall'}
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-200 truncate flex items-center gap-1">
+                    <Phone size={12} className="text-emerald-400" />
+                    CallHippo Active Call
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                     {formatCallDuration(activeCallTimer)}
@@ -1809,30 +1799,16 @@ export default function LeadProfile() {
           )}
 
           {/* Quick Action Buttons */}
-          <div className={`grid ${preferredDialer === 'both' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 pt-1`}>
-             {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
-               <button 
-                 type="button"
-                 onClick={(e) => handleStartCall('justcall', e)}
-                 className="flex justify-center items-center gap-1.5 bg-blue-50/70 border border-blue-200/80 hover:bg-blue-100/70 text-blue-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-                 title="Call via JustCall Web Dialer (Auto popup & live logger)"
-               >
-                  <Phone size={13} className="text-blue-600 shrink-0" />
-                  <span>JustCall</span>
-               </button>
-             )}
-
-             {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
-               <button 
-                 type="button"
-                 onClick={(e) => handleStartCall('microsip', e)}
-                 className="flex justify-center items-center gap-1.5 bg-purple-50/70 border border-purple-200/80 hover:bg-purple-100/70 text-purple-800 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-                 title="Call via MicroSIP Desktop Softphone (SIP/VoIP softphone)"
-               >
-                  <Headphones size={13} className="text-purple-600 shrink-0" />
-                  <span>MicroSIP</span>
-               </button>
-             )}
+          <div className="grid grid-cols-3 gap-2 pt-1">
+             <button 
+               type="button"
+               onClick={(e) => handleStartCall(e)}
+               className="flex justify-center items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
+               title="Call via CallHippo Web Dialer & Extension"
+             >
+                <Phone size={13} className="shrink-0" />
+                <span>CallHippo</span>
+             </button>
 
              <a 
                target="_blank" 

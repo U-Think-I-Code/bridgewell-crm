@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   AlarmClock, Clock, Phone, MessageCircle, X, ChevronRight,
-  Flame, AlertTriangle, CheckCircle2, RotateCcw, Headphones
+  Flame, AlertTriangle, CheckCircle2, RotateCcw
 } from 'lucide-react'
 import { playNotificationSound, startContinuousAlarm, stopContinuousAlarm } from '@/lib/notifications'
 import { getFollowUpStatus } from '@/lib/followupRules'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 
 interface DueLead {
   id: string
@@ -25,7 +25,6 @@ interface DueLead {
 export default function AutoReminderWatcher() {
   const { user } = useAuth()
   const router = useRouter()
-  const [preferredDialer] = usePreferredDialer()
 
   const [activePopupLead, setActivePopupLead] = useState<DueLead | null>(null)
   const [overdueCount, setOverdueCount] = useState(0)
@@ -268,40 +267,21 @@ export default function AutoReminderWatcher() {
             </div>
 
             {/* Direct Calling & Action Buttons */}
-            <div className={`grid ${preferredDialer === 'both' ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 mb-3`}>
-              {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
-                <a
-                  id="alarm-popup-call-btn"
-                  href={getJustCallDialerUrl(activePopupLead.phone)}
-                  onClick={(e) => {
-                    stopContinuousAlarm()
-                    setActivePopupLead(null)
-                    openJustCallDialer(activePopupLead.phone, e)
-                  }}
-                  className="py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
-                  title="Call via JustCall"
-                >
-                  <Phone size={13} />
-                  <span className="truncate">JustCall</span>
-                </a>
-              )}
-
-              {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
-                <a
-                  id="alarm-popup-microsip-btn"
-                  href={getMicroSipDialerUrl(activePopupLead.phone)}
-                  onClick={(e) => {
-                    stopContinuousAlarm()
-                    setActivePopupLead(null)
-                    openMicroSipDialer(activePopupLead.phone, e)
-                  }}
-                  className="py-2 px-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
-                  title="Call via MicroSIP (Softphone app)"
-                >
-                  <Headphones size={13} />
-                  <span className="truncate">MicroSIP</span>
-                </a>
-              )}
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              <a
+                id="alarm-popup-call-btn"
+                href={getCallHippoDialerUrl(activePopupLead.phone)}
+                onClick={(e) => {
+                  stopContinuousAlarm()
+                  setActivePopupLead(null)
+                  openCallHippoDialer(activePopupLead.phone, e)
+                }}
+                className="py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                title="Call via CallHippo"
+              >
+                <Phone size={13} />
+                <span className="truncate">CallHippo</span>
+              </a>
 
               <a
                 id="alarm-popup-wa-btn"

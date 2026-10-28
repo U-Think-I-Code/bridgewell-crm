@@ -1,84 +1,55 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { openJustCallDialer, getJustCallDialerUrl } from './justcall'
-import { openMicroSipDialer, getMicroSipDialerUrl, MicroSipProtocol } from './microsip'
+import { openCallHippoDialer, getCallHippoDialerUrl } from './callhippo'
 
-export type DialerType = 'justcall' | 'microsip' | 'both'
+export type DialerType = 'callhippo'
 
 const PREFERRED_DIALER_KEY = 'bridgewell_preferred_dialer'
 
 export function getPreferredDialer(): DialerType {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(PREFERRED_DIALER_KEY)
-    if (saved === 'microsip' || saved === 'justcall' || saved === 'both') {
-      return saved
-    }
-  }
-  return 'justcall'
+  return 'callhippo'
 }
 
 export function setPreferredDialer(dialer: DialerType): void {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(PREFERRED_DIALER_KEY, dialer)
-    window.dispatchEvent(new CustomEvent('dialer_preference_changed', { detail: dialer }))
+    localStorage.setItem(PREFERRED_DIALER_KEY, 'callhippo')
+    window.dispatchEvent(new CustomEvent('dialer_preference_changed', { detail: 'callhippo' }))
   }
 }
 
 /**
- * React Hook that reactively syncs preferred dialer across all components & tabs
+ * React Hook that returns the permanent CallHippo dialer
  */
 export function usePreferredDialer(): [DialerType, (dialer: DialerType) => void] {
-  const [dialer, setDialer] = useState<DialerType>('justcall')
+  const [dialer, setDialer] = useState<DialerType>('callhippo')
 
   useEffect(() => {
-    setDialer(getPreferredDialer())
-
-    const handleUpdate = (e: any) => {
-      if (e?.detail) {
-        setDialer(e.detail)
-      } else {
-        setDialer(getPreferredDialer())
-      }
-    }
-
-    window.addEventListener('dialer_preference_changed', handleUpdate)
-    window.addEventListener('storage', handleUpdate)
-    return () => {
-      window.removeEventListener('dialer_preference_changed', handleUpdate)
-      window.removeEventListener('storage', handleUpdate)
-    }
+    setPreferredDialer('callhippo')
+    setDialer('callhippo')
   }, [])
 
-  const updateDialer = (newDialer: DialerType) => {
-    setPreferredDialer(newDialer)
-    setDialer(newDialer)
-  }
-
-  return [dialer, updateDialer]
+  return [dialer, () => setDialer('callhippo')]
 }
 
-export function getDialerUrl(dialer: 'justcall' | 'microsip', phone: string, protocol: MicroSipProtocol = 'sip'): string {
-  if (dialer === 'microsip') {
-    return getMicroSipDialerUrl(phone, protocol)
-  }
-  return getJustCallDialerUrl(phone)
+export function getDialerUrl(dialer: string, phone: string): string {
+  return getCallHippoDialerUrl(phone)
 }
 
 export function triggerDial(
-  dialer: 'justcall' | 'microsip',
+  dialer: string,
   phone: string,
-  e?: React.MouseEvent | Event,
-  protocol: MicroSipProtocol = 'sip'
-): { dialer: 'justcall' | 'microsip'; success: boolean } {
-  if (dialer === 'microsip') {
-    const success = openMicroSipDialer(phone, e, protocol)
-    return { dialer: 'microsip', success }
-  } else {
-    const win = openJustCallDialer(phone, e)
-    return { dialer: 'justcall', success: !!win }
-  }
+  e?: React.MouseEvent | Event
+): { dialer: 'callhippo'; success: boolean } {
+  const win = openCallHippoDialer(phone, e)
+  return { dialer: 'callhippo', success: !!win }
 }
 
-export { openJustCallDialer, getJustCallDialerUrl }
-export { openMicroSipDialer, getMicroSipDialerUrl }
+// CallHippo exports
+export { openCallHippoDialer, getCallHippoDialerUrl }
+
+// Backward compatibility aliases mapping to CallHippo
+export const openJustCallDialer = openCallHippoDialer
+export const getJustCallDialerUrl = getCallHippoDialerUrl
+export const openMicroSipDialer = openCallHippoDialer
+export const getMicroSipDialerUrl = getCallHippoDialerUrl

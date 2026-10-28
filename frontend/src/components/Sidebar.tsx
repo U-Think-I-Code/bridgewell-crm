@@ -2,11 +2,10 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, LogOut, Search, UserCheck, BarChart3, Bell, Megaphone, ArrowLeftRight, AlarmClock, Clock, ClipboardList, GraduationCap, Phone, Headphones } from 'lucide-react'
+import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, LogOut, Search, UserCheck, BarChart3, Bell, Megaphone, ArrowLeftRight, AlarmClock, Clock, ClipboardList, GraduationCap, Phone } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useNotifications } from '@/components/NotificationContext'
 import { canManageLeads, isManager } from '@/lib/teamHelper'
-import { usePreferredDialer } from '@/lib/dialer'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -14,7 +13,6 @@ export default function Sidebar() {
   const { user, logout } = useAuth()
   const { unreadCount, openDrawer, openSendModal } = useNotifications()
   const [searchQuery, setSearchQuery] = useState('')
-  const [preferredDialer, setPreferredDialer] = usePreferredDialer()
 
   const links = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -112,48 +110,34 @@ export default function Sidebar() {
           </button>
         </div>
       )}
-      {/* Quick Calling Tool Switcher for Counselors & Managers */}
+      {/* CallHippo Dialer Status for Counselors & Managers */}
       <div className="px-3 mb-2">
-        <div className="bg-white border border-gray-200/90 rounded-xl p-2 shadow-2xs">
-          <div className="flex items-center justify-between mb-1.5 px-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Calling Tool</span>
-            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
-              preferredDialer === 'justcall' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-              preferredDialer === 'microsip' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-              'bg-emerald-50 text-emerald-700 border-emerald-200'
-            }`}>
-              {preferredDialer === 'justcall' ? 'JustCall' : preferredDialer === 'microsip' ? 'MicroSIP' : 'Both'}
+        <a
+          href="https://dialer.callhippo.com/dial"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block bg-gradient-to-r from-emerald-50 via-teal-50/50 to-emerald-50 border border-emerald-200 hover:border-emerald-300 rounded-xl p-2.5 transition-all shadow-2xs group"
+          title="Click to open CallHippo Web Dialer"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              CallHippo Dialer
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+              Active
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200/50">
-            <button
-              type="button"
-              onClick={() => setPreferredDialer('justcall')}
-              className={`py-1 px-1.5 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'justcall'
-                  ? 'bg-white text-blue-600 shadow-xs font-bold'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-              title="Activate JustCall (Cloud Dialer)"
-            >
-              <Phone size={11} />
-              <span>JustCall</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPreferredDialer('microsip')}
-              className={`py-1 px-1.5 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'microsip'
-                  ? 'bg-white text-purple-600 shadow-xs font-bold'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-              title="Activate MicroSIP (Softphone)"
-            >
-              <Headphones size={11} />
-              <span>MicroSIP</span>
-            </button>
+          <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium pt-0.5">
+            <span className="flex items-center gap-1 text-gray-700 font-semibold">
+              <Phone size={11} className="text-emerald-600" />
+              Click-to-Call
+            </span>
+            <span className="text-[10px] text-emerald-700 font-semibold group-hover:underline">
+              Open Dialer &rarr;
+            </span>
           </div>
-        </div>
+        </a>
       </div>
       
       <div className="p-3 mx-3 mt-auto mb-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-3">

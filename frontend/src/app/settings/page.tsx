@@ -12,12 +12,12 @@ import {
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { openMicroSipDialer, getMicroSipDialerUrl, getPreferredDialer, setPreferredDialer, usePreferredDialer, DialerType } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl, getPreferredDialer, setPreferredDialer, usePreferredDialer, DialerType } from '@/lib/dialer'
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'justcall' | 'microsip' | 'backup' | 'email'>('pipeline')
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'callhippo' | 'backup' | 'email'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newStageName, setNewStageName] = useState('')
@@ -43,29 +43,26 @@ export default function SettingsPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [smtpStatusMessage, setSmtpStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  // Dialer Preferences & MicroSIP State
-  const [preferredDialer, setPreferredDialerState] = usePreferredDialer()
-  const [microsipTestPhone, setMicrosipTestPhone] = useState('+91 98765 43210')
-  const [microsipProtocol, setMicrosipProtocol] = useState<'sip' | 'tel'>('sip')
-  const [microsipTested, setMicrosipTested] = useState(false)
-
-  // Meta Integration State
+  // Meta / Facebook Webhook State
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [copiedToken, setCopiedToken] = useState(false)
   const [testName, setTestName] = useState('Rahul Sharma')
-  const [testPhone, setTestPhone] = useState('+91 98765 43210')
-  const [testCourse, setTestCourse] = useState('MBA International Business')
-  const [testCountry, setTestCountry] = useState('USA')
+  const [testPhone, setTestPhone] = useState('+919876543210')
+  const [testCourse, setTestCourse] = useState('BSc Computer Science')
+  const [testCountry, setTestCountry] = useState('UK')
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
 
-  // JustCall Integration State
-  const [copiedJustCallUrl, setCopiedJustCallUrl] = useState(false)
-  const [justcallPhone, setJustcallPhone] = useState('+966593274396')
-  const [justcallOutcome, setJustcallOutcome] = useState('Connected')
-  const [justcallDuration, setJustcallDuration] = useState('185')
-  const [isTestingJustCall, setIsTestingJustCall] = useState(false)
-  const [justcallTestResult, setJustcallTestResult] = useState<any>(null)
+  // CallHippo Dialer & Webhook State
+  const [preferredDialer, setPreferredDialerState] = usePreferredDialer()
+  const [copiedCallHippoUrl, setCopiedCallHippoUrl] = useState(false)
+  const [callhippoPhone, setCallhippoPhone] = useState('+91 98765 43210')
+  const [callhippoOutcome, setCallhippoOutcome] = useState('Connected')
+  const [callhippoDuration, setCallhippoDuration] = useState('145')
+  const [callhippoRecordingUrl, setCallhippoRecordingUrl] = useState('https://callhippo-recordings.s3.amazonaws.com/demo_recording.mp3')
+  const [isTestingCallHippo, setIsTestingCallHippo] = useState(false)
+  const [callhippoTestResult, setCallhippoTestResult] = useState<any>(null)
+  const [callhippoTestedDial, setCallhippoTestedDial] = useState(false)
 
   // Backup & Safety Vault State
   const [backupStats, setBackupStats] = useState<Record<string, number>>({})
@@ -185,6 +182,37 @@ export default function SettingsPage() {
       setTestResult({ error: err.message || 'Failed to send test lead' })
     } finally {
       setIsTesting(false)
+    }
+  }
+
+  const handleTestCallHippoWebhook = async () => {
+    setIsTestingCallHippo(true)
+    setCallhippoTestResult(null)
+    try {
+      const res = await fetch('/api/webhooks/callhippo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_number: callhippoPhone,
+          to: callhippoPhone,
+          from: '+14155552671',
+          duration: parseInt(callhippoDuration, 10) || 145,
+          status: callhippoOutcome.toLowerCase(),
+          disposition: callhippoOutcome,
+          direction: 'outbound',
+          agent_name: user?.name || 'Rahul Sharma (Counselor)',
+          agent_email: user?.email || 'counselor@bridgewell.edu',
+          recording_url: callhippoRecordingUrl,
+          notes: 'Test call from CallHippo settings simulator.'
+        }),
+      })
+
+      const data = await res.json()
+      setCallhippoTestResult(data)
+    } catch (err: any) {
+      setCallhippoTestResult({ error: err.message || 'Failed to simulate CallHippo webhook' })
+    } finally {
+      setIsTestingCallHippo(false)
     }
   }
 
@@ -493,32 +521,17 @@ export default function SettingsPage() {
           </button>
 
           <button
-            onClick={() => setActiveTab('justcall')}
+            onClick={() => setActiveTab('callhippo')}
             className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
-              activeTab === 'justcall'
+              activeTab === 'callhippo'
                 ? 'border-black text-black'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
             <PhoneCall size={16} className="text-emerald-600" />
-            <span>JustCall Dialer</span>
+            <span>CallHippo Dialer</span>
             <span className="ml-1 px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold">
-              Auto Logger
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('microsip')}
-            className={`flex items-center gap-2 pb-3 px-3 text-sm font-semibold border-b-2 transition-all ${
-              activeTab === 'microsip'
-                ? 'border-black text-black'
-                : 'border-transparent text-gray-500 hover:text-gray-900'
-            }`}
-          >
-            <Headphones size={16} className="text-purple-600" />
-            <span>MicroSIP Softphone</span>
-            <span className="ml-1 px-2 py-0.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-full font-bold">
-              VoIP / SIP
+              Official VoIP
             </span>
           </button>
 
@@ -851,20 +864,21 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Tab 3: JustCall Automatic Dialer Integration */}
-        {activeTab === 'justcall' && (
+        {/* Tab 3: CallHippo Automatic Dialer Integration */}
+        {activeTab === 'callhippo' && (
           <div className="space-y-6">
-            {/* JustCall Banner */}
-            <div className="bg-gradient-to-r from-emerald-900 to-teal-950 text-white rounded-2xl p-6 shadow-sm border border-emerald-800">
+            {/* CallHippo Hero Banner */}
+            <div className="bg-gradient-to-r from-emerald-900 via-teal-950 to-slate-900 text-white rounded-2xl p-6 shadow-sm border border-emerald-800">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 mb-3">
                     <Sparkles size={12} />
-                    <span>Automatic Call Detection &amp; Duration Logger</span>
+                    <span>Permanent CRM Dialer &amp; Auto Call Logger</span>
                   </div>
-                  <h2 className="text-2xl font-bold tracking-tight mb-2">JustCall Dialer Integration</h2>
+                  <h2 className="text-2xl font-bold tracking-tight mb-2">CallHippo Cloud Dialer Integration</h2>
                   <p className="text-emerald-100/80 text-sm max-w-2xl leading-relaxed">
-                    Whenever your counselor dials a lead via JustCall, our system automatically detects whether the call was <strong>Connected</strong> or <strong>Unanswered</strong>, logs the <strong>exact duration (minutes &amp; seconds)</strong>, attaches the <strong>recording link</strong>, and updates the timeline in real-time.
+                    CallHippo is now the <strong>official permanent dialer</strong> for Bridgewell CRM. 
+                    Counselors can click to call any lead directly with CallHippo. When calls end, call durations, outcomes (Connected, No Answer, Busy), and audio recordings are automatically logged to the student timeline.
                   </p>
                 </div>
                 <div className="hidden sm:block">
@@ -877,424 +891,217 @@ export default function SettingsPage() {
 
             {/* Webhook Configuration Card */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">JustCall Webhook Endpoint</h3>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">CallHippo Webhook Endpoint</h3>
               <p className="text-gray-500 text-xs mb-4">
-                Copy this URL and paste it into your JustCall account under <strong>Integrations &gt; Webhooks</strong>.
+                Copy this URL and paste it into your CallHippo Dashboard under <strong>Integrations &gt; Webhook</strong>.
               </p>
 
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Webhook URL (Event: Call Completed)
+                    Webhook URL (Events: Call Completed / Call Ended / Call Recording)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       readOnly
-                      value={`${origin}/api/webhooks/justcall`}
+                      value={`${origin}/api/webhooks/callhippo`}
                       className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-800 outline-none"
                     />
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(`${origin}/api/webhooks/justcall`)
-                        setCopiedJustCallUrl(true)
-                        setTimeout(() => setCopiedJustCallUrl(false), 2000)
+                        navigator.clipboard.writeText(`${origin}/api/webhooks/callhippo`)
+                        setCopiedCallHippoUrl(true)
+                        setTimeout(() => setCopiedCallHippoUrl(false), 2000)
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-black text-white hover:bg-gray-800 rounded-lg transition-colors cursor-pointer shrink-0"
                     >
-                      {copiedJustCallUrl ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                      <span>{copiedJustCallUrl ? 'Copied!' : 'Copy URL'}</span>
+                      {copiedCallHippoUrl ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      <span>{copiedCallHippoUrl ? 'Copied!' : 'Copy URL'}</span>
                     </button>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* Test Simulator */}
+            {/* Test CallHippo Webhook Ingestion */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">Test Automatic Call Logger</h3>
-                  <p className="text-gray-500 text-xs">Simulate a call event to verify that duration, status, and timeline updates work immediately.</p>
+                  <h3 className="text-base font-semibold text-gray-900">Test CallHippo Webhook Ingestion</h3>
+                  <p className="text-gray-500 text-xs">Simulate a CallHippo call event to verify that duration, status, and recording link save to the database.</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Student Phone</label>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Student Phone Number</label>
                   <input
                     type="text"
-                    value={justcallPhone}
-                    onChange={(e) => setJustcallPhone(e.target.value)}
-                    placeholder="+966593274396"
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black font-mono"
+                    value={callhippoPhone}
+                    onChange={(e) => setCallhippoPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-200"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Outcome</label>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Call Outcome</label>
                   <select
-                    value={justcallOutcome}
-                    onChange={(e) => setJustcallOutcome(e.target.value)}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white"
+                    value={callhippoOutcome}
+                    onChange={(e) => setCallhippoOutcome(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-800 outline-none cursor-pointer focus:ring-2 focus:ring-emerald-200"
                   >
-                    <option value="Connected">Connected (Answered)</option>
-                    <option value="No Answer">No Answer (Missed)</option>
-                    <option value="Busy">Busy</option>
+                    <option value="Connected">🟢 Connected (Answered)</option>
+                    <option value="No Answer">🔔 No Answer (Ringing / Missed)</option>
+                    <option value="Busy">🔴 Busy / Rejected</option>
+                    <option value="Callback">📞 Callback Requested</option>
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Duration (Seconds)</label>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Duration (Seconds)</label>
                   <input
                     type="number"
-                    value={justcallDuration}
-                    onChange={(e) => setJustcallDuration(e.target.value)}
-                    placeholder="185"
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-black font-mono"
+                    value={callhippoDuration}
+                    onChange={(e) => setCallhippoDuration(e.target.value)}
+                    placeholder="145"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-200"
                   />
-                  <span className="text-[10px] text-gray-400 mt-0.5 block">
-                    {justcallOutcome === 'Connected' ? `≈ ${Math.floor(Number(justcallDuration)/60)}m ${Number(justcallDuration)%60}s` : '0s'}
-                  </span>
                 </div>
               </div>
 
-              <button
-                disabled={isTestingJustCall || !justcallPhone}
-                onClick={async () => {
-                  setIsTestingJustCall(true)
-                  setJustcallTestResult(null)
-                  try {
-                    const res = await fetch('/api/webhooks/justcall', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        type: 'call.completed',
-                        data: {
-                          contact_number: justcallPhone,
-                          agent_name: user?.name || 'Counselor',
-                          agent_email: user?.email || '',
-                          call_info: {
-                            direction: 'Outgoing',
-                            type: justcallOutcome === 'Connected' ? 'Answered' : justcallOutcome,
-                            duration: justcallOutcome === 'Connected' ? Number(justcallDuration) : 0
-                          },
-                          recording: justcallOutcome === 'Connected' ? 'https://app.justcall.io/recording/sample_demo.mp3' : '',
-                          notes: 'Test call logged via Settings Simulator'
-                        }
-                      })
-                    })
-                    const data = await res.json()
-                    setJustcallTestResult({ success: res.ok && data.success, data })
-                  } catch (err: any) {
-                    setJustcallTestResult({ success: false, data: { error: err.message } })
-                  } finally {
-                    setIsTestingJustCall(false)
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-              >
-                {isTestingJustCall ? <Sparkles size={14} className="animate-spin" /> : <PhoneCall size={14} />}
-                <span>{isTestingJustCall ? 'Sending Test Call...' : 'Send Test Call Webhook'}</span>
-              </button>
+              <div className="mb-4">
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Recording URL (Optional)</label>
+                <input
+                  type="text"
+                  value={callhippoRecordingUrl}
+                  onChange={(e) => setCallhippoRecordingUrl(e.target.value)}
+                  placeholder="https://callhippo-recordings.s3.amazonaws.com/recording.mp3"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 font-mono outline-none focus:ring-2 focus:ring-emerald-200"
+                />
+              </div>
 
-              {justcallTestResult && (
-                <div
-                  className={`mt-4 p-4 rounded-xl border text-xs ${
-                    justcallTestResult.success
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : 'bg-rose-50 border-rose-200 text-rose-800'
-                  }`}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestCallHippoWebhook}
+                  disabled={isTestingCallHippo || !callhippoPhone}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {justcallTestResult.success ? (
-                    <div className="flex items-start gap-2.5">
-                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold mb-0.5">Test Call Logged Successfully!</p>
-                        <p className="text-emerald-700 leading-relaxed">
-                          Matched Lead: <strong>{justcallTestResult.data.lead_name}</strong> • Outcome: <strong>{justcallTestResult.data.outcome}</strong> • Duration: <strong>{justcallTestResult.data.duration}</strong>.
-                          Timeline updated in real-time.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="font-semibold">Error: {justcallTestResult.data?.message || justcallTestResult.data?.error || 'Failed to log test call'}</p>
+                  <PhoneCall size={14} />
+                  <span>{isTestingCallHippo ? 'Simulating CallHippo Event...' : 'Simulate CallHippo Call Ingestion'}</span>
+                </button>
+              </div>
+
+              {callhippoTestResult && (
+                <div className={`mt-4 p-4 rounded-xl text-xs border ${
+                  callhippoTestResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    {callhippoTestResult.success ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertCircle size={16} className="text-rose-600" />}
+                    <span>{callhippoTestResult.message || (callhippoTestResult.success ? 'CallHippo call successfully processed!' : 'Webhook processing error')}</span>
+                  </div>
+                  {callhippoTestResult.lead_name && (
+                    <p className="text-[11px] text-gray-600 mt-1">
+                      Matched Lead: <strong>{callhippoTestResult.lead_name}</strong> | Outcome: <strong>{callhippoTestResult.outcome}</strong> | Duration: <strong>{callhippoTestResult.duration}</strong>
+                    </p>
                   )}
                 </div>
               )}
             </section>
 
-            {/* Step-by-Step JustCall Setup Guide */}
+            {/* Test CallHippo Click-to-Dial */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">How to Enable in JustCall (2 Minutes)</h3>
-              <p className="text-gray-500 text-xs mb-4">Follow these 3 simple steps inside your JustCall dashboard:</p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">Login to JustCall</p>
-                    <p className="text-xs text-gray-600 mt-0.5">Go to <a href="https://app.justcall.io" target="_blank" rel="noreferrer" className="text-emerald-600 underline font-semibold">app.justcall.io</a> &rarr; click on <strong>Settings</strong> (or <strong>Integrations</strong>) &rarr; select <strong>Webhooks</strong>.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">Add New Webhook</p>
-                    <p className="text-xs text-gray-600 mt-0.5">Click <strong>+ New Webhook</strong> &rarr; Select Event: <strong>Call Completed</strong> (or <code>call.completed</code>).</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">Paste Webhook URL &amp; Save</p>
-                    <p className="text-xs text-gray-600 mt-0.5">Paste the Webhook URL copied from above into the Endpoint URL field and click <strong>Save</strong>. Done!</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {/* Tab 3.5: MicroSIP Softphone Integration */}
-        {activeTab === 'microsip' && (
-          <div className="space-y-6">
-            {/* MicroSIP Hero Banner */}
-            <div className="bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-950 text-white rounded-2xl p-6 shadow-sm border border-purple-800">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-200 border border-purple-400/30 mb-3">
-                    <Headphones size={12} />
-                    <span>Free &amp; Open-Source Windows SIP Softphone</span>
-                  </div>
-                  <h2 className="text-2xl font-bold tracking-tight mb-2">MicroSIP Softphone Integration</h2>
-                  <p className="text-purple-100/80 text-sm max-w-2xl leading-relaxed">
-                    Connect your team&apos;s Windows desktop to <a href="https://www.microsip.org/" target="_blank" rel="noreferrer" className="text-purple-300 underline font-semibold hover:text-white">MicroSIP (microsip.org)</a>. Counselors can click to dial any student number instantly using high-quality VoIP SIP trunks without needing browser extensions.
-                  </p>
-                </div>
-                <div className="hidden sm:block">
-                  <div className="w-14 h-14 rounded-2xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center">
-                    <Headphones size={28} className="text-purple-300" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Preferred Default Dialer Preference */}
-            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-base font-semibold text-gray-900">Your Preferred Calling Tool</h3>
-                <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                  Saved on this device
-                </span>
-              </div>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Test CallHippo Click-to-Dial</h3>
               <p className="text-gray-500 text-xs mb-4">
-                Counselor jo dialer select karenge, CRM me sirf wahi dialer dikhega (dusra automatically hide ho jayega). Jab chahein tab switch kar sakte hain!
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* JustCall Only */}
-                <div 
-                  onClick={() => setPreferredDialerState('justcall')}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                    preferredDialer === 'justcall'
-                      ? 'border-blue-600 bg-blue-50/40 shadow-xs ring-2 ring-blue-500/20'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                      preferredDialer === 'justcall' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      <Phone size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-gray-900">JustCall Only</h4>
-                        {preferredDialer === 'justcall' && (
-                          <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        Sirf JustCall dialer dikhega. MicroSIP buttons CRM se hide ho jayenge.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* MicroSIP Only */}
-                <div 
-                  onClick={() => setPreferredDialerState('microsip')}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                    preferredDialer === 'microsip'
-                      ? 'border-purple-600 bg-purple-50/40 shadow-xs ring-2 ring-purple-500/20'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                      preferredDialer === 'microsip' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      <Headphones size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-gray-900">MicroSIP Only</h4>
-                        {preferredDialer === 'microsip' && (
-                          <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        Sirf MicroSIP softphone dikhega. JustCall buttons CRM se hide ho jayenge.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Both Dialers */}
-                <div 
-                  onClick={() => setPreferredDialerState('both')}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                    preferredDialer === 'both'
-                      ? 'border-emerald-600 bg-emerald-50/40 shadow-xs ring-2 ring-emerald-500/20'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                      preferredDialer === 'both' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      <Radio size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-gray-900">Both Dialers</h4>
-                        {preferredDialer === 'both' && (
-                          <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        Dono JustCall (📞) aur MicroSIP (🎧) icons side-by-side dikhenge.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Test MicroSIP Click-to-Dial */}
-            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">Test MicroSIP Connection</h3>
-              <p className="text-gray-500 text-xs mb-4">
-                Click below to test whether your computer launches MicroSIP and prepares the dial screen.
+                Click below to verify that your browser opens the official CallHippo web dialer popup and triggers the Chrome extension.
               </p>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="flex-1">
-                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                    Test Phone Number:
-                  </label>
                   <input
                     type="text"
-                    value={microsipTestPhone}
-                    onChange={(e) => setMicrosipTestPhone(e.target.value)}
+                    value={callhippoPhone}
+                    onChange={(e) => setCallhippoPhone(e.target.value)}
                     placeholder="+91 98765 43210"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-purple-200"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-200"
                   />
                   <div className="mt-1 flex items-center gap-1.5 text-[10px] text-gray-500 font-mono">
-                    <span className="font-semibold text-purple-700">Preview:</span>
-                    <span className="bg-gray-100 px-1.5 py-0.5 rounded font-bold text-gray-800">
-                      {getMicroSipDialerUrl(microsipTestPhone, microsipProtocol)}
+                    <span className="font-semibold text-emerald-700">Dialer URL:</span>
+                    <span className="bg-gray-100 px-1.5 py-0.5 rounded font-bold text-gray-800 truncate max-w-md">
+                      {getCallHippoDialerUrl(callhippoPhone)}
                     </span>
-                    <span className="text-emerald-600 font-sans font-medium">(+ automatically stripped)</span>
                   </div>
-                </div>
-
-                <div className="w-32">
-                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                    URI Protocol:
-                  </label>
-                  <select
-                    value={microsipProtocol}
-                    onChange={(e) => setMicrosipProtocol(e.target.value as 'sip' | 'tel')}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-gray-800 outline-none cursor-pointer focus:ring-2 focus:ring-purple-200"
-                  >
-                    <option value="sip">sip: (Standard)</option>
-                    <option value="tel">tel: (RFC 3966)</option>
-                  </select>
                 </div>
 
                 <div className="self-end">
                   <button
                     type="button"
                     onClick={() => {
-                      openMicroSipDialer(microsipTestPhone, undefined, microsipProtocol)
-                      setMicrosipTested(true)
-                      setTimeout(() => setMicrosipTested(false), 5000)
+                      openCallHippoDialer(callhippoPhone)
+                      setCallhippoTestedDial(true)
+                      setTimeout(() => setCallhippoTestedDial(false), 5000)
                     }}
-                    className="w-full sm:w-auto px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full sm:w-auto px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Headphones size={14} />
-                    <span>Test Dial MicroSIP</span>
+                    <PhoneCall size={14} />
+                    <span>Launch CallHippo Dialer</span>
                   </button>
                 </div>
               </div>
 
-              {microsipTested && (
-                <div className="mt-4 p-3.5 bg-purple-50 border border-purple-200 rounded-xl flex items-start gap-2.5 text-xs text-purple-900 animate-in fade-in duration-200">
-                  <CheckCircle2 size={16} className="text-purple-600 shrink-0 mt-0.5" />
+              {callhippoTestedDial && (
+                <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-xs text-emerald-900 animate-in fade-in duration-200">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-bold">MicroSIP Dial Triggered!</p>
-                    <p className="text-purple-800 mt-0.5">
-                      Windows opened MicroSIP with <strong>{getMicroSipDialerUrl(microsipTestPhone, microsipProtocol)}</strong> (no '+' prefix).
+                    <p className="font-bold">CallHippo Dialer Triggered!</p>
+                    <p className="text-emerald-800 mt-0.5">
+                      CallHippo web dialer opened with <strong>{callhippoPhone}</strong>.
                     </p>
                   </div>
                 </div>
               )}
             </section>
 
-            {/* Step-by-Step MicroSIP Setup Instructions */}
+            {/* Step-by-Step Setup Instructions for CallHippo */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">How to Set Up MicroSIP on Counselor PCs</h3>
-              <p className="text-gray-500 text-xs mb-4">Follow these simple instructions to enable click-to-dial on any Windows computer:</p>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">CallHippo 3-Step Setup Instructions</h3>
+              <p className="text-gray-500 text-xs mb-4">How to connect CallHippo with Bridgewell CRM in 3 minutes:</p>
 
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
                   <div>
                     <p className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                      <span>Download &amp; Install MicroSIP</span>
-                      <a href="https://www.microsip.org/downloads" target="_blank" rel="noreferrer" className="text-purple-600 inline-flex items-center gap-0.5 hover:underline font-semibold">
-                        <span>microsip.org/downloads</span>
+                      <span>Add Webhook in CallHippo Dashboard</span>
+                      <a href="https://app.callhippo.com" target="_blank" rel="noreferrer" className="text-emerald-600 inline-flex items-center gap-0.5 hover:underline font-semibold">
+                        <span>app.callhippo.com</span>
                         <ExternalLink size={11} />
                       </a>
                     </p>
-                    <p className="text-xs text-gray-600 mt-0.5">Download either the Installer or the Portable version for Windows (lightweight ~3 MB).</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">Add your VoIP / SIP PBX Account</p>
                     <p className="text-xs text-gray-600 mt-0.5">
-                      Open MicroSIP &rarr; Click top-right arrow (<strong>▼</strong>) &rarr; Select <strong>Add Account</strong> &rarr; Fill in your SIP Server / IP, Extension Username, and Password provided by your VoIP PBX administrator. Status will turn green (<strong>Online</strong>).
+                      Log into CallHippo &rarr; Go to <strong>Integrations</strong> &rarr; click <strong>Webhook</strong> &rarr; click <strong>Add Webhook</strong>.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
                   <div>
-                    <p className="text-xs font-bold text-gray-900">Enable &quot;Integrate with Windows&quot; (Crucial Step)</p>
+                    <p className="text-xs font-bold text-gray-900">Paste the Webhook URL and Select Events</p>
                     <p className="text-xs text-gray-600 mt-0.5">
-                      In MicroSIP, click top-right menu (<strong>▼</strong>) &rarr; click <strong>Settings</strong> &rarr; scroll down to <strong>Integrate with Windows</strong> &rarr; ensure <strong>Associate with URL protocol (sip:, tel:, callto:)</strong> is checked and click <strong>Save</strong>.
+                      Paste the URL <code>{origin}/api/webhooks/callhippo</code> and enable <strong>Call Completed</strong>, <strong>Call Ended</strong>, and <strong>Call Recording</strong> events.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                  <div>
+                    <p className="text-xs font-bold text-gray-900">Install CallHippo Chrome Extension on Counselor Laptops</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Have counselors install the official <strong>CallHippo Click to Call</strong> extension from Chrome Web Store. Whenever they click on any phone number in the CRM, CallHippo will instantly dial!
                     </p>
                   </div>
                 </div>
@@ -1302,9 +1109,9 @@ export default function SettingsPage() {
                 <div className="flex items-start gap-3 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl">
                   <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">✓</span>
                   <div>
-                    <p className="text-xs font-bold text-emerald-950">You&apos;re All Set!</p>
+                    <p className="text-xs font-bold text-emerald-950">Seamless Automation Active!</p>
                     <p className="text-xs text-emerald-800 mt-0.5">
-                      Whenever any counselor clicks the <strong>MicroSIP</strong> button on a lead profile or table row, Windows immediately triggers MicroSIP to dial the student number!
+                      Every call dialed via CallHippo will now automatically log its duration, status, and recording link directly into the student&apos;s activity timeline!
                     </p>
                   </div>
                 </div>

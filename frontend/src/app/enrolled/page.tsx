@@ -5,9 +5,9 @@ import { useAuth } from '@/components/AuthWrapper'
 import Link from 'next/link'
 import { 
   GraduationCap, Search, Phone, MessageCircle, Mail, ArrowRight, 
-  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles, Headphones 
+  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles 
 } from 'lucide-react'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 
 interface EnrolledStudent {
   id: string
@@ -28,7 +28,6 @@ interface EnrolledStudent {
 
 export default function EnrolledStudentsPage() {
   const { user } = useAuth()
-  const [preferredDialer] = usePreferredDialer()
   const [students, setStudents] = useState<EnrolledStudent[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -349,26 +348,15 @@ export default function EnrolledStudentsPage() {
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs font-semibold text-gray-900">{student.phone}</span>
-                          {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
-                            <a
-                              href={getJustCallDialerUrl(student.phone)}
-                              onClick={(e) => openJustCallDialer(student.phone, e)}
-                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-all cursor-pointer shadow-2xs"
-                              title="Call via JustCall (Web Popup)"
-                            >
-                              <Phone size={12} />
-                            </a>
-                          )}
-                          {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
-                            <a
-                              href={getMicroSipDialerUrl(student.phone)}
-                              onClick={(e) => openMicroSipDialer(student.phone, e)}
-                              className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-all cursor-pointer shadow-2xs"
-                              title="Call via MicroSIP (Softphone app)"
-                            >
-                              <Headphones size={12} />
-                            </a>
-                          )}
+                          <a
+                            href={getCallHippoDialerUrl(student.phone)}
+                            onClick={(e) => openCallHippoDialer(student.phone, e)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                            title="Call via CallHippo"
+                          >
+                            <Phone size={11} className="text-emerald-600" />
+                            <span>Call</span>
+                          </a>
                           <a
                             href={`https://wa.me/${student.phone.replace(/[^0-9]/g, '')}`}
                             target="_blank"

@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Headphones } from 'lucide-react'
-import { openJustCallDialer, getJustCallDialerUrl, openMicroSipDialer, getMicroSipDialerUrl, usePreferredDialer } from '@/lib/dialer'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
+import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 import AddLeadModal from '@/components/AddLeadModal'
@@ -16,7 +16,6 @@ import { notifyLeadAssigned } from '@/lib/notifications'
 function LeadsContent() {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [preferredDialer] = usePreferredDialer()
   const [leads, setLeads] = useState<any[]>([])
   const [counselors, setCounselors] = useState<any[]>([])
   const [stages, setStages] = useState<string[]>([])
@@ -1736,26 +1735,15 @@ function LeadsContent() {
                     <td className="px-6 py-4 text-gray-600">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-gray-900">{lead.phone}</span>
-                        {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
-                          <a
-                            href={getJustCallDialerUrl(lead.phone)}
-                            onClick={(e) => openJustCallDialer(lead.phone, e)}
-                            className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-all cursor-pointer shadow-2xs"
-                            title="Call via JustCall (Web Popup)"
-                          >
-                            <Phone size={12} />
-                          </a>
-                        )}
-                        {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
-                          <a
-                            href={getMicroSipDialerUrl(lead.phone)}
-                            onClick={(e) => openMicroSipDialer(lead.phone, e)}
-                            className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-all cursor-pointer shadow-2xs"
-                            title="Call via MicroSIP (Softphone app)"
-                          >
-                            <Headphones size={12} />
-                          </a>
-                        )}
+                        <a
+                          href={getCallHippoDialerUrl(lead.phone)}
+                          onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                          title="Call via CallHippo"
+                        >
+                          <Phone size={11} className="text-emerald-600" />
+                          <span>CallHippo</span>
+                        </a>
                       </div>
                     </td>
                     
@@ -1935,28 +1923,15 @@ function LeadsContent() {
                         </div>
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs text-gray-500 font-medium">{lead.phone}</p>
-                          <div className="flex items-center gap-1">
-                            {(preferredDialer === 'justcall' || preferredDialer === 'both') && (
-                              <a
-                                href={getJustCallDialerUrl(lead.phone)}
-                                onClick={(e) => openJustCallDialer(lead.phone, e)}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
-                                title="Call via JustCall"
-                              >
-                                <Phone size={12} />
-                              </a>
-                            )}
-                            {(preferredDialer === 'microsip' || preferredDialer === 'both') && (
-                              <a
-                                href={getMicroSipDialerUrl(lead.phone)}
-                                onClick={(e) => openMicroSipDialer(lead.phone, e)}
-                                className="p-1 text-purple-600 hover:bg-purple-50 rounded transition-colors cursor-pointer"
-                                title="Call via MicroSIP (Softphone)"
-                              >
-                                <Headphones size={12} />
-                              </a>
-                            )}
-                          </div>
+                          <a
+                            href={getCallHippoDialerUrl(lead.phone)}
+                            onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-semibold transition-colors cursor-pointer"
+                            title="Call via CallHippo"
+                          >
+                            <Phone size={11} className="text-emerald-600" />
+                            <span>Call</span>
+                          </a>
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100 text-[10px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
