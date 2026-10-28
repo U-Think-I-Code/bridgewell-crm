@@ -954,8 +954,8 @@ export default function CalendarPage() {
                       {/* Action buttons */}
                       <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                         <a
-                          href={getCallHippoDialerUrl(lead.phone)}
-                          onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                          href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
+                          onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
                           className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer active:scale-95"
                           title="Call via CallHippo"
                         >
@@ -1059,8 +1059,8 @@ export default function CalendarPage() {
                 {/* Direct Action Buttons */}
                 <div className="grid grid-cols-2 gap-2">
                   <a
-                    href={getCallHippoDialerUrl(activeLead.phone)}
-                    onClick={(e) => openCallHippoDialer(activeLead.phone, e)}
+                    href={getCallHippoDialerUrl(activeLead.phone, { name: activeLead.name, leadId: activeLead.id })}
+                    onClick={(e) => openCallHippoDialer(activeLead.phone, e, { name: activeLead.name, leadId: activeLead.id })}
                     className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
                     title="Call via CallHippo"
                   >

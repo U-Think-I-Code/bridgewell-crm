@@ -270,11 +270,11 @@ export default function AutoReminderWatcher() {
             <div className="grid grid-cols-2 gap-1.5 mb-3">
               <a
                 id="alarm-popup-call-btn"
-                href={getCallHippoDialerUrl(activePopupLead.phone)}
+                href={getCallHippoDialerUrl(activePopupLead.phone, { name: activePopupLead.name, leadId: activePopupLead.id })}
                 onClick={(e) => {
                   stopContinuousAlarm()
                   setActivePopupLead(null)
-                  openCallHippoDialer(activePopupLead.phone, e)
+                  openCallHippoDialer(activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id })
                 }}
                 className="py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
                 title="Call via CallHippo"

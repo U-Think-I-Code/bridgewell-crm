@@ -349,8 +349,8 @@ export default function EnrolledStudentsPage() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs font-semibold text-gray-900">{student.phone}</span>
                           <a
-                            href={getCallHippoDialerUrl(student.phone)}
-                            onClick={(e) => openCallHippoDialer(student.phone, e)}
+                            href={getCallHippoDialerUrl(student.phone, { name: student.name, leadId: student.id })}
+                            onClick={(e) => openCallHippoDialer(student.phone, e, { name: student.name, leadId: student.id })}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
                             title="Call via CallHippo"
                           >

@@ -636,7 +636,7 @@ export default function LeadProfile() {
     callStartTimeRef.current = now
     setActiveCallTimer(0)
 
-    const popup = openCallHippoDialer(lead.phone, e)
+    const popup = openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: id })
 
     try {
       const { data: actData } = await supabase

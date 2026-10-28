@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { openCallHippoDialer, getCallHippoDialerUrl } from './callhippo'
+import { openCallHippoDialer, getCallHippoDialerUrl, formatPhoneNumberForCallHippo, CallHippoDialerOptions } from './callhippo'
 
 export type DialerType = 'callhippo'
 
@@ -32,21 +32,23 @@ export function usePreferredDialer(): [DialerType, (dialer: DialerType) => void]
   return [dialer, () => setDialer('callhippo')]
 }
 
-export function getDialerUrl(dialer: string, phone: string): string {
-  return getCallHippoDialerUrl(phone)
+export function getDialerUrl(dialer: string, phone: string, options?: CallHippoDialerOptions): string {
+  return getCallHippoDialerUrl(phone, options)
 }
 
 export function triggerDial(
   dialer: string,
   phone: string,
-  e?: React.MouseEvent | Event
+  e?: React.MouseEvent | Event,
+  options?: CallHippoDialerOptions
 ): { dialer: 'callhippo'; success: boolean } {
-  const win = openCallHippoDialer(phone, e)
+  const win = openCallHippoDialer(phone, e, options)
   return { dialer: 'callhippo', success: !!win }
 }
 
 // CallHippo exports
-export { openCallHippoDialer, getCallHippoDialerUrl }
+export { openCallHippoDialer, getCallHippoDialerUrl, formatPhoneNumberForCallHippo }
+export type { CallHippoDialerOptions }
 
 // Backward compatibility aliases mapping to CallHippo
 export const openJustCallDialer = openCallHippoDialer

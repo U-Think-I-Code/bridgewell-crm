@@ -1736,8 +1736,8 @@ function LeadsContent() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-gray-900">{lead.phone}</span>
                         <a
-                          href={getCallHippoDialerUrl(lead.phone)}
-                          onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                          href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
+                          onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
                           title="Call via CallHippo"
                         >
@@ -1924,8 +1924,8 @@ function LeadsContent() {
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs text-gray-500 font-medium">{lead.phone}</p>
                           <a
-                            href={getCallHippoDialerUrl(lead.phone)}
-                            onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                            href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
+                            onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-semibold transition-colors cursor-pointer"
                             title="Call via CallHippo"
                           >

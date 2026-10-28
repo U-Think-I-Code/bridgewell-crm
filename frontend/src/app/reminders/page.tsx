@@ -625,8 +625,8 @@ export default function RemindersPage() {
                 <div className="flex items-center gap-2 flex-wrap self-end lg:self-center shrink-0">
                   {/* CallHippo Button */}
                   <a
-                    href={getCallHippoDialerUrl(lead.phone)}
-                    onClick={(e) => openCallHippoDialer(lead.phone, e)}
+                    href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
+                    onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
                     className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
                     title="Call via CallHippo"
                   >
