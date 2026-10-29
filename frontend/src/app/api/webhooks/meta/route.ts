@@ -191,6 +191,9 @@ export async function POST(request: NextRequest) {
     let body: any
     try {
       body = JSON.parse(rawBody)
+      if (Array.isArray(body) && body.length > 0) {
+        body = body[0]
+      }
     } catch {
       return NextResponse.json({ error: 'Malformed JSON payload' }, { status: 400 })
     }
