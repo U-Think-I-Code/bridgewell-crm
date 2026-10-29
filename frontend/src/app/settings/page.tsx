@@ -46,6 +46,7 @@ export default function SettingsPage() {
   // Meta / Facebook Webhook State
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [copiedToken, setCopiedToken] = useState(false)
+  const [copiedSecret, setCopiedSecret] = useState(false)
   const [testName, setTestName] = useState('Rahul Sharma')
   const [testPhone, setTestPhone] = useState('+919876543210')
   const [testCourse, setTestCourse] = useState('BSc Computer Science')
@@ -76,6 +77,7 @@ export default function SettingsPage() {
   const [isVerifyingFile, setIsVerifyingFile] = useState(false)
 
   const verifyToken = process.env.NEXT_PUBLIC_META_VERIFY_TOKEN || 'bridgewell_meta_webhook_2026'
+  const metaSharedSecret = process.env.NEXT_PUBLIC_META_WEBHOOK_SHARED_SECRET || 'bw_meta_sec_c26109c580ed20dbf9e3b5588d0f8ad227855839'
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
   const webhookUrl = `${origin}/api/webhooks/meta`
 
@@ -147,14 +149,17 @@ export default function SettingsPage() {
     setSavingId(null)
   }
 
-  const copyToClipboard = (text: string, type: 'url' | 'token') => {
+  const copyToClipboard = (text: string, type: 'url' | 'token' | 'secret') => {
     navigator.clipboard.writeText(text)
     if (type === 'url') {
       setCopiedUrl(true)
       setTimeout(() => setCopiedUrl(false), 2000)
-    } else {
+    } else if (type === 'token') {
       setCopiedToken(true)
       setTimeout(() => setCopiedToken(false), 2000)
+    } else if (type === 'secret') {
+      setCopiedSecret(true)
+      setTimeout(() => setCopiedSecret(false), 2000)
     }
   }
 
@@ -164,7 +169,10 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/webhooks/meta', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-webhook-secret': metaSharedSecret,
+        },
         body: JSON.stringify({
           name: testName,
           phone: testPhone,
@@ -172,6 +180,11 @@ export default function SettingsPage() {
           course: testCourse,
           country: testCountry,
           campaign_name: `${testCountry} Ad Campaign`,
+          ad_name: `${testCountry} Top Conversions Ad`,
+          form_name: `${testCountry} Lead Qualification Form`,
+          intake: 'September 2026',
+          application_stage: 'Planning to Apply',
+          travel_dates: 'August 2026',
           source: `Meta Ads - ${testCountry}`,
         }),
       })
@@ -706,6 +719,50 @@ export default function SettingsPage() {
                       <span>{copiedToken ? 'Copied!' : 'Copy Token'}</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Shared Webhook Secret (Zapier / Relay) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-gray-900 uppercase tracking-wider">
+                      Shared Secret Header (<code className="text-amber-700 font-mono">x-webhook-secret</code>)
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      Protected Endpoint
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-xs mb-2">
+                    In Zapier, add Header <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono">x-webhook-secret</code> with this secret to authenticate leads.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={metaSharedSecret}
+                      className="flex-1 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-800 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(metaSharedSecret, 'secret')}
+                      className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      {copiedSecret ? <Check size={14} className="text-white" /> : <Copy size={14} />}
+                      <span>{copiedSecret ? 'Copied!' : 'Copy Secret'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Zapier Setup Instructions Banner */}
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl p-3.5 text-xs text-amber-900">
+                  <div className="font-bold flex items-center gap-1.5 mb-1.5 text-amber-950">
+                    <span>⚡ Zapier Connection Guide (Bypasses Meta Account Restrictions)</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-gray-700 leading-relaxed text-[11px]">
+                    <li><strong>Trigger:</strong> Facebook Lead Ads &rarr; Event: <em>New Lead</em> (Select your Page &amp; Lead Form).</li>
+                    <li><strong>Action:</strong> Webhooks by Zapier &rarr; Event: <em>Custom Request</em> or <em>POST</em>.</li>
+                    <li><strong>URL:</strong> Paste Webhook Callback URL: <code className="bg-white/80 border px-1 rounded font-mono text-gray-900">{webhookUrl}</code></li>
+                    <li><strong>Headers:</strong> Add header <code className="bg-white/80 border px-1 rounded font-mono text-gray-900">x-webhook-secret</code> set to your Shared Secret above.</li>
+                    <li><strong>Data:</strong> Send Lead answers (Intake, Application Stage, Travel Dates, Phone, Name, Email, Ad Name, Form Name).</li>
+                  </ol>
                 </div>
               </div>
             </section>
