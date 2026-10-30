@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { normalizePhone } from '@/lib/phoneHelper'
+import { normalizePhone, cleanPhoneE164 } from '@/lib/phoneHelper'
 import { notifyLeadAssigned } from '@/lib/notifications'
 import crypto from 'crypto'
 
@@ -467,8 +467,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid lead data received' }, { status: 400 })
     }
 
-    // Clean phone number
-    const cleanPhone = leadData.phone ? leadData.phone.trim() : ''
+    // Clean and standardize phone to E.164 (stripping +44(0) / +440 domestic trunk zeros)
+    const phoneResult = cleanPhoneE164(leadData.phone, leadData.country)
+    const cleanPhone = phoneResult.cleanedE164Phone
 
     // Detect Country accurately from explicit country, campaign name, ad name, form name, or phone prefix
     const targetCountry = detectTargetCountry({

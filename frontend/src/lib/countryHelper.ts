@@ -292,6 +292,48 @@ export function getLeadEffectiveCountry(lead?: {
   return ''
 }
 
+export const EUROPEAN_COUNTRY_NAMES = new Set([
+  'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Ireland',
+  'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Switzerland',
+  'Austria', 'Belgium', 'Portugal', 'Czech Republic', 'Hungary',
+  'Romania', 'Greece', 'Luxembourg', 'Iceland', 'Malta', 'Cyprus',
+  'Lithuania', 'Latvia', 'Estonia', 'Croatia', 'Slovenia', 'Bulgaria',
+  'Slovakia', 'Europe'
+])
+
+/**
+ * Categorize a lead into 'UK' vs 'Europe (Excluding UK)' vs 'Other'
+ */
+export function getRegionCategory(countryOrPhone?: string | null): 'UK' | 'Europe' | 'Other' {
+  if (!countryOrPhone) return 'Other'
+  const trimmed = countryOrPhone.trim()
+
+  // 1. Check if input looks like a phone number
+  if (/^(\+?\d|\(0\)|00)/.test(trimmed)) {
+    let clean = trimmed.replace(/\(\s*0\s*\)/g, '').replace(/^00/, '+').replace(/[^\d+]/g, '')
+    if (!clean.startsWith('+')) clean = '+' + clean
+    if (clean.startsWith('+44')) return 'UK'
+    
+    // Check European dial codes
+    const euroPrefixes = [
+      '+351', '+352', '+353', '+354', '+356', '+357', '+358', '+359',
+      '+370', '+371', '+372', '+385', '+386', '+420', '+421',
+      '+30', '+31', '+32', '+33', '+34', '+36', '+39', '+40', '+41',
+      '+43', '+45', '+46', '+47', '+48', '+49'
+    ]
+    for (const code of euroPrefixes) {
+      if (clean.startsWith(code)) return 'Europe'
+    }
+  }
+
+  // 2. Check by country name
+  const resolved = resolveCountryName(trimmed)
+  if (resolved === 'UK' || resolved.toLowerCase() === 'united kingdom') return 'UK'
+  if (EUROPEAN_COUNTRY_NAMES.has(resolved) || resolved.toLowerCase() === 'europe') return 'Europe'
+
+  return 'Other'
+}
+
 export function formatCountryBadge(country?: string | null, phone?: string | null): string {
   const cacheKey = `${country || ''}_${phone || ''}`
   const cached = badgeCache.get(cacheKey)
@@ -402,13 +444,15 @@ export function matchesCountryFilter(
       return d === 'south africa'
     }
 
-    // Europe
-    if (normFilter === 'europe' || normFilter === 'eu') {
+    // Europe (Excluding UK)
+    if (normFilter === 'europe' || normFilter === 'eu' || normFilter === 'europe (excluding uk)') {
       const euro = [
-        'uk', 'united kingdom', 'germany', 'ireland', 'france', 'italy', 'spain',
+        'germany', 'ireland', 'france', 'italy', 'spain',
         'netherlands', 'sweden', 'norway', 'denmark', 'finland', 'poland',
         'switzerland', 'austria', 'belgium', 'portugal', 'czech republic',
-        'hungary', 'romania', 'greece', 'europe'
+        'hungary', 'romania', 'greece', 'luxembourg', 'iceland', 'malta',
+        'cyprus', 'lithuania', 'latvia', 'estonia', 'croatia', 'slovenia',
+        'bulgaria', 'slovakia', 'europe'
       ]
       return euro.includes(d)
     }

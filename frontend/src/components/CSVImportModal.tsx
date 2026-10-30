@@ -7,8 +7,8 @@ import {
   Sparkles, Layers, Eye
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
-import { resolveCountryName, inferCountryFromPhone } from '@/lib/countryHelper'
-import { normalizePhone } from '@/lib/phoneHelper'
+import { resolveCountryName, inferCountryFromPhone, getRegionCategory } from '@/lib/countryHelper'
+import { normalizePhone, cleanPhoneE164 } from '@/lib/phoneHelper'
 
 interface Counselor {
   id: string
@@ -325,18 +325,16 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       csvRows.forEach((row) => {
         let rawName = row[nameIdx] || 'Lead'
         let rawPhone = row[phoneIdx] || ''
+        const rawCountry = columnMapping.country !== undefined ? row[columnMapping.country] : ''
 
-        // Clean phone: strip 'p:', whitespace, parentheses, dashes
-        let cleanedPhone = rawPhone.replace(/^p:/i, '').replace(/[^\d+]/g, '')
-        if (cleanedPhone && !cleanedPhone.startsWith('+')) {
-          cleanedPhone = '+' + cleanedPhone
-        }
+        // Clean phone with strict E.164 standardization, dropping leading zeros (+44(0) / +440 -> +44)
+        const phoneResult = cleanPhoneE164(rawPhone, rawCountry)
+        const cleanedPhone = phoneResult.cleanedE164Phone
         const corePhone = normalizePhone(cleanedPhone)
 
         const rawEmail = columnMapping.email !== undefined ? row[columnMapping.email] : ''
         const cleanEmail = rawEmail ? String(rawEmail).toLowerCase().trim() : ''
         const rawCourse = columnMapping.course !== undefined ? row[columnMapping.course] : ''
-        const rawCountry = columnMapping.country !== undefined ? row[columnMapping.country] : ''
         const rawCampus = columnMapping.campus_mode !== undefined ? row[columnMapping.campus_mode] : ''
         const rawQual = columnMapping.highest_qualification !== undefined ? row[columnMapping.highest_qualification] : ''
         const rawSource = columnMapping.source !== undefined ? row[columnMapping.source] : (file?.name ? `CSV: ${file.name}` : 'CSV Import')
@@ -408,13 +406,19 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
           })
         } else {
           // BRAND NEW LEAD: Round-robin counselor distribution
+          const resolvedCountry = rawCountry 
+            ? resolveCountryName(rawCountry) 
+            : (phoneResult.countryName && phoneResult.countryName !== 'Other'
+                ? phoneResult.countryName 
+                : (inferCountryFromPhone(cleanedPhone) || null))
+
           const record: any = {
             name: rawName,
             phone: cleanedPhone,
             email: rawEmail || null,
             course: rawCourse ? formatFieldValue(rawCourse) : null,
             programme_level: rawCourse ? formatFieldValue(rawCourse) : null,
-            country: rawCountry ? resolveCountryName(rawCountry) : (inferCountryFromPhone(cleanedPhone) || null),
+            country: resolvedCountry,
             highest_qualification: rawQual || null,
             source: rawSource,
             stage: 'New',
@@ -423,6 +427,8 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
               service_type: inferredServiceType,
               campaign_answers: campaignAnswers,
               campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
+              phone_region: phoneResult.region,
+              phone_status: phoneResult.statusNotes,
               imported_file: file?.name || 'Spreadsheet',
               imported_at: new Date().toISOString()
             },

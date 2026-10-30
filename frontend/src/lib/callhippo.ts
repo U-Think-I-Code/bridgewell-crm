@@ -4,6 +4,8 @@
  * Supports CallHippo Web Dialer popup, CallHippo Chrome Extension, and tel:/callhippo: protocols.
  */
 
+import { cleanPhoneE164 } from './phoneHelper'
+
 export interface CallHippoDialerOptions {
   name?: string
   leadId?: string
@@ -11,50 +13,11 @@ export interface CallHippoDialerOptions {
 
 /**
  * Format any raw phone number into standard international E.164 format for CallHippo
+ * Strips domestic trunk zeros like +44(0) or +440 -> +44... so CallHippo never fails to connect.
  */
 export function formatPhoneNumberForCallHippo(phone: string): string {
   if (!phone) return ''
-
-  // Trim and strip non-digit, non-plus characters
-  let clean = phone.trim().replace(/[^0-9+]/g, '')
-
-  // If starts with 00 (international prefix), convert to +
-  if (clean.startsWith('00')) {
-    clean = '+' + clean.slice(2)
-  }
-
-  // If already starts with +, return as-is
-  if (clean.startsWith('+')) {
-    return clean
-  }
-
-  // If 10 digits (standard Indian mobile e.g. 9876543210), add +91
-  if (clean.length === 10 && /^[6-9]\d{9}$/.test(clean)) {
-    return '+91' + clean
-  }
-
-  // If 11 digits starting with 07 (UK mobile 07824174092 -> +447824174092)
-  if (clean.length === 11 && clean.startsWith('07')) {
-    return '+44' + clean.slice(1)
-  }
-
-  // If 11 digits starting with 0 and followed by [6-9] (Indian 0-prefixed mobile)
-  if (clean.length === 11 && clean.startsWith('0') && /^[6-9]/.test(clean.slice(1))) {
-    return '+91' + clean.slice(1)
-  }
-
-  // If 12 digits starting with 91 (India with country code but missing +)
-  if (clean.length === 12 && clean.startsWith('91')) {
-    return '+' + clean
-  }
-
-  // If 12 digits starting with 44 (UK with country code but missing +)
-  if (clean.length === 12 && clean.startsWith('44')) {
-    return '+' + clean
-  }
-
-  // Fallback: prepend +
-  return '+' + clean
+  return cleanPhoneE164(phone).cleanedE164Phone
 }
 
 /**

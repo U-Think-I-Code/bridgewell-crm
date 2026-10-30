@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { X } from 'lucide-react'
-import { normalizePhone } from '@/lib/phoneHelper'
+import { normalizePhone, cleanPhoneE164 } from '@/lib/phoneHelper'
+import { inferCountryFromPhone } from '@/lib/countryHelper'
 
 export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const [name, setName] = useState('')
@@ -20,8 +21,10 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
     e.preventDefault()
     setLoading(true)
     
-    // Normalized Duplicate Check
-    const corePhone = normalizePhone(phone)
+    // Clean and standardize phone to E.164 (stripping +44(0) / +440 domestic trunk zeros)
+    const phoneResult = cleanPhoneE164(phone)
+    const cleanedPhone = phoneResult.cleanedE164Phone
+    const corePhone = normalizePhone(cleanedPhone)
     const cleanEmail = email ? email.trim().toLowerCase() : ''
     
     let existingQuery = supabase
@@ -65,13 +68,24 @@ export default function AddLeadModal({ onClose, onSuccess }: { onClose: () => vo
       return
     }
 
+    const detectedCountry = phoneResult.countryName !== 'Other' ? phoneResult.countryName : (inferCountryFromPhone(cleanedPhone) || null)
+
     const { error } = await supabase.from('leads').insert([
       { 
-        name, phone, email, source, programme_level: programmeLevel, 
-        highest_qualification: highestQualification, work_experience: workExperience, budget_range: budgetRange,
+        name, 
+        phone: cleanedPhone, 
+        email, 
+        source, 
+        programme_level: programmeLevel, 
+        country: detectedCountry,
+        highest_qualification: highestQualification, 
+        work_experience: workExperience, 
+        budget_range: budgetRange,
         stage: 'New',
         metadata: {
-          service_type: serviceType
+          service_type: serviceType,
+          phone_region: phoneResult.region,
+          phone_status: phoneResult.statusNotes
         }
       }
     ])
