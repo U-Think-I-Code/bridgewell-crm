@@ -7,8 +7,8 @@ import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
-import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
-import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl, CallHippoLine, resolveOutboundLine } from '@/lib/callhippo'
+import { useCallHippoLine } from '@/lib/dialer'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
@@ -121,7 +121,7 @@ export default function LeadProfile() {
   const [templates, setTemplates] = useState<any[]>([])
   const [stages, setStages] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  const [preferredDialer] = usePreferredDialer()
+  const [lineConfig] = useCallHippoLine()
 
   const [note, setNote] = useState('')
   const [activeCallTimer, setActiveCallTimer] = useState<number | null>(null)
@@ -632,7 +632,7 @@ export default function LeadProfile() {
     setSavingAction(false)
   }
 
-  const handleStartCall = async (e?: React.MouseEvent) => {
+  const handleStartCall = async (e?: React.MouseEvent, targetLine?: CallHippoLine) => {
     if (e) {
       if ('preventDefault' in e && typeof e.preventDefault === 'function') {
         e.preventDefault()
@@ -644,10 +644,16 @@ export default function LeadProfile() {
     callStartTimeRef.current = now
     setActiveCallTimer(0)
 
-    const dialerObj = AVAILABLE_DIALERS.find(d => d.id === preferredDialer)
-    const dialerName = dialerObj?.shortName || 'Dialer'
-    const dialResult = triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: id, country: lead.country })
-    const popup = dialResult?.success && preferredDialer === 'callhippo' ? window : null
+    const selectedLine = targetLine || lineConfig.activeLine
+    const resolvedLine = resolveOutboundLine(selectedLine, lead.country, lead.phone)
+    const lineLabel = resolvedLine === 'usa' ? 'USA Line (+1)' : 'UK Line (+44)'
+
+    const popup = openCallHippoDialer(lead.phone, e, { 
+      name: lead.name, 
+      leadId: id, 
+      country: lead.country,
+      line: resolvedLine
+    })
 
     try {
       const { data: actData } = await supabase
@@ -658,7 +664,7 @@ export default function LeadProfile() {
             user_id: currentUser?.id || lead?.owner_id,
             type: 'call',
             outcome: 'Calling',
-            text: `📞 Calling via ${dialerName}... (Call in progress)`,
+            text: `📞 Calling via CallHippo [${lineLabel}]... (Call in progress)`,
             time: new Date().toISOString()
           }
         ])
@@ -699,8 +705,8 @@ export default function LeadProfile() {
     setActiveCallTimer(null)
 
     try {
-      const dialerName = AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Dialer'
-      const newText = `📞 ${dialerName} Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
+      const lineLabel = lineConfig.activeLine === 'usa' ? 'USA Line (+1)' : 'UK Line (+44)'
+      const newText = `📞 CallHippo Call [${lineLabel}] (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
 
       if (actId) {
         await supabase
@@ -1819,24 +1825,26 @@ export default function LeadProfile() {
             </div>
           )}
 
-          {/* Quick Action Buttons */}
+          {/* Quick Action Buttons (UK Line vs USA Line vs WhatsApp) */}
           <div className="grid grid-cols-3 gap-2 pt-1">
              <button 
                type="button"
-               onClick={(e) => handleStartCall(e)}
-               className={`flex justify-center items-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95 ${
-                 preferredDialer === 'callhippo'
-                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                   : preferredDialer === 'microsip'
-                   ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                   : preferredDialer === 'justcall'
-                   ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                   : 'bg-gray-800 hover:bg-gray-900 text-white'
-               }`}
-               title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
+               onClick={(e) => handleStartCall(e, 'uk')}
+               className="flex justify-center items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
+               title="Call via CallHippo using UK Number (+44)"
              >
                 <Phone size={13} className="shrink-0" />
-                <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
+                <span className="truncate">🇬🇧 Call UK (+44)</span>
+             </button>
+
+             <button 
+               type="button"
+               onClick={(e) => handleStartCall(e, 'usa')}
+               className="flex justify-center items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
+               title="Call via CallHippo using USA Number (+1)"
+             >
+                <Phone size={13} className="shrink-0" />
+                <span className="truncate">🇺🇸 Call USA (+1)</span>
              </button>
 
              <a 

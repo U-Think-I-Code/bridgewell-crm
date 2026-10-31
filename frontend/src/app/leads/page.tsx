@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } fr
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
-import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
+import { useCallHippoLine } from '@/lib/dialer'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 import AddLeadModal from '@/components/AddLeadModal'
@@ -28,7 +28,7 @@ function LeadsContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [bulkTargetCounselor, setBulkTargetCounselor] = useState<string>('')
   const [bulkProcessing, setBulkProcessing] = useState(false)
-  const [preferredDialer] = usePreferredDialer()
+  const [lineConfig] = useCallHippoLine()
   const [updatingStageId, setUpdatingStageId] = useState<string | null>(null)
   const { user } = useAuth()
   const searchParams = useSearchParams()
@@ -1791,27 +1791,37 @@ function LeadsContent() {
                     <td className="px-6 py-4 text-gray-600">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-gray-900">{lead.phone}</span>
+                        
+                        {/* Primary Call Button (using current active line) */}
                         <a
-                          href={getDialerUrl(preferredDialer, lead.phone, { name: lead.name, leadId: lead.id, country: lead.country })}
-                          onClick={(e) => triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country })}
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer shadow-2xs ${
-                            preferredDialer === 'callhippo'
-                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
-                              : preferredDialer === 'microsip'
-                              ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
-                              : preferredDialer === 'justcall'
-                              ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
-                              : 'text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300'
-                          }`}
-                          title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
+                          href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
+                          onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer shadow-2xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                          title={`Call via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
                         >
-                          <Phone size={11} className={
-                            preferredDialer === 'callhippo' ? 'text-emerald-600' :
-                            preferredDialer === 'microsip' ? 'text-purple-600' :
-                            preferredDialer === 'justcall' ? 'text-blue-600' : 'text-gray-600'
-                          } />
-                          <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
+                          <Phone size={11} className="text-emerald-600" />
+                          <span>Call</span>
                         </a>
+
+                        {/* Direct Line Selection: UK vs USA Number */}
+                        <div className="inline-flex items-center rounded-md border border-gray-200 overflow-hidden text-[10px] bg-white shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
+                            className="px-1.5 py-0.5 hover:bg-blue-50 hover:text-blue-700 text-gray-600 font-semibold border-r border-gray-200 transition-colors cursor-pointer"
+                            title="Call using UK Number (+44)"
+                          >
+                            🇬🇧 UK
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
+                            className="px-1.5 py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600 font-semibold transition-colors cursor-pointer"
+                            title="Call using USA Number (+1)"
+                          >
+                            🇺🇸 USA
+                          </button>
+                        </div>
                       </div>
                     </td>
                     
@@ -2018,27 +2028,24 @@ function LeadsContent() {
                         </div>
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs text-gray-500 font-medium">{lead.phone}</p>
-                          <a
-                            href={getDialerUrl(preferredDialer, lead.phone, { name: lead.name, leadId: lead.id, country: lead.country })}
-                            onClick={(e) => triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country })}
-                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
-                              preferredDialer === 'callhippo'
-                                ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
-                                : preferredDialer === 'microsip'
-                                ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
-                                : preferredDialer === 'justcall'
-                                ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
-                                : 'text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300'
-                            }`}
-                            title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
-                          >
-                            <Phone size={11} className={
-                              preferredDialer === 'callhippo' ? 'text-emerald-600' :
-                              preferredDialer === 'microsip' ? 'text-purple-600' :
-                              preferredDialer === 'justcall' ? 'text-blue-600' : 'text-gray-600'
-                            } />
-                            <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
-                          </a>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
+                              title="Call using UK Line (+44)"
+                            >
+                              🇬🇧 UK
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
+                              title="Call using USA Line (+1)"
+                            >
+                              🇺🇸 USA
+                            </button>
+                          </div>
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100 text-[10px]">
                           <div className="flex items-center gap-1.5 flex-wrap">

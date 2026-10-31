@@ -6,14 +6,17 @@ import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, Log
 import { useAuth } from '@/components/AuthWrapper'
 import { useNotifications } from '@/components/NotificationContext'
 import { canManageLeads, isManager } from '@/lib/teamHelper'
-import { usePreferredDialer, AVAILABLE_DIALERS } from '@/lib/dialer'
+import { useCallHippoLine } from '@/lib/dialer'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout } = useAuth()
   const { unreadCount, openDrawer, openSendModal } = useNotifications()
-  const [preferredDialer, setPreferredDialer] = usePreferredDialer()
+  const [lineConfig, updateLineConfig] = useCallHippoLine()
+  const [showNumberModal, setShowNumberModal] = useState(false)
+  const [tempUkNumber, setTempUkNumber] = useState('')
+  const [tempUsaNumber, setTempUsaNumber] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
 
   const links = [
@@ -112,94 +115,153 @@ export default function Sidebar() {
           </button>
         </div>
       )}
-      {/* Interactive Dialer Selector for Counselors & Managers */}
+      {/* CallHippo Outbound Line Switcher (UK vs USA Line) */}
       <div className="px-3 mb-2">
         <div className="bg-white border border-gray-200 rounded-xl p-2.5 shadow-2xs">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
-              <Phone size={11} className="text-emerald-600" />
-              Calling Dialer
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              CallHippo Line
             </span>
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
-              preferredDialer === 'callhippo'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : preferredDialer === 'microsip'
-                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                : preferredDialer === 'justcall'
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : 'bg-gray-100 text-gray-700 border-gray-200'
-            }`}>
-              {AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || preferredDialer}
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setTempUkNumber(lineConfig.ukNumber || '')
+                setTempUsaNumber(lineConfig.usaNumber || '')
+                setShowNumberModal(true)
+              }}
+              className="text-[10px] text-gray-400 hover:text-emerald-700 transition-colors p-0.5 rounded cursor-pointer"
+              title="Configure My Assigned UK & USA CallHippo Numbers"
+            >
+              <Settings size={12} />
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200/50 mb-1.5">
+          {/* 3-way Line Switcher */}
+          <div className="grid grid-cols-3 gap-1 bg-gray-100/90 p-0.5 rounded-lg border border-gray-200/60 mb-2">
             <button
               type="button"
-              onClick={() => setPreferredDialer('callhippo')}
-              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'callhippo'
-                  ? 'bg-white text-emerald-700 shadow-2xs font-bold border border-emerald-200'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-              title="Activate CallHippo (Web Dialer & Extension)"
-            >
-              <span>CallHippo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPreferredDialer('microsip')}
-              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'microsip'
-                  ? 'bg-white text-purple-700 shadow-2xs font-bold border border-purple-200'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-              title="Activate MicroSIP (Desktop Softphone)"
-            >
-              <span>MicroSIP</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPreferredDialer('justcall')}
-              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'justcall'
+              onClick={() => updateLineConfig({ activeLine: 'uk' })}
+              className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                lineConfig.activeLine === 'uk'
                   ? 'bg-white text-blue-700 shadow-2xs font-bold border border-blue-200'
-                  : 'text-gray-500 hover:text-gray-900'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
-              title="Activate JustCall"
+              title="Outgoing calls connect using UK Number (+44)"
             >
-              <span>JustCall</span>
+              <span>🇬🇧 UK</span>
             </button>
             <button
               type="button"
-              onClick={() => setPreferredDialer('tel')}
-              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                preferredDialer === 'tel'
-                  ? 'bg-white text-gray-800 shadow-2xs font-bold border border-gray-300'
-                  : 'text-gray-500 hover:text-gray-900'
+              onClick={() => updateLineConfig({ activeLine: 'usa' })}
+              className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                lineConfig.activeLine === 'usa'
+                  ? 'bg-white text-emerald-700 shadow-2xs font-bold border border-emerald-200'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
-              title="Activate Default Phone (tel:)"
+              title="Outgoing calls connect using USA Number (+1)"
             >
-              <span>Phone</span>
+              <span>🇺🇸 USA</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateLineConfig({ activeLine: 'auto' })}
+              className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                lineConfig.activeLine === 'auto'
+                  ? 'bg-white text-purple-700 shadow-2xs font-bold border border-purple-200'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              title="Smart Auto: USA leads use USA line; UK/EU leads use UK line"
+            >
+              <span>⚡ Auto</span>
             </button>
           </div>
 
-          {preferredDialer === 'callhippo' && (
+          <div className="flex items-center justify-between text-[10px] text-gray-500 pt-1 border-t border-gray-100">
+            <span className="font-medium truncate max-w-[130px]">
+              {lineConfig.activeLine === 'uk' ? '🇬🇧 UK Line (+44)' : lineConfig.activeLine === 'usa' ? '🇺🇸 USA Line (+1)' : '⚡ Auto-match'}
+            </span>
             <a
               href="https://dialer.callhippo.com/dial"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-between text-[10px] text-emerald-700 font-semibold hover:underline pt-0.5"
+              className="text-emerald-700 font-semibold hover:underline shrink-0"
+              title="Open CallHippo Web Dialer"
             >
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Open Web Dialer
-              </span>
-              <span>&rarr;</span>
+              Dialer &rarr;
             </a>
-          )}
+          </div>
         </div>
       </div>
+
+      {/* Configure Assigned CallHippo Numbers Modal */}
+      {showNumberModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-100 animate-scale-in">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                <Phone size={14} className="text-emerald-600" />
+                <span>My CallHippo Numbers</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNumberModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+              Agar CallHippo me aapke paas do alag numbers hain (UK and USA), to yahan save kar lijiye. Call lagane par wahi number se call jayegi.
+            </p>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  🇬🇧 UK Virtual Number (e.g. +447123456789)
+                </label>
+                <input
+                  type="text"
+                  value={tempUkNumber}
+                  onChange={(e) => setTempUkNumber(e.target.value)}
+                  placeholder="+44..."
+                  className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  🇺🇸 USA Virtual Number (e.g. +12025550123)
+                </label>
+                <input
+                  type="text"
+                  value={tempUsaNumber}
+                  onChange={(e) => setTempUsaNumber(e.target.value)}
+                  placeholder="+1..."
+                  className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNumberModal(false)}
+                className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateLineConfig({ ukNumber: tempUkNumber.trim(), usaNumber: tempUsaNumber.trim() })
+                  setShowNumberModal(false)
+                }}
+                className="px-4 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs"
+              >
+                Save Numbers
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="p-3 mx-3 mt-auto mb-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-3">
         {/* Avatar with initials */}

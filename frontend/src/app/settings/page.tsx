@@ -12,10 +12,11 @@ import {
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { openCallHippoDialer, getCallHippoDialerUrl, getPreferredDialer, setPreferredDialer, usePreferredDialer, DialerType } from '@/lib/dialer'
+import { openCallHippoDialer, getCallHippoDialerUrl, getPreferredDialer, setPreferredDialer, usePreferredDialer, DialerType, useCallHippoLine } from '@/lib/dialer'
 
 export default function SettingsPage() {
   const { user } = useAuth()
+  const [lineConfig, updateLineConfig] = useCallHippoLine()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'pipeline' | 'meta' | 'callhippo' | 'backup' | 'email'>('pipeline')
   const [stages, setStages] = useState<any[]>([])
@@ -945,6 +946,61 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* CallHippo Outbound Lines Configuration Card */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">CallHippo Outbound Lines &amp; Caller ID (UK vs USA)</h3>
+                  <p className="text-gray-500 text-xs">Configure your UK (+44) and USA (+1) virtual numbers assigned to your counselor account in CallHippo.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 my-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Active Calling Line
+                  </label>
+                  <select
+                    value={lineConfig.activeLine}
+                    onChange={(e) => updateLineConfig({ activeLine: e.target.value as any })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-200 cursor-pointer"
+                  >
+                    <option value="uk">🇬🇧 UK Line (+44)</option>
+                    <option value="usa">🇺🇸 USA Line (+1)</option>
+                    <option value="auto">⚡ Smart Auto (Matches lead's country)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    🇬🇧 My UK Virtual Number
+                  </label>
+                  <input
+                    type="text"
+                    value={lineConfig.ukNumber}
+                    onChange={(e) => updateLineConfig({ ukNumber: e.target.value })}
+                    placeholder="+44..."
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-800 outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Leave empty to use CallHippo default UK line</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    🇺🇸 My USA Virtual Number
+                  </label>
+                  <input
+                    type="text"
+                    value={lineConfig.usaNumber}
+                    onChange={(e) => updateLineConfig({ usaNumber: e.target.value })}
+                    placeholder="+1..."
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-800 outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Leave empty to use CallHippo default USA line</p>
+                </div>
+              </div>
+            </section>
 
             {/* Webhook Configuration Card */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">

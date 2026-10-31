@@ -11,7 +11,7 @@ import {
 import { playNotificationSound, startContinuousAlarm, stopContinuousAlarm } from '@/lib/notifications'
 import { getFollowUpStatus } from '@/lib/followupRules'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
-import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
+import { useCallHippoLine } from '@/lib/dialer'
 
 interface DueLead {
   id: string
@@ -25,7 +25,7 @@ interface DueLead {
 }
 
 export default function AutoReminderWatcher() {
-  const [preferredDialer] = usePreferredDialer()
+  const [lineConfig] = useCallHippoLine()
   const { user } = useAuth()
   const router = useRouter()
 
@@ -269,27 +269,35 @@ export default function AutoReminderWatcher() {
               </div>
             </div>
 
-            {/* Direct Calling & Action Buttons */}
-            <div className="grid grid-cols-2 gap-1.5 mb-3">
-              <a
-                id="alarm-popup-call-btn"
-                href={getDialerUrl(preferredDialer, activePopupLead.phone, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country })}
+            {/* Direct Calling & Action Buttons: UK Line vs USA Line */}
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
+              <button
+                type="button"
                 onClick={(e) => {
                   stopContinuousAlarm()
                   setActivePopupLead(null)
-                  triggerDial(preferredDialer, activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country })
+                  openCallHippoDialer(activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country, line: 'uk' })
                 }}
-                className={`py-2 px-2 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center ${
-                  preferredDialer === 'callhippo' ? 'bg-emerald-600 hover:bg-emerald-700' :
-                  preferredDialer === 'microsip' ? 'bg-purple-600 hover:bg-purple-700' :
-                  preferredDialer === 'justcall' ? 'bg-blue-600 hover:bg-blue-700' :
-                  'bg-gray-800 hover:bg-gray-900'
-                }`}
-                title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
+                className="py-2 px-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                title="Call via CallHippo using UK Number (+44)"
               >
-                <Phone size={13} />
-                <span className="truncate">{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
-              </a>
+                <Phone size={12} />
+                <span className="truncate">🇬🇧 UK</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  stopContinuousAlarm()
+                  setActivePopupLead(null)
+                  openCallHippoDialer(activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country, line: 'usa' })
+                }}
+                className="py-2 px-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                title="Call via CallHippo using USA Number (+1)"
+              >
+                <Phone size={12} />
+                <span className="truncate">🇺🇸 USA</span>
+              </button>
 
               <a
                 id="alarm-popup-wa-btn"
@@ -300,9 +308,10 @@ export default function AutoReminderWatcher() {
                   stopContinuousAlarm()
                   setActivePopupLead(null)
                 }}
-                className="py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
+                className="py-2 px-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-2xs active:scale-98 text-center"
+                title="Chat on WhatsApp"
               >
-                <MessageCircle size={13} />
+                <MessageCircle size={12} className="text-emerald-600 shrink-0" />
                 <span className="truncate">WhatsApp</span>
               </a>
             </div>

@@ -1,20 +1,100 @@
 /**
- * CallHippo Dialer Integration
+ * CallHippo Cloud Dialer Integration
  * Official Cloud Calling Solution for Bridgewell CRM
- * Supports CallHippo Web Dialer popup, CallHippo Chrome Extension, and tel:/callhippo: protocols.
+ * Supports Multi-Number Outbound Line Selection (UK Number +44 vs USA Number +1 vs Auto-Match)
  */
 
 import { cleanPhoneE164 } from './phoneHelper'
+
+export type CallHippoLine = 'uk' | 'usa' | 'auto'
+
+export interface CallHippoLineConfig {
+  activeLine: CallHippoLine
+  ukNumber: string  // e.g. "+447123456789"
+  usaNumber: string // e.g. "+12025550123"
+}
+
+const LINE_CONFIG_KEY = 'bridgewell_callhippo_line_config'
+
+export function getCallHippoLineConfig(): CallHippoLineConfig {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(LINE_CONFIG_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          activeLine: (parsed.activeLine === 'usa' || parsed.activeLine === 'auto') ? parsed.activeLine : 'uk',
+          ukNumber: parsed.ukNumber || '',
+          usaNumber: parsed.usaNumber || ''
+        }
+      }
+    } catch {}
+  }
+  return {
+    activeLine: 'uk',
+    ukNumber: '',
+    usaNumber: ''
+  }
+}
+
+export function setCallHippoLineConfig(config: Partial<CallHippoLineConfig>): void {
+  if (typeof window !== 'undefined') {
+    try {
+      const current = getCallHippoLineConfig()
+      const updated: CallHippoLineConfig = {
+        ...current,
+        ...config
+      }
+      localStorage.setItem(LINE_CONFIG_KEY, JSON.stringify(updated))
+      window.dispatchEvent(new CustomEvent('callhippo_line_changed', { detail: updated }))
+    } catch {}
+  }
+}
+
+export function getActiveLine(): CallHippoLine {
+  return getCallHippoLineConfig().activeLine
+}
+
+export function setActiveLine(line: CallHippoLine): void {
+  setCallHippoLineConfig({ activeLine: line })
+}
+
+/**
+ * Resolves whether a call should be placed using the UK or USA outbound line.
+ * If line is 'auto', inspects the lead's country or phone dial code (+1 -> USA, +44/other -> UK).
+ */
+export function resolveOutboundLine(
+  line: CallHippoLine,
+  leadCountry?: string | null,
+  leadPhone?: string | null
+): 'uk' | 'usa' {
+  if (line === 'uk') return 'uk'
+  if (line === 'usa') return 'usa'
+
+  // Auto-detection logic:
+  const c = (leadCountry || '').toLowerCase().trim()
+  if (c === 'usa' || c === 'united states' || c === 'us' || c === 'canada' || c === 'can' || c === 'ca') {
+    return 'usa'
+  }
+
+  const p = (leadPhone || '').replace(/[^\d+]/g, '')
+  if (p.startsWith('+1') || (p.startsWith('1') && p.length === 11)) {
+    return 'usa'
+  }
+
+  return 'uk'
+}
 
 export interface CallHippoDialerOptions {
   name?: string
   leadId?: string
   country?: string
+  line?: CallHippoLine
+  fromNumber?: string
 }
 
 /**
  * Format any raw phone number into standard international E.164 format for CallHippo
- * Strips domestic trunk zeros like +44(0) or +440 -> +44... so CallHippo never fails to connect.
  */
 export function formatPhoneNumberForCallHippo(phone: string, hintCountry?: string): string {
   if (!phone) return ''
@@ -22,22 +102,40 @@ export function formatPhoneNumberForCallHippo(phone: string, hintCountry?: strin
 }
 
 /**
- * Generate the official CallHippo Web Dialer URL.
- * CallHippo's web dialer specifically parses:
- * - `to`: Read by CallHippo's query parser to populate the dialer input (`telNo`) and activate `isClickToCallURL`
- * - `phoneNumber`: Handled by CallHippo `isOpenDialerWithNumber`
- * - `number`: Kept for extension & backwards compatibility
+ * Generate official CallHippo Web Dialer URL with outbound Line & Caller ID parameters
  */
 export function getCallHippoDialerUrl(phone: string, options?: CallHippoDialerOptions): string {
   if (!phone) return 'https://dialer.callhippo.com/dial'
 
-  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country)
+  const linePreference = options?.line || getActiveLine()
+  const resolvedLine = resolveOutboundLine(linePreference, options?.country, phone)
+  const lineConfig = getCallHippoLineConfig()
+
+  const fromNumber = options?.fromNumber || (resolvedLine === 'usa' ? lineConfig.usaNumber : lineConfig.ukNumber)
+  const lineCountryCode = resolvedLine === 'usa' ? '1' : '44'
+  const lineCountryName = resolvedLine === 'usa' ? 'US' : 'UK'
+
+  // Destination phone formatted according to target country or line
+  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
   const params = new URLSearchParams()
 
   // Primary CallHippo click-to-call parameters
   params.set('to', cleanPhone)
   params.set('phoneNumber', cleanPhone)
   params.set('number', cleanPhone)
+
+  // Outbound Number / Caller ID configuration for CallHippo
+  if (fromNumber) {
+    const cleanFrom = fromNumber.replace(/[^\d+]/g, '')
+    params.set('from', cleanFrom)
+    params.set('callerId', cleanFrom)
+    params.set('outboundNumber', cleanFrom)
+  }
+
+  params.set('countryCode', lineCountryCode)
+  params.set('country', lineCountryName)
+  params.set('outboundCountry', lineCountryName)
+  params.set('line', resolvedLine)
 
   if (options?.name) {
     params.set('contactName', options.name)
@@ -51,8 +149,8 @@ export function getCallHippoDialerUrl(phone: string, options?: CallHippoDialerOp
 }
 
 /**
- * Opens CallHippo Web Dialer popup pre-loaded with the phone number,
- * copies the number to clipboard, and triggers tel: for desktop softphones.
+ * Opens CallHippo Web Dialer popup pre-loaded with phone number & selected outbound line,
+ * copies the number to clipboard, and triggers tel: protocol.
  */
 export function openCallHippoDialer(
   phone: string,
@@ -70,7 +168,9 @@ export function openCallHippoDialer(
 
   if (!phone) return null
 
-  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country)
+  const linePreference = options?.line || getActiveLine()
+  const resolvedLine = resolveOutboundLine(linePreference, options?.country, phone)
+  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
   const url = getCallHippoDialerUrl(phone, options)
 
   // Copy cleaned phone number to clipboard for instant convenience
@@ -103,7 +203,7 @@ export function openCallHippoDialer(
       }
     }
 
-    // 2. Also trigger tel: protocol so CallHippo Chrome Extension / Desktop App automatically catches it
+    // 2. Also trigger tel: protocol so CallHippo Chrome Extension automatically catches it
     try {
       const telLink = document.createElement('a')
       telLink.href = `tel:${cleanPhone}`
@@ -115,9 +215,7 @@ export function openCallHippoDialer(
           document.body.removeChild(telLink)
         }
       }, 300)
-    } catch {
-      // Ignore protocol trigger error if browser blocked
-    }
+    } catch {}
 
     return popup
   }
