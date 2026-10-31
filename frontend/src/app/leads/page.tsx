@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } fr
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 import AddLeadModal from '@/components/AddLeadModal'
@@ -27,6 +28,8 @@ function LeadsContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [bulkTargetCounselor, setBulkTargetCounselor] = useState<string>('')
   const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [preferredDialer] = usePreferredDialer()
+  const [updatingStageId, setUpdatingStageId] = useState<string | null>(null)
   const { user } = useAuth()
   const searchParams = useSearchParams()
   const searchQuery = searchParams?.get('search') || ''
@@ -550,7 +553,7 @@ function LeadsContent() {
     await supabase.from('leads').update({ last_call_outcome: val }).eq('id', leadId)
 
     if (val) {
-      const isUnanswered = ['No Answer', 'Busy'].includes(val)
+      const isUnanswered = ['No Answer', 'Busy', 'Not Connected', 'Not connected'].includes(val)
       const leadItem = leads.find(l => l.id === leadId)
       if (isUnanswered && leadItem) {
         const newAttempts = (leadItem.attempts || 0) + 1
@@ -566,6 +569,59 @@ function LeadsContent() {
         text: `Call outcome marked as ${val}`,
         time: new Date().toISOString()
       }])
+    }
+  }
+
+  const getStageBadgeClass = (stage?: string | null): string => {
+    const s = (stage || '').toLowerCase().trim()
+    if (s === 'new') return 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/80'
+    if (s === 'attempted contact') return 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80'
+    if (s === 'not connected') return 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100/80 font-semibold'
+    if (s === 'connected') return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80 font-semibold'
+    if (s === 'qualified') return 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100/80'
+    if (s === 'counselling done') return 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/80'
+    if (s === 'documents in progress') return 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/80'
+    if (s === 'application submitted') return 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100/80'
+    if (s === 'offer received') return 'bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100/80'
+    if (s === 'enrolled') return 'bg-green-100 text-green-900 border-green-300 font-bold hover:bg-green-200/80'
+    if (s === 'not reachable') return 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/80'
+    if (s === 'not interested') return 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200/80'
+    if (s === 'lost') return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/80'
+    if (s === 'junk/duplicate') return 'bg-gray-200 text-gray-600 border-gray-300 hover:bg-gray-300/80'
+    return 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200/80'
+  }
+
+  const handleUpdateLeadStage = async (leadId: string, newStage: string) => {
+    if (!newStage) return
+    const lead = leads.find(l => l.id === leadId)
+    if (!lead || lead.stage === newStage) return
+
+    setUpdatingStageId(leadId)
+    // Optimistic UI update
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: newStage } : l))
+
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ stage: newStage, updated_at: new Date().toISOString() })
+        .eq('id', leadId)
+
+      if (error) throw error
+
+      await supabase.from('activities').insert([{
+        lead: leadId,
+        user_id: user?.id,
+        type: newStage === 'Junk/duplicate' ? 'junk_marked' : 'stage change',
+        text: `Changed stage to ${newStage}`,
+        time: new Date().toISOString()
+      }])
+    } catch (err: any) {
+      console.error('Failed to update stage:', err)
+      alert('Failed to update stage: ' + (err.message || 'Unknown error'))
+      // Rollback
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: lead.stage } : l))
+    } finally {
+      setUpdatingStageId(null)
     }
   }
 
@@ -1736,13 +1792,25 @@ function LeadsContent() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-gray-900">{lead.phone}</span>
                         <a
-                          href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
-                          onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
-                          title="Call via CallHippo"
+                          href={getDialerUrl(preferredDialer, lead.phone, { name: lead.name, leadId: lead.id, country: lead.country })}
+                          onClick={(e) => triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country })}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer shadow-2xs ${
+                            preferredDialer === 'callhippo'
+                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                              : preferredDialer === 'microsip'
+                              ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
+                              : preferredDialer === 'justcall'
+                              ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
+                              : 'text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300'
+                          }`}
+                          title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
                         >
-                          <Phone size={11} className="text-emerald-600" />
-                          <span>CallHippo</span>
+                          <Phone size={11} className={
+                            preferredDialer === 'callhippo' ? 'text-emerald-600' :
+                            preferredDialer === 'microsip' ? 'text-purple-600' :
+                            preferredDialer === 'justcall' ? 'text-blue-600' : 'text-gray-600'
+                          } />
+                          <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
                         </a>
                       </div>
                     </td>
@@ -1754,6 +1822,11 @@ function LeadsContent() {
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-2xs">
                             <PhoneCall size={12} className="text-emerald-600" />
                             <span>Connected</span>
+                          </span>
+                        ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors shadow-2xs">
+                            <PhoneOff size={12} className="text-orange-600" />
+                            <span>Not Connected</span>
                           </span>
                         ) : lead.last_call_outcome === 'No Answer' ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors shadow-2xs">
@@ -1831,10 +1904,32 @@ function LeadsContent() {
                       )}
                     </td>
 
+                    {/* Stage Name Column (Interactive Inline Dropdown) */}
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
-                        {lead.stage}
-                      </span>
+                      <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={lead.stage || 'New'}
+                          disabled={updatingStageId === lead.id}
+                          onChange={(e) => handleUpdateLeadStage(lead.id, e.target.value)}
+                          title="Click to update pipeline stage"
+                          className={`text-xs font-semibold px-2.5 py-1 rounded-md border outline-none cursor-pointer transition-all shadow-2xs ${
+                            updatingStageId === lead.id
+                              ? 'opacity-50 cursor-wait bg-gray-100 text-gray-400 border-gray-200'
+                              : getStageBadgeClass(lead.stage)
+                          }`}
+                        >
+                          {stages.map(s => (
+                            <option key={s} value={s} className="bg-white text-gray-900 font-medium">
+                              {s}
+                            </option>
+                          ))}
+                          {lead.stage && !stages.includes(lead.stage) && (
+                            <option value={lead.stage} className="bg-white text-gray-900 font-medium">
+                              {lead.stage}
+                            </option>
+                          )}
+                        </select>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-gray-500">{new Date(lead.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
@@ -1924,13 +2019,25 @@ function LeadsContent() {
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs text-gray-500 font-medium">{lead.phone}</p>
                           <a
-                            href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
-                            onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-semibold transition-colors cursor-pointer"
-                            title="Call via CallHippo"
+                            href={getDialerUrl(preferredDialer, lead.phone, { name: lead.name, leadId: lead.id, country: lead.country })}
+                            onClick={(e) => triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country })}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                              preferredDialer === 'callhippo'
+                                ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                                : preferredDialer === 'microsip'
+                                ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
+                                : preferredDialer === 'justcall'
+                                ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
+                                : 'text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300'
+                            }`}
+                            title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
                           >
-                            <Phone size={11} className="text-emerald-600" />
-                            <span>Call</span>
+                            <Phone size={11} className={
+                              preferredDialer === 'callhippo' ? 'text-emerald-600' :
+                              preferredDialer === 'microsip' ? 'text-purple-600' :
+                              preferredDialer === 'justcall' ? 'text-blue-600' : 'text-gray-600'
+                            } />
+                            <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
                           </a>
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100 text-[10px]">

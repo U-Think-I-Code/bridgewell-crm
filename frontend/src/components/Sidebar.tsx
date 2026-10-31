@@ -6,12 +6,14 @@ import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, Log
 import { useAuth } from '@/components/AuthWrapper'
 import { useNotifications } from '@/components/NotificationContext'
 import { canManageLeads, isManager } from '@/lib/teamHelper'
+import { usePreferredDialer, AVAILABLE_DIALERS } from '@/lib/dialer'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout } = useAuth()
   const { unreadCount, openDrawer, openSendModal } = useNotifications()
+  const [preferredDialer, setPreferredDialer] = usePreferredDialer()
   const [searchQuery, setSearchQuery] = useState('')
 
   const links = [
@@ -110,34 +112,93 @@ export default function Sidebar() {
           </button>
         </div>
       )}
-      {/* CallHippo Dialer Status for Counselors & Managers */}
+      {/* Interactive Dialer Selector for Counselors & Managers */}
       <div className="px-3 mb-2">
-        <a
-          href="https://dialer.callhippo.com/dial"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block bg-gradient-to-r from-emerald-50 via-teal-50/50 to-emerald-50 border border-emerald-200 hover:border-emerald-300 rounded-xl p-2.5 transition-all shadow-2xs group"
-          title="Click to open CallHippo Web Dialer"
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              CallHippo Dialer
-            </span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
-              Active
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium pt-0.5">
-            <span className="flex items-center gap-1 text-gray-700 font-semibold">
+        <div className="bg-white border border-gray-200 rounded-xl p-2.5 shadow-2xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
               <Phone size={11} className="text-emerald-600" />
-              Click-to-Call
+              Calling Dialer
             </span>
-            <span className="text-[10px] text-emerald-700 font-semibold group-hover:underline">
-              Open Dialer &rarr;
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+              preferredDialer === 'callhippo'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : preferredDialer === 'microsip'
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : preferredDialer === 'justcall'
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-gray-100 text-gray-700 border-gray-200'
+            }`}>
+              {AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || preferredDialer}
             </span>
           </div>
-        </a>
+
+          <div className="grid grid-cols-2 gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200/50 mb-1.5">
+            <button
+              type="button"
+              onClick={() => setPreferredDialer('callhippo')}
+              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                preferredDialer === 'callhippo'
+                  ? 'bg-white text-emerald-700 shadow-2xs font-bold border border-emerald-200'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Activate CallHippo (Web Dialer & Extension)"
+            >
+              <span>CallHippo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreferredDialer('microsip')}
+              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                preferredDialer === 'microsip'
+                  ? 'bg-white text-purple-700 shadow-2xs font-bold border border-purple-200'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Activate MicroSIP (Desktop Softphone)"
+            >
+              <span>MicroSIP</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreferredDialer('justcall')}
+              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                preferredDialer === 'justcall'
+                  ? 'bg-white text-blue-700 shadow-2xs font-bold border border-blue-200'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Activate JustCall"
+            >
+              <span>JustCall</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreferredDialer('tel')}
+              className={`py-1 px-1.5 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                preferredDialer === 'tel'
+                  ? 'bg-white text-gray-800 shadow-2xs font-bold border border-gray-300'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Activate Default Phone (tel:)"
+            >
+              <span>Phone</span>
+            </button>
+          </div>
+
+          {preferredDialer === 'callhippo' && (
+            <a
+              href="https://dialer.callhippo.com/dial"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between text-[10px] text-emerald-700 font-semibold hover:underline pt-0.5"
+            >
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Open Web Dialer
+              </span>
+              <span>&rarr;</span>
+            </a>
+          )}
+        </div>
       </div>
       
       <div className="p-3 mx-3 mt-auto mb-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-3">

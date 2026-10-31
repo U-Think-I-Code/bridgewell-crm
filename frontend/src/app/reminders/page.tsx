@@ -18,6 +18,7 @@ import {
   toLocalDatetimeString,
 } from '@/lib/followupRules'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
 
 interface LeadItem {
   id: string
@@ -39,6 +40,7 @@ interface LeadItem {
 export default function RemindersPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const [preferredDialer] = usePreferredDialer()
 
   const [leads, setLeads] = useState<LeadItem[]>([])
   const [counselors, setCounselors] = useState<any[]>([])
@@ -623,15 +625,20 @@ export default function RemindersPage() {
 
                 {/* Actions Row */}
                 <div className="flex items-center gap-2 flex-wrap self-end lg:self-center shrink-0">
-                  {/* CallHippo Button */}
+                  {/* Dialer Button */}
                   <a
-                    href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
-                    onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
-                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
-                    title="Call via CallHippo"
+                    href={getDialerUrl(preferredDialer, lead.phone, { name: lead.name, leadId: lead.id, country: lead.country })}
+                    onClick={(e) => triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: lead.id, country: lead.country })}
+                    className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95 ${
+                      preferredDialer === 'callhippo' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                      preferredDialer === 'microsip' ? 'bg-purple-600 hover:bg-purple-700' :
+                      preferredDialer === 'justcall' ? 'bg-blue-600 hover:bg-blue-700' :
+                      'bg-gray-800 hover:bg-gray-900'
+                    }`}
+                    title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
                   >
                     <Phone size={13} />
-                    <span>CallHippo</span>
+                    <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
                   </a>
 
                   {/* WhatsApp */}

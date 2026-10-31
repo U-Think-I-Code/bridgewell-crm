@@ -9,15 +9,16 @@ import { cleanPhoneE164 } from './phoneHelper'
 export interface CallHippoDialerOptions {
   name?: string
   leadId?: string
+  country?: string
 }
 
 /**
  * Format any raw phone number into standard international E.164 format for CallHippo
  * Strips domestic trunk zeros like +44(0) or +440 -> +44... so CallHippo never fails to connect.
  */
-export function formatPhoneNumberForCallHippo(phone: string): string {
+export function formatPhoneNumberForCallHippo(phone: string, hintCountry?: string): string {
   if (!phone) return ''
-  return cleanPhoneE164(phone).cleanedE164Phone
+  return cleanPhoneE164(phone, hintCountry).cleanedE164Phone
 }
 
 /**
@@ -30,7 +31,7 @@ export function formatPhoneNumberForCallHippo(phone: string): string {
 export function getCallHippoDialerUrl(phone: string, options?: CallHippoDialerOptions): string {
   if (!phone) return 'https://dialer.callhippo.com/dial'
 
-  const cleanPhone = formatPhoneNumberForCallHippo(phone)
+  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country)
   const params = new URLSearchParams()
 
   // Primary CallHippo click-to-call parameters
@@ -69,7 +70,7 @@ export function openCallHippoDialer(
 
   if (!phone) return null
 
-  const cleanPhone = formatPhoneNumberForCallHippo(phone)
+  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country)
   const url = getCallHippoDialerUrl(phone, options)
 
   // Copy cleaned phone number to clipboard for instant convenience

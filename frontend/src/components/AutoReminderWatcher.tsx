@@ -11,6 +11,7 @@ import {
 import { playNotificationSound, startContinuousAlarm, stopContinuousAlarm } from '@/lib/notifications'
 import { getFollowUpStatus } from '@/lib/followupRules'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
 
 interface DueLead {
   id: string
@@ -20,9 +21,11 @@ interface DueLead {
   priority?: string
   next_follow_up: string
   stage: string
+  country?: string
 }
 
 export default function AutoReminderWatcher() {
+  const [preferredDialer] = usePreferredDialer()
   const { user } = useAuth()
   const router = useRouter()
 
@@ -270,17 +273,22 @@ export default function AutoReminderWatcher() {
             <div className="grid grid-cols-2 gap-1.5 mb-3">
               <a
                 id="alarm-popup-call-btn"
-                href={getCallHippoDialerUrl(activePopupLead.phone, { name: activePopupLead.name, leadId: activePopupLead.id })}
+                href={getDialerUrl(preferredDialer, activePopupLead.phone, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country })}
                 onClick={(e) => {
                   stopContinuousAlarm()
                   setActivePopupLead(null)
-                  openCallHippoDialer(activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id })
+                  triggerDial(preferredDialer, activePopupLead.phone, e, { name: activePopupLead.name, leadId: activePopupLead.id, country: activePopupLead.country })
                 }}
-                className="py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center"
-                title="Call via CallHippo"
+                className={`py-2 px-2 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer text-center ${
+                  preferredDialer === 'callhippo' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                  preferredDialer === 'microsip' ? 'bg-purple-600 hover:bg-purple-700' :
+                  preferredDialer === 'justcall' ? 'bg-blue-600 hover:bg-blue-700' :
+                  'bg-gray-800 hover:bg-gray-900'
+                }`}
+                title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
               >
                 <Phone size={13} />
-                <span className="truncate">CallHippo</span>
+                <span className="truncate">{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
               </a>
 
               <a

@@ -50,6 +50,18 @@ export interface PhoneNormalizationResult {
   isValid: boolean
 }
 
+function isUKHint(hint?: string | null): boolean {
+  if (!hint) return false
+  const h = hint.trim().toLowerCase()
+  return h === 'uk' || h === 'united kingdom' || h === 'gb' || h === 'great britain' || h === 'england'
+}
+
+function isIndiaHint(hint?: string | null): boolean {
+  if (!hint) return false
+  const h = hint.trim().toLowerCase()
+  return h === 'india' || h === 'in' || h === '+91'
+}
+
 /**
  * Normalizes any raw phone number into strict E.164 format and determines region (UK vs Europe)
  */
@@ -94,6 +106,9 @@ export function cleanPhoneE164(
     if (clean.startsWith('44') && clean.length >= 11) {
       clean = '+' + clean
       notes.push('Added missing + sign')
+    } else if (clean.startsWith('91') && clean.length >= 12) {
+      clean = '+' + clean
+      notes.push('Added missing + sign')
     } else if (
       (clean.startsWith('33') || clean.startsWith('49') || clean.startsWith('34') || clean.startsWith('31') || clean.startsWith('39')) &&
       clean.length >= 10
@@ -103,19 +118,36 @@ export function cleanPhoneE164(
     } else if (clean.startsWith('353') && clean.length >= 10) {
       clean = '+' + clean
       notes.push('Added missing + sign')
-    } else if (clean.startsWith('0') && (hintCountry === 'UK' || (clean.startsWith('07') && clean.length === 11))) {
+    } else if (isUKHint(hintCountry) && clean.startsWith('0') && clean.length === 11) {
       clean = '+44' + clean.slice(1)
       notes.push('Converted UK local 0 prefix to +44')
+    } else if (isUKHint(hintCountry) && clean.length === 10) {
+      clean = '+44' + clean
+      notes.push('Added UK country code +44')
+    } else if (clean.startsWith('0') && clean.length === 11 && /^[6-9]/.test(clean.slice(1))) {
+      // Indian domestic STD prefix 0 (e.g. 09876543210 or 07987654321 -> +91...)
+      clean = '+91' + clean.slice(1)
+      notes.push('Converted India local 0 prefix to +91')
+    } else if (clean.length === 10 && /^[6-9]/.test(clean)) {
+      // 10-digit Indian mobile number
+      clean = '+91' + clean
+      notes.push('Added India country code +91')
+    } else if (clean.startsWith('0') && clean.length >= 10) {
+      clean = '+' + clean.slice(1)
+      notes.push('Removed leading 0 and added +')
     } else if (clean.length > 0) {
       clean = '+' + clean
       notes.push('Added missing + sign')
     }
   }
 
-  // 5. CRITICAL LOGIC: Remove leading zero after country code (+440 -> +44, +330 -> +33, etc.)
+  // 5. CRITICAL LOGIC: Remove leading zero after country code (+440 -> +44, +910 -> +91, +330 -> +33, etc.)
   if (clean.startsWith('+440')) {
     clean = '+44' + clean.slice(4)
     notes.push('Removed extra zero after country code (+440)')
+  } else if (clean.startsWith('+910')) {
+    clean = '+91' + clean.slice(4)
+    notes.push('Removed extra zero after country code (+910)')
   } else if (clean.startsWith('+330')) {
     clean = '+33' + clean.slice(4)
     notes.push('Removed extra zero after country code (+330)')

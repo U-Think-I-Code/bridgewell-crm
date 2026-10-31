@@ -8,6 +8,7 @@ import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/not
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
 import { logAuditTrail } from '@/lib/auditLogger'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { usePreferredDialer, getDialerUrl, triggerDial, AVAILABLE_DIALERS } from '@/lib/dialer'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
@@ -120,6 +121,7 @@ export default function LeadProfile() {
   const [templates, setTemplates] = useState<any[]>([])
   const [stages, setStages] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [preferredDialer] = usePreferredDialer()
 
   const [note, setNote] = useState('')
   const [activeCallTimer, setActiveCallTimer] = useState<number | null>(null)
@@ -433,7 +435,13 @@ export default function LeadProfile() {
       if (parsed['Preferred Country']) updatedMetadata.preferred_country = parsed['Preferred Country']
       if (parsed['Intake']) updatedMetadata.intake = parsed['Intake']
       if (parsed['Budget']) updatedMetadata.budget = parsed['Budget']
-      if (parsed['Sponsor']) updatedMetadata.sponsor = parsed['Sponsor']
+      if (parsed['Funds Sponsor']) {
+        updatedMetadata.funds_sponsor = parsed['Funds Sponsor']
+        updatedMetadata.sponsor = parsed['Funds Sponsor']
+      } else if (parsed['Sponsor']) {
+        updatedMetadata.funds_sponsor = parsed['Sponsor']
+        updatedMetadata.sponsor = parsed['Sponsor']
+      }
       if (parsed['Campus Mode']) updatedMetadata.campus_mode = parsed['Campus Mode']
       if (parsed['Admitted University']) updatedMetadata.admitted_university = parsed['Admitted University']
       if (parsed['I-20 Received']) updatedMetadata.i20_received = parsed['I-20 Received']
@@ -544,7 +552,7 @@ export default function LeadProfile() {
       `Preferred Country: ${meta.preferred_country || detectedCountry}`,
       `Intake: ${meta.intake || ''}`,
       `Budget: ${lead?.budget_range || meta.budget || ''}`,
-      `Sponsor: ${meta.sponsor || ''}`,
+      `Funds Sponsor: ${meta.funds_sponsor || meta.sponsor || ''}`,
     ]
 
     // Append campaign-specific answers if available
@@ -636,7 +644,10 @@ export default function LeadProfile() {
     callStartTimeRef.current = now
     setActiveCallTimer(0)
 
-    const popup = openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: id })
+    const dialerObj = AVAILABLE_DIALERS.find(d => d.id === preferredDialer)
+    const dialerName = dialerObj?.shortName || 'Dialer'
+    const dialResult = triggerDial(preferredDialer, lead.phone, e, { name: lead.name, leadId: id, country: lead.country })
+    const popup = dialResult?.success && preferredDialer === 'callhippo' ? window : null
 
     try {
       const { data: actData } = await supabase
@@ -647,7 +658,7 @@ export default function LeadProfile() {
             user_id: currentUser?.id || lead?.owner_id,
             type: 'call',
             outcome: 'Calling',
-            text: `📞 Calling via CallHippo... (Call in progress)`,
+            text: `📞 Calling via ${dialerName}... (Call in progress)`,
             time: new Date().toISOString()
           }
         ])
@@ -688,7 +699,8 @@ export default function LeadProfile() {
     setActiveCallTimer(null)
 
     try {
-      const newText = `📞 CallHippo Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
+      const dialerName = AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Dialer'
+      const newText = `📞 ${dialerName} Call (${outcome})\n• Outcome: ${outcome}\n• Duration: ${formattedDuration} (${elapsedSecs}s)`
 
       if (actId) {
         await supabase
@@ -712,7 +724,7 @@ export default function LeadProfile() {
         ])
       }
 
-      const isUnanswered = ['No Answer', 'Busy', 'Ringing'].includes(outcome)
+      const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
       const newAttempts = isUnanswered ? (lead?.attempts || 0) + 1 : (lead?.attempts || 0)
 
       await supabase
@@ -738,7 +750,7 @@ export default function LeadProfile() {
 
   const logCallOutcome = async (outcome: string) => {
     setSavingAction(true)
-    const isUnanswered = ['No Answer', 'Busy'].includes(outcome)
+    const isUnanswered = ['No Answer', 'Busy', 'Not Connected', 'Not connected'].includes(outcome)
     const newAttempts = isUnanswered ? (lead.attempts || 0) + 1 : lead.attempts
 
     await supabase.from('activities').insert([
@@ -757,13 +769,22 @@ export default function LeadProfile() {
     // Only set next_follow_up if the counselor MANUALLY selected one in the input; never auto-calculate
     const nextFollowUpIso = followUpDate ? new Date(followUpDate).toISOString() : (lead?.next_follow_up || null)
 
-    await supabase.from('leads').update({ 
+    const updateLeadData: any = { 
       attempts: newAttempts,
       last_call_outcome: outcome,
       next_follow_up: nextFollowUpIso,
-    }).eq('id', id)
+    }
 
-    setLead((prev: any) => ({ ...prev, attempts: newAttempts, last_call_outcome: outcome, next_follow_up: nextFollowUpIso }))
+    // Auto-update stage to 'Not connected' or 'Connected' if lead is in initial stages
+    if ((outcome === 'Not Connected' || outcome === 'Not connected') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
+      updateLeadData.stage = 'Not connected'
+    } else if (outcome === 'Connected' && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Not connected')) {
+      updateLeadData.stage = 'Connected'
+    }
+
+    await supabase.from('leads').update(updateLeadData).eq('id', id)
+
+    setLead((prev: any) => ({ ...prev, ...updateLeadData }))
 
     if (isUnanswered && newAttempts >= 6) {
       if (confirm(`This lead has been unresponsive ${newAttempts} times. The system suggests marking them as 'Not Reachable'. Would you like to update the stage now?`)) {
@@ -1803,11 +1824,19 @@ export default function LeadProfile() {
              <button 
                type="button"
                onClick={(e) => handleStartCall(e)}
-               className="flex justify-center items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
-               title="Call via CallHippo Web Dialer & Extension"
+               className={`flex justify-center items-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95 ${
+                 preferredDialer === 'callhippo'
+                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                   : preferredDialer === 'microsip'
+                   ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                   : preferredDialer === 'justcall'
+                   ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                   : 'bg-gray-800 hover:bg-gray-900 text-white'
+               }`}
+               title={`Call via ${AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.name || 'Dialer'}`}
              >
                 <Phone size={13} className="shrink-0" />
-                <span>CallHippo</span>
+                <span>{AVAILABLE_DIALERS.find(d => d.id === preferredDialer)?.shortName || 'Call'}</span>
              </button>
 
              <a 
@@ -2034,10 +2063,16 @@ export default function LeadProfile() {
                      <span className="text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{lead.metadata.intake}</span>
                    </div>
                  )}
-                 {lead?.metadata?.sponsor && (
+                 {(lead?.budget_range || lead?.metadata?.budget) && (
                    <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
-                     <span className="text-gray-400 font-medium">Financial Sponsor</span>
-                     <span className="text-gray-900 font-semibold">{lead.metadata.sponsor}</span>
+                     <span className="text-gray-400 font-medium">Budget</span>
+                     <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs">{lead.budget_range || lead.metadata.budget}</span>
+                   </div>
+                 )}
+                 {(lead?.metadata?.funds_sponsor || lead?.metadata?.sponsor) && (
+                   <div className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                     <span className="text-gray-400 font-medium">Funds Sponsor</span>
+                     <span className="text-purple-700 font-bold bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-xs">{lead.metadata.funds_sponsor || lead.metadata.sponsor}</span>
                    </div>
                  )}
                </div>
@@ -2484,6 +2519,17 @@ export default function LeadProfile() {
                       }`}
                     >
                        <PhoneCall size={12} /> Connected
+                    </button>
+                    <button 
+                      onClick={() => logCallOutcome('Not Connected')} 
+                      disabled={savingAction} 
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                        lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected'
+                          ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200 shadow-md font-bold'
+                          : 'bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700'
+                      }`}
+                    >
+                       <PhoneOff size={12} /> Not Connected
                     </button>
                     <button 
                       onClick={() => logCallOutcome('No Answer')} 
