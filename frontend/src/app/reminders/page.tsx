@@ -631,28 +631,37 @@ export default function RemindersPage() {
                     const cleanDestPhone = cleanPhoneE164(lead.phone, lead.country).cleanedE164Phone || String(lead.phone || '').trim()
                     return (
                       <div className="inline-flex items-center rounded-xl overflow-hidden shadow-sm border border-emerald-600 bg-emerald-600 text-white">
-                        <a
-                          href={getCallHippoDialerUrl(cleanDestPhone, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
-                          onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })
+                            router.push(`/leads/${lead.id}`)
+                          }}
                           className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border-r border-emerald-700"
-                          title={`Call via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
+                          title={`Call ${lead.name} via CallHippo & open profile`}
                         >
                           <Phone size={13} />
                           <span>Call ({lineConfig.activeLine === 'usa' ? 'USA' : lineConfig.activeLine === 'uk' ? 'UK' : 'Auto'})</span>
-                        </a>
+                        </button>
                         <button
                           type="button"
-                          onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
+                          onClick={(e) => {
+                            openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })
+                            router.push(`/leads/${lead.id}`)
+                          }}
                           className="px-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-[11px] font-semibold border-r border-emerald-800 transition-colors cursor-pointer"
-                          title="Call from UK Line (+44)"
+                          title="Call from UK Line (+44) & open profile"
                         >
                           🇬🇧
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
+                          onClick={(e) => {
+                            openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })
+                            router.push(`/leads/${lead.id}`)
+                          }}
                           className="px-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-[11px] font-semibold transition-colors cursor-pointer"
-                          title="Call from USA Line (+1)"
+                          title="Call from USA Line (+1) & open profile"
                         >
                           🇺🇸
                         </button>

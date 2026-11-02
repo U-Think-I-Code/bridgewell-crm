@@ -700,19 +700,6 @@ export default function LeadProfile() {
     } catch (err) {
       console.error('Error logging call initiation:', err)
     }
-
-    if (popup) {
-      const checkClosed = setInterval(() => {
-        try {
-          if (popup.closed) {
-            clearInterval(checkClosed)
-            handleCallEnded()
-          }
-        } catch {
-          clearInterval(checkClosed)
-        }
-      }, 1000)
-    }
   }
 
   const handleCallEnded = async (explicitOutcome?: string) => {
