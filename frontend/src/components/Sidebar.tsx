@@ -182,11 +182,11 @@ export default function Sidebar() {
               {lineConfig.activeLine === 'uk' ? '🇬🇧 UK Line (+44)' : lineConfig.activeLine === 'usa' ? '🇺🇸 USA Line (+1)' : '⚡ Auto-match'}
             </span>
             <a
-              href="https://dialer.callhippo.com/dial"
+              href={lineConfig.activeLine === 'usa' ? 'https://dialer.callhippo.com/dial?line=usa&country=US&countryCode=1' : 'https://dialer.callhippo.com/dial?line=uk&country=UK&countryCode=44'}
               target="_blank"
               rel="noopener noreferrer"
               className="text-emerald-700 font-semibold hover:underline shrink-0"
-              title="Open CallHippo Web Dialer"
+              title="Open CallHippo Web Dialer. (Tip: CallHippo dialer ke bottom-center arrow se bhi caller number select kar sakte hain)"
             >
               Dialer &rarr;
             </a>

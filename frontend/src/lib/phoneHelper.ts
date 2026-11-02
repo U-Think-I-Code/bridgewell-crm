@@ -56,6 +56,23 @@ function isUKHint(hint?: string | null): boolean {
   return h === 'uk' || h === 'united kingdom' || h === 'gb' || h === 'great britain' || h === 'england'
 }
 
+export function isUSAHint(hint?: string | null): boolean {
+  if (!hint) return false
+  const h = hint.trim().toLowerCase()
+  return (
+    h === 'usa' ||
+    h === 'united states' ||
+    h === 'us' ||
+    h === 'canada' ||
+    h === 'ca' ||
+    h === 'can' ||
+    h === '+1' ||
+    h === '1' ||
+    h.includes('usa') ||
+    h.includes('united states')
+  )
+}
+
 function isIndiaHint(hint?: string | null): boolean {
   if (!hint) return false
   const h = hint.trim().toLowerCase()
@@ -103,16 +120,27 @@ export function cleanPhoneE164(
 
   // 4. Missing + handling
   if (!clean.startsWith('+')) {
-    if (clean.startsWith('44') && clean.length >= 11) {
+    // NANP (+1): 11 digits starting with 1 (e.g. 13144975713)
+    if (clean.startsWith('1') && clean.length === 11) {
+      clean = '+' + clean
+      notes.push('Added missing + sign for NANP (+1)')
+    } else if (isUSAHint(hintCountry) && clean.length === 10) {
+      // 10-digit North American number under USA context
+      clean = '+1' + clean
+      notes.push('Added USA country code +1')
+    } else if (clean.startsWith('44') && clean.length >= 11) {
       clean = '+' + clean
       notes.push('Added missing + sign')
     } else if (clean.startsWith('91') && clean.length >= 12) {
       clean = '+' + clean
       notes.push('Added missing + sign')
     } else if (
-      (clean.startsWith('33') || clean.startsWith('49') || clean.startsWith('34') || clean.startsWith('31') || clean.startsWith('39')) &&
+      (clean.startsWith('33') || clean.startsWith('49') || clean.startsWith('34') || clean.startsWith('39')) &&
       clean.length >= 10
     ) {
+      clean = '+' + clean
+      notes.push('Added missing + sign')
+    } else if (clean.startsWith('31') && clean.length >= 11) {
       clean = '+' + clean
       notes.push('Added missing + sign')
     } else if (clean.startsWith('353') && clean.length >= 10) {
@@ -124,14 +152,18 @@ export function cleanPhoneE164(
     } else if (isUKHint(hintCountry) && clean.length === 10) {
       clean = '+44' + clean
       notes.push('Added UK country code +44')
-    } else if (clean.startsWith('0') && clean.length === 11 && /^[6-9]/.test(clean.slice(1))) {
+    } else if (!isUSAHint(hintCountry) && clean.startsWith('0') && clean.length === 11 && /^[6-9]/.test(clean.slice(1))) {
       // Indian domestic STD prefix 0 (e.g. 09876543210 or 07987654321 -> +91...)
       clean = '+91' + clean.slice(1)
       notes.push('Converted India local 0 prefix to +91')
-    } else if (clean.length === 10 && /^[6-9]/.test(clean)) {
+    } else if (!isUSAHint(hintCountry) && clean.length === 10 && /^[6-9]/.test(clean)) {
       // 10-digit Indian mobile number
       clean = '+91' + clean
       notes.push('Added India country code +91')
+    } else if (clean.length === 10 && !isIndiaHint(hintCountry)) {
+      // Standard 10-digit NANP number (USA/Canada)
+      clean = '+1' + clean
+      notes.push('Added USA country code +1')
     } else if (clean.startsWith('0') && clean.length >= 10) {
       clean = '+' + clean.slice(1)
       notes.push('Removed leading 0 and added +')
@@ -177,6 +209,10 @@ export function cleanPhoneE164(
     countryCode = '+44'
     countryName = 'UK'
     region = 'UK'
+  } else if (clean.startsWith('+1')) {
+    countryCode = '+1'
+    countryName = 'USA'
+    region = 'Other'
   } else {
     for (const [code, name] of EUROPEAN_DIAL_CODES) {
       if (clean.startsWith(code)) {
@@ -188,11 +224,8 @@ export function cleanPhoneE164(
     }
   }
 
-  if (region === 'Other') {
-    if (clean.startsWith('+1')) {
-      countryCode = '+1'
-      countryName = 'USA'
-    } else if (clean.startsWith('+91')) {
+  if (region === 'Other' && !countryCode) {
+    if (clean.startsWith('+91')) {
       countryCode = '+91'
       countryName = 'India'
     } else if (clean.startsWith('+971')) {

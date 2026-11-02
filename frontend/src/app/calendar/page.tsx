@@ -11,6 +11,7 @@ import {
   X, RefreshCw, User, CalendarDays, CalendarRange, ListFilter
 } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { formatDualTime } from '@/lib/timezoneHelper'
 
 type ViewMode = 'month' | 'week' | 'day'
@@ -444,11 +445,10 @@ export default function CalendarPage() {
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    viewMode === mode
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${viewMode === mode
                       ? 'bg-white text-gray-900 shadow-xs'
                       : 'text-gray-500 hover:text-gray-900'
-                  }`}
+                    }`}
                 >
                   <Icon size={13} />
                   <span>{label}</span>
@@ -572,11 +572,10 @@ export default function CalendarPage() {
               <button
                 key={pKey}
                 onClick={() => setSelectedPriority(pKey)}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  selectedPriority === pKey
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${selectedPriority === pKey
                     ? 'bg-white text-gray-900 font-bold shadow-xs'
                     : 'text-gray-500 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 {pLabel}
               </button>
@@ -634,26 +633,24 @@ export default function CalendarPage() {
                         // Click date to highlight or switch to agenda
                       }
                     }}
-                    className={`p-2 min-h-[110px] transition-colors relative flex flex-col group cursor-pointer ${
-                      !cell.isCurrentMonth
+                    className={`p-2 min-h-[110px] transition-colors relative flex flex-col group cursor-pointer ${!cell.isCurrentMonth
                         ? 'bg-gray-50/40 text-gray-300'
                         : isSelectedCell
-                        ? 'bg-blue-50/20'
-                        : 'bg-white hover:bg-gray-50/60'
-                    }`}
+                          ? 'bg-blue-50/20'
+                          : 'bg-white hover:bg-gray-50/60'
+                      }`}
                   >
                     {/* Date Header */}
                     <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-all ${
-                          isTodayCell
+                        className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-all ${isTodayCell
                             ? 'bg-black text-white shadow-xs'
                             : isSelectedCell
-                            ? 'bg-blue-600 text-white'
-                            : cell.isCurrentMonth
-                            ? 'text-gray-800'
-                            : 'text-gray-300'
-                        }`}
+                              ? 'bg-blue-600 text-white'
+                              : cell.isCurrentMonth
+                                ? 'text-gray-800'
+                                : 'text-gray-300'
+                          }`}
                       >
                         {cell.date.getDate()}
                       </span>
@@ -688,13 +685,12 @@ export default function CalendarPage() {
                               e.stopPropagation()
                               setActiveLead(lead)
                             }}
-                            className={`p-1.5 rounded-lg border text-[11px] font-medium transition-all hover:scale-[1.02] cursor-pointer shadow-2xs flex items-center justify-between gap-1 ${
-                              isLeadOverdue
+                            className={`p-1.5 rounded-lg border text-[11px] font-medium transition-all hover:scale-[1.02] cursor-pointer shadow-2xs flex items-center justify-between gap-1 ${isLeadOverdue
                                 ? 'bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100'
                                 : lead.priority === 'Hot'
-                                ? 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
-                                : 'bg-white border-gray-200 text-gray-800 hover:border-gray-400'
-                            }`}
+                                  ? 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                                  : 'bg-white border-gray-200 text-gray-800 hover:border-gray-400'
+                              }`}
                           >
                             <div className="truncate flex items-center gap-1 min-w-0">
                               {lead.priority === 'Hot' && (
@@ -747,9 +743,8 @@ export default function CalendarPage() {
                     </span>
                     <div className="flex items-center justify-center gap-1.5">
                       <span
-                        className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${
-                          isToday ? 'bg-black text-white shadow-xs' : 'text-gray-900'
-                        }`}
+                        className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-black text-white shadow-xs' : 'text-gray-900'
+                          }`}
                       >
                         {day.getDate()}
                       </span>
@@ -788,13 +783,12 @@ export default function CalendarPage() {
                           <div
                             key={lead.id}
                             onClick={() => setActiveLead(lead)}
-                            className={`p-3 rounded-xl border text-xs transition-all hover:shadow-md cursor-pointer ${
-                              isLeadOverdue
+                            className={`p-3 rounded-xl border text-xs transition-all hover:shadow-md cursor-pointer ${isLeadOverdue
                                 ? 'bg-rose-50/60 border-rose-200'
                                 : lead.priority === 'Hot'
-                                ? 'bg-amber-50/60 border-amber-200'
-                                : 'bg-white border-gray-200 hover:border-gray-400'
-                            }`}
+                                  ? 'bg-amber-50/60 border-amber-200'
+                                  : 'bg-white border-gray-200 hover:border-gray-400'
+                              }`}
                           >
                             <div className="flex items-center justify-between mb-1.5">
                               <span className="font-bold text-gray-900 truncate">{lead.name}</span>
@@ -811,13 +805,12 @@ export default function CalendarPage() {
                               </span>
                               {lead.priority && (
                                 <span
-                                  className={`font-bold px-1.5 py-0.2 rounded-md ${
-                                    lead.priority === 'Hot'
+                                  className={`font-bold px-1.5 py-0.2 rounded-md ${lead.priority === 'Hot'
                                       ? 'text-rose-700 bg-rose-100'
                                       : lead.priority === 'Warm'
-                                      ? 'text-amber-700 bg-amber-100'
-                                      : 'text-blue-700 bg-blue-100'
-                                  }`}
+                                        ? 'text-amber-700 bg-amber-100'
+                                        : 'text-blue-700 bg-blue-100'
+                                    }`}
                                 >
                                   {lead.priority}
                                 </span>
@@ -902,19 +895,17 @@ export default function CalendarPage() {
                   return (
                     <div
                       key={lead.id}
-                      className={`bg-white border rounded-2xl p-5 shadow-sm transition-all hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                        isLeadOverdue
+                      className={`bg-white border rounded-2xl p-5 shadow-sm transition-all hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isLeadOverdue
                           ? 'border-rose-200 ring-1 ring-rose-500/10 bg-rose-50/10'
                           : 'border-gray-200'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start gap-4">
                         <div
-                          className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0 border ${
-                            isLeadOverdue
+                          className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0 border ${isLeadOverdue
                               ? 'bg-rose-50 border-rose-200 text-rose-700'
                               : 'bg-gray-50 border-gray-200 text-gray-900'
-                          }`}
+                            }`}
                         >
                           <Clock size={16} />
                           <span className="text-[10px] font-bold mt-0.5">{timeStr}</span>
@@ -930,11 +921,10 @@ export default function CalendarPage() {
                             )}
                             {lead.priority && (
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                  lead.priority === 'Hot'
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${lead.priority === 'Hot'
                                     ? 'bg-amber-100 text-amber-800'
                                     : 'bg-blue-100 text-blue-800'
-                                }`}
+                                  }`}
                               >
                                 {lead.priority}
                               </span>
@@ -954,15 +944,21 @@ export default function CalendarPage() {
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-                        <a
-                          href={getCallHippoDialerUrl(lead.phone, { name: lead.name, leadId: lead.id })}
-                          onClick={(e) => openCallHippoDialer(lead.phone, e, { name: lead.name, leadId: lead.id })}
-                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer active:scale-95"
-                          title="Call via CallHippo"
-                        >
-                          <Phone size={12} />
-                          <span>CallHippo</span>
-                        </a>
+                        {(() => {
+                          const cleanDestPhone = cleanPhoneE164(lead.phone, (lead as any).country).cleanedE164Phone || String(lead.phone || '').trim()
+                          return (
+                            <a
+                              href={`tel:${cleanDestPhone}`}
+                              data-callhippo="true"
+                              onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: (lead as any).country })}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                              title={`Call ${cleanDestPhone} via CallHippo`}
+                            >
+                              <Phone size={12} />
+                              <span>CallHippo</span>
+                            </a>
+                          )
+                        })()}
 
                         <a
                           href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`}
@@ -1029,11 +1025,10 @@ export default function CalendarPage() {
               {/* Drawer Body */}
               <div className="p-6 overflow-y-auto space-y-6 flex-1">
                 {/* Scheduled Follow-up Badge */}
-                <div className={`p-4 rounded-xl border ${
-                  isPast(activeLead.next_follow_up)
+                <div className={`p-4 rounded-xl border ${isPast(activeLead.next_follow_up)
                     ? 'bg-rose-50 border-rose-200'
                     : 'bg-blue-50 border-blue-200'
-                }`}>
+                  }`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
                       <Clock size={14} className={isPast(activeLead.next_follow_up) ? 'text-rose-600' : 'text-blue-600'} />
@@ -1067,15 +1062,21 @@ export default function CalendarPage() {
 
                 {/* Direct Action Buttons */}
                 <div className="grid grid-cols-2 gap-2">
-                  <a
-                    href={getCallHippoDialerUrl(activeLead.phone, { name: activeLead.name, leadId: activeLead.id })}
-                    onClick={(e) => openCallHippoDialer(activeLead.phone, e, { name: activeLead.name, leadId: activeLead.id })}
-                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                    title="Call via CallHippo"
-                  >
-                    <Phone size={13} />
-                    <span>CallHippo</span>
-                  </a>
+                  {(() => {
+                    const cleanDestPhone = cleanPhoneE164(activeLead.phone, (activeLead as any).country).cleanedE164Phone || String(activeLead.phone || '').trim()
+                    return (
+                      <a
+                        href={`tel:${cleanDestPhone}`}
+                        data-callhippo="true"
+                        onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: activeLead.name, leadId: activeLead.id, country: (activeLead as any).country })}
+                        className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                        title={`Call ${cleanDestPhone} via CallHippo`}
+                      >
+                        <Phone size={13} />
+                        <span>CallHippo</span>
+                      </a>
+                    )
+                  })()}
 
                   <a
                     href={`https://wa.me/${activeLead.phone.replace(/[^0-9]/g, '')}`}
