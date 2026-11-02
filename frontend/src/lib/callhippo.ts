@@ -194,9 +194,29 @@ export function openCallHippoDialer(
   const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
   const url = getCallHippoDialerUrl(phone, options)
 
-  // 1. Copy cleaned phone number to clipboard so counselor can paste into dialer instantly
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(cleanPhone).catch(() => {})
+  // 1. Copy phone to clipboard using synchronous fallback FIRST (before popup steals focus)
+  //    navigator.clipboard.writeText requires user gesture & active document focus.
+  //    window.open() consumes the gesture and shifts focus, so clipboard write silently fails.
+  //    Using execCommand('copy') as primary (synchronous, works in same tick as user click).
+  if (typeof document !== 'undefined') {
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = cleanPhone
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-9999px'
+      textArea.style.top = '-9999px'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    } catch {
+      // Fallback: try async clipboard API (may fail after popup opens)
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(cleanPhone).catch(() => {})
+      }
+    }
   }
 
   if (typeof window !== 'undefined') {
