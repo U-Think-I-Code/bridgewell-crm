@@ -1246,8 +1246,9 @@ function LeadsContent() {
             >
               <option value="ALL">All Statuses</option>
               <option value="Connected">📞 Connected</option>
-              <option value="No Answer">📵 No Answer</option>
-              <option value="Busy">⏳ Busy</option>
+              <option value="Ringing">🔔 Ringing</option>
+              <option value="Call back">📞 Call Back</option>
+              <option value="Not Connected">📵 Not Connected</option>
               <option value="Wrong Num">↪️ Wrong Num</option>
               <option value="UNSET">⚪ Not Called</option>
             </select>
@@ -1899,6 +1900,15 @@ function LeadsContent() {
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-2xs">
                             <PhoneCall size={12} className="text-emerald-600" />
                             <span>Connected</span>
+                          </span>
+                        ) : lead.last_call_outcome === 'Ringing' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs">
+                            <span>🔔 Ringing</span>
+                          </span>
+                        ) : (lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback') ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors shadow-2xs">
+                            <PhoneCall size={12} className="text-purple-600" />
+                            <span>Call Back</span>
                           </span>
                         ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors shadow-2xs">

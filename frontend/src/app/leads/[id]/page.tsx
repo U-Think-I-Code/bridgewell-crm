@@ -801,15 +801,39 @@ export default function LeadProfile() {
       next_follow_up: nextFollowUpIso,
     }
 
-    // Auto-update stage based on outcome if lead is in initial calling stages
-    if ((outcome === 'Ringing' || outcome === 'No Answer') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
-      updateLeadData.stage = 'Ringing'
-    } else if ((outcome === 'Call back' || outcome === 'Callback') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected')) {
-      updateLeadData.stage = 'Call back'
-    } else if ((outcome === 'Not Connected' || outcome === 'Not connected') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing')) {
-      updateLeadData.stage = 'Not connected'
-    } else if (outcome === 'Connected' && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back')) {
-      updateLeadData.stage = 'Connected'
+    // Direct synchronization: Call Outcome directly drives Stage so counselors don't have to select both!
+    let targetStage = lead.stage
+    if (outcome === 'Connected') targetStage = 'Connected'
+    else if (outcome === 'Ringing') targetStage = 'Ringing'
+    else if (outcome === 'Call back' || outcome === 'Callback') targetStage = 'Call back'
+    else if (outcome === 'Not Connected' || outcome === 'Not connected') targetStage = 'Not connected'
+    else if (outcome === 'Wrong Num' || outcome === 'Wrong Number') targetStage = 'Junk/duplicate'
+
+    const stageChanged = targetStage && targetStage !== lead.stage
+    if (targetStage) {
+      updateLeadData.stage = targetStage
+    }
+
+    if (stageChanged) {
+      await supabase.from('activities').insert([
+        { 
+          lead: id, 
+          user_id: currentUser?.id || lead?.owner_id, 
+          type: targetStage === 'Junk/duplicate' ? 'junk_marked' : 'stage change', 
+          text: `Stage automatically synced to "${targetStage}" via Call Outcome (${outcome}).`, 
+          time: new Date().toISOString() 
+        }
+      ])
+
+      await logAuditTrail({
+        leadId: id,
+        userId: currentUser?.id,
+        action: 'STAGE_CHANGE',
+        fieldName: 'stage',
+        oldValue: lead.stage,
+        newValue: targetStage,
+        summary: `Stage synced to ${targetStage} via Call Outcome log (${outcome})`
+      })
     }
 
     await supabase.from('leads').update(updateLeadData).eq('id', id)
@@ -856,6 +880,12 @@ export default function LeadProfile() {
     setSavingAction(true)
 
     const updatePayload: any = { stage: newStage }
+    // Keep bottom call outcome button highlighted if stage corresponds to a call outcome
+    if (newStage === 'Connected') updatePayload.last_call_outcome = 'Connected'
+    else if (newStage === 'Ringing') updatePayload.last_call_outcome = 'Ringing'
+    else if (newStage === 'Call back') updatePayload.last_call_outcome = 'Call back'
+    else if (newStage === 'Not connected') updatePayload.last_call_outcome = 'Not Connected'
+
     if (newStage === 'Enrolled') {
       updatePayload.next_follow_up = null
     } else if (newStage === 'Junk/duplicate') {
@@ -922,7 +952,8 @@ export default function LeadProfile() {
     } else {
       setLead((prev: any) => ({
         ...prev,
-        stage: newStage
+        stage: newStage,
+        last_call_outcome: updatePayload.last_call_outcome || prev.last_call_outcome
       }))
     }
 
@@ -1611,6 +1642,7 @@ export default function LeadProfile() {
                     lead.last_call_outcome === 'Connected' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                     lead.last_call_outcome === 'Ringing' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                     lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                    lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? 'bg-orange-50 text-orange-700 border-orange-200' :
                     lead.last_call_outcome === 'No Answer' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                     lead.last_call_outcome === 'Busy' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                     'bg-gray-100 text-gray-700 border-gray-200'
@@ -1618,6 +1650,7 @@ export default function LeadProfile() {
                     {lead.last_call_outcome === 'Connected' ? '📞 Connected' :
                      lead.last_call_outcome === 'Ringing' ? '🔔 Ringing' :
                      lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? '📞 Call Back' :
+                     lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? '📵 Not Connected' :
                      lead.last_call_outcome === 'No Answer' ? '📵 No Answer' :
                      lead.last_call_outcome === 'Busy' ? '⏳ Busy' : '↪️ ' + lead.last_call_outcome}
                   </span>
@@ -2639,86 +2672,74 @@ export default function LeadProfile() {
            <div className="flex justify-between items-end">
               <div className="flex flex-col gap-2 w-full">
                  <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Log Call Outcome</div>
-                 <div className="flex gap-2 flex-wrap">
-                    <button 
-                      onClick={() => logCallOutcome('Connected')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Connected'
-                          ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-200 shadow-md font-bold'
-                          : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
-                      }`}
-                    >
-                       <PhoneCall size={12} /> Connected
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('Ringing')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Ringing'
-                          ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-200 shadow-md font-bold'
-                          : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
-                      }`}
-                    >
-                       🔔 Ringing
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('Call back')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback'
-                          ? 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-200 shadow-md font-bold'
-                          : 'bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700'
-                      }`}
-                    >
-                       📞 Call Back
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('Not Connected')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected'
-                          ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200 shadow-md font-bold'
-                          : 'bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700'
-                      }`}
-                    >
-                       <PhoneOff size={12} /> Not Connected
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('No Answer')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'No Answer'
-                          ? 'bg-red-600 text-white border-red-600 ring-2 ring-red-200 shadow-md font-bold'
-                          : 'bg-red-50 hover:bg-red-100 border-red-200 text-red-700'
-                      }`}
-                    >
-                       <PhoneOff size={12} /> No Answer
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('Busy')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Busy'
-                          ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-200 shadow-md font-bold'
-                          : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700'
-                      }`}
-                    >
-                       <XCircle size={12} /> Busy
-                    </button>
-                    <button 
-                      onClick={() => logCallOutcome('Wrong Num')} 
-                      disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                        lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number'
-                          ? 'bg-gray-800 text-white border-gray-800 ring-2 ring-gray-200 shadow-md font-bold'
-                          : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700'
-                      }`}
-                    >
-                       <PhoneForwarded size={12} /> Wrong Num
-                    </button>
-                 </div>
-              </div>
+                  <div className="flex gap-2 flex-wrap">
+                     <button 
+                       type="button"
+                       onClick={() => logCallOutcome('Connected')} 
+                       disabled={savingAction} 
+                       className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                         lead.last_call_outcome === 'Connected' || lead.stage === 'Connected'
+                           ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-200 shadow-md font-bold'
+                           : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                       }`}
+                       title="Mark Connected & sync Stage to Connected"
+                     >
+                        <PhoneCall size={12} /> Connected
+                     </button>
+                     <button 
+                       type="button"
+                       onClick={() => logCallOutcome('Ringing')} 
+                       disabled={savingAction} 
+                       className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                         lead.last_call_outcome === 'Ringing' || lead.stage === 'Ringing'
+                           ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-200 shadow-md font-bold'
+                           : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
+                       }`}
+                       title="Mark Ringing & sync Stage to Ringing"
+                     >
+                        🔔 Ringing
+                     </button>
+                     <button 
+                       type="button"
+                       onClick={() => logCallOutcome('Call back')} 
+                       disabled={savingAction} 
+                       className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                         lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' || lead.stage === 'Call back'
+                           ? 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-200 shadow-md font-bold'
+                           : 'bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700'
+                       }`}
+                       title="Mark Call Back & sync Stage to Call back"
+                     >
+                        📞 Call Back
+                     </button>
+                     <button 
+                       type="button"
+                       onClick={() => logCallOutcome('Not Connected')} 
+                       disabled={savingAction} 
+                       className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                         lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' || lead.stage === 'Not connected'
+                           ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200 shadow-md font-bold'
+                           : 'bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700'
+                       }`}
+                       title="Mark Not Connected & sync Stage to Not connected"
+                     >
+                        <PhoneOff size={12} /> Not Connected
+                     </button>
+                     <button 
+                       type="button"
+                       onClick={() => logCallOutcome('Wrong Num')} 
+                       disabled={savingAction} 
+                       className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                         lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number' || lead.stage === 'Junk/duplicate'
+                           ? 'bg-gray-800 text-white border-gray-800 ring-2 ring-gray-200 shadow-md font-bold'
+                           : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700'
+                       }`}
+                       title="Mark Wrong Num & move to Junk/duplicate"
+                     >
+                        <PhoneForwarded size={12} /> Wrong Num
+                     </button>
+                  </div>
+               </div>
 
               <div className="pl-4 flex flex-col justify-end h-full">
                 <button onClick={() => logActivity('note', note)} disabled={savingAction || !note.trim()} className="px-5 py-2.5 bg-black hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 whitespace-nowrap shadow-sm">
