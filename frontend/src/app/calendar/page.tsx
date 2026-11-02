@@ -948,11 +948,10 @@ export default function CalendarPage() {
                           const cleanDestPhone = cleanPhoneE164(lead.phone, (lead as any).country).cleanedE164Phone || String(lead.phone || '').trim()
                           return (
                             <a
-                              href={`tel:${cleanDestPhone}`}
-                              data-callhippo="true"
+                              href={getCallHippoDialerUrl(cleanDestPhone, { name: lead.name, leadId: lead.id, country: (lead as any).country })}
                               onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: (lead as any).country })}
                               className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer active:scale-95"
-                              title={`Call ${cleanDestPhone} via CallHippo`}
+                              title="Call via CallHippo"
                             >
                               <Phone size={12} />
                               <span>CallHippo</span>
@@ -1066,11 +1065,10 @@ export default function CalendarPage() {
                     const cleanDestPhone = cleanPhoneE164(activeLead.phone, (activeLead as any).country).cleanedE164Phone || String(activeLead.phone || '').trim()
                     return (
                       <a
-                        href={`tel:${cleanDestPhone}`}
-                        data-callhippo="true"
+                        href={getCallHippoDialerUrl(cleanDestPhone, { name: activeLead.name, leadId: activeLead.id, country: (activeLead as any).country })}
                         onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: activeLead.name, leadId: activeLead.id, country: (activeLead as any).country })}
                         className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                        title={`Call ${cleanDestPhone} via CallHippo`}
+                        title="Call via CallHippo"
                       >
                         <Phone size={13} />
                         <span>CallHippo</span>

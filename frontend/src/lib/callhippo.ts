@@ -163,37 +163,15 @@ export async function copyPhoneToClipboard(phone: string, hintCountry?: string):
 }
 
 /**
- * Opens CallHippo Web Dialer popup or triggers CallHippo Click-to-Call Chrome Extension,
- * copies the number to clipboard, and facilitates dialing.
+ * Opens CallHippo Web Dialer popup with number pre-configured,
+ * copies the clean number to clipboard, allowing counselor to manually review,
+ * switch lines in CallHippo, and place the call without auto-dialing.
  */
 export function openCallHippoDialer(
   phone: string,
   e?: React.MouseEvent | Event,
   options?: CallHippoDialerOptions
 ): Window | null {
-  if (!phone) return null
-
-  const linePreference = options?.line || getActiveLine()
-  const resolvedLine = resolveOutboundLine(linePreference, options?.country, phone)
-  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
-  const url = getCallHippoDialerUrl(phone, options)
-
-  // 1. Copy cleaned phone number to clipboard immediately so agent can paste (Ctrl+V) if needed
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(cleanPhone).catch(() => {})
-  }
-
-  // 2. If the user clicked a native <a href="tel:..."> link, DO NOT preventDefault!
-  // Allowing the native event lets the CallHippo Chrome extension intercept it and dial automatically.
-  const targetEl = e?.currentTarget as HTMLElement | undefined
-  const isNativeTelLink = targetEl && targetEl.tagName === 'A' && (targetEl as HTMLAnchorElement).href?.startsWith('tel:')
-
-  if (isNativeTelLink) {
-    // Native tel: click triggers CallHippo extension without popup collision
-    return null
-  }
-
-  // If triggered by a button with event, prevent default navigation
   if (e) {
     if ('preventDefault' in e && typeof e.preventDefault === 'function') {
       e.preventDefault()
@@ -203,29 +181,26 @@ export function openCallHippoDialer(
     }
   }
 
-  if (typeof window !== 'undefined') {
-    // 3. Trigger native tel: protocol so CallHippo Chrome Extension automatically catches it
-    try {
-      const telLink = document.createElement('a')
-      telLink.href = `tel:${cleanPhone}`
-      telLink.setAttribute('data-callhippo', 'true')
-      telLink.style.display = 'none'
-      document.body.appendChild(telLink)
-      telLink.click()
-      setTimeout(() => {
-        if (telLink.parentNode) {
-          document.body.removeChild(telLink)
-        }
-      }, 500)
-    } catch {}
+  if (!phone) return null
 
+  const linePreference = options?.line || getActiveLine()
+  const resolvedLine = resolveOutboundLine(linePreference, options?.country, phone)
+  const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
+  const url = getCallHippoDialerUrl(phone, options)
+
+  // 1. Copy cleaned phone number to clipboard so counselor can paste into dialer instantly
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(cleanPhone).catch(() => {})
+  }
+
+  if (typeof window !== 'undefined') {
     // Standard CallHippo dialer popup dimensions: 385x650
     const width = 385
     const height = 650
     const left = window.screenLeft !== undefined ? Math.max(0, window.screenLeft + (window.outerWidth - width) / 2) : 100
     const top = window.screenTop !== undefined ? Math.max(0, window.screenTop + (window.outerHeight - height) / 2) : 100
 
-    // 4. Open official CallHippo web dialer popup window
+    // 2. Open official CallHippo web dialer popup window (no auto-dial, counselor initiates manually)
     const popup = window.open(
       url,
       'CallHippoDialer',

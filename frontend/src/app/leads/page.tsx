@@ -1865,13 +1865,12 @@ function LeadsContent() {
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-medium text-gray-900">{lead.phone}</span>
                             
-                            {/* Primary Click-to-Call Link (Tel URI for CallHippo Extension) */}
+                            {/* Primary Call Button */}
                             <a
-                              href={`tel:${cleanDestPhone}`}
-                              data-callhippo="true"
+                              href={getCallHippoDialerUrl(cleanDestPhone, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
                               onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer shadow-2xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                              title={`Call ${cleanDestPhone} via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
+                              title={`Call via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
                             >
                               <Phone size={11} className="text-emerald-600" />
                               <span>Call</span>
@@ -1879,24 +1878,22 @@ function LeadsContent() {
 
                             {/* Direct Line Selection: UK vs USA Line */}
                             <div className="inline-flex items-center rounded-md border border-gray-200 overflow-hidden text-[10px] bg-white shadow-2xs">
-                              <a
-                                href={`tel:${cleanDestPhone}`}
-                                data-callhippo="true"
+                              <button
+                                type="button"
                                 onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
                                 className="px-1.5 py-0.5 hover:bg-blue-50 hover:text-blue-700 text-gray-600 font-semibold border-r border-gray-200 transition-colors cursor-pointer"
                                 title="Call using UK Line (+44)"
                               >
                                 🇬🇧 UK
-                              </a>
-                              <a
-                                href={`tel:${cleanDestPhone}`}
-                                data-callhippo="true"
+                              </button>
+                              <button
+                                type="button"
                                 onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
                                 className="px-1.5 py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600 font-semibold transition-colors cursor-pointer"
                                 title="Call using USA Line (+1)"
                               >
                                 🇺🇸 USA
-                              </a>
+                              </button>
                             </div>
                           </div>
                         )
@@ -2115,24 +2112,22 @@ function LeadsContent() {
                             const cleanDestPhone = cleanPhoneE164(lead.phone, lead.country).cleanedE164Phone || String(lead.phone || '').trim()
                             return (
                               <div className="flex items-center gap-1">
-                                <a
-                                  href={`tel:${cleanDestPhone}`}
-                                  data-callhippo="true"
+                                <button
+                                  type="button"
                                   onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
                                   className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
                                   title="Call using UK Line (+44)"
                                 >
                                   🇬🇧 UK
-                                </a>
-                                <a
-                                  href={`tel:${cleanDestPhone}`}
-                                  data-callhippo="true"
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
                                   className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
                                   title="Call using USA Line (+1)"
                                 >
                                   🇺🇸 USA
-                                </a>
+                                </button>
                               </div>
                             )
                           })()}

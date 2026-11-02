@@ -632,33 +632,30 @@ export default function RemindersPage() {
                     return (
                       <div className="inline-flex items-center rounded-xl overflow-hidden shadow-sm border border-emerald-600 bg-emerald-600 text-white">
                         <a
-                          href={`tel:${cleanDestPhone}`}
-                          data-callhippo="true"
+                          href={getCallHippoDialerUrl(cleanDestPhone, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
                           onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: lineConfig.activeLine })}
                           className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border-r border-emerald-700"
-                          title={`Call ${cleanDestPhone} via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
+                          title={`Call via CallHippo (${lineConfig.activeLine === 'usa' ? 'USA Line' : lineConfig.activeLine === 'uk' ? 'UK Line' : 'Auto'})`}
                         >
                           <Phone size={13} />
                           <span>Call ({lineConfig.activeLine === 'usa' ? 'USA' : lineConfig.activeLine === 'uk' ? 'UK' : 'Auto'})</span>
                         </a>
-                        <a
-                          href={`tel:${cleanDestPhone}`}
-                          data-callhippo="true"
+                        <button
+                          type="button"
                           onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'uk' })}
                           className="px-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-[11px] font-semibold border-r border-emerald-800 transition-colors cursor-pointer"
                           title="Call from UK Line (+44)"
                         >
                           🇬🇧
-                        </a>
-                        <a
-                          href={`tel:${cleanDestPhone}`}
-                          data-callhippo="true"
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => openCallHippoDialer(cleanDestPhone, e, { name: lead.name, leadId: lead.id, country: lead.country, line: 'usa' })}
                           className="px-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-[11px] font-semibold transition-colors cursor-pointer"
                           title="Call from USA Line (+1)"
                         >
                           🇺🇸
-                        </a>
+                        </button>
                       </div>
                     )
                   })()}

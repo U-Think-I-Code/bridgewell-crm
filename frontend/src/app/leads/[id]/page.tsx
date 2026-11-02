@@ -645,8 +645,7 @@ export default function LeadProfile() {
   }
 
   const handleStartCall = async (e?: React.MouseEvent, targetLine?: CallHippoLine) => {
-    const isTelAnchor = e && (e.currentTarget as HTMLElement)?.tagName === 'A' && (e.currentTarget as HTMLAnchorElement)?.href?.startsWith('tel:')
-    if (e && !isTelAnchor) {
+    if (e) {
       if ('preventDefault' in e && typeof e.preventDefault === 'function') {
         e.preventDefault()
       }
@@ -669,18 +668,14 @@ export default function LeadProfile() {
 
     const selectedLine = targetLine || lineConfig.activeLine
     const resolvedLine = resolveOutboundLine(selectedLine, lead.country, cleanPhone)
-    const lineLabel = resolvedLine === 'usa' ? 'USA Line (+1)' : 'UK Line (+44)'
+    const lineLabel = targetLine === 'usa' ? 'USA Line (+1)' : targetLine === 'uk' ? 'UK Line (+44)' : (resolvedLine === 'usa' ? 'USA Line (+1)' : 'UK Line (+44)')
 
-    // Trigger openCallHippoDialer only if not a native tel anchor
-    let popup: Window | null = null
-    if (!isTelAnchor) {
-      popup = openCallHippoDialer(cleanPhone, e, { 
-        name: lead.name, 
-        leadId: id, 
-        country: lead.country,
-        line: resolvedLine
-      })
-    }
+    const popup = openCallHippoDialer(cleanPhone, e, { 
+      name: lead.name, 
+      leadId: id, 
+      country: lead.country,
+      line: targetLine || resolvedLine
+    })
 
     try {
       const { data: actData } = await supabase
@@ -1911,154 +1906,64 @@ export default function LeadProfile() {
             </div>
           )}
 
-          {/* Quick Action Buttons (Direct Dial via CallHippo + Outbound Line Toggle) */}
-          {(() => {
-            const normalizedPhone = cleanPhoneE164(lead.phone, lead.country)
-            const cleanDestPhone = normalizedPhone.cleanedE164Phone || String(lead.phone || '').trim()
-            const isUsa = cleanDestPhone.startsWith('+1') || (lead.country || '').toLowerCase().includes('usa') || (lead.country || '').toLowerCase().includes('united states')
-            const isUk = cleanDestPhone.startsWith('+44') || (lead.country || '').toLowerCase() === 'uk' || (lead.country || '').toLowerCase() === 'united kingdom'
-            const activeLineChoice = lineConfig.activeLine
-            const resolvedLine = resolveOutboundLine(activeLineChoice, lead.country, cleanDestPhone)
+          {/* Quick Action Buttons (UK Line vs USA Line vs WhatsApp vs Email) */}
+          <div className="grid grid-cols-3 gap-2 pt-1">
+             <button 
+               type="button"
+               onClick={(e) => handleStartCall(e, 'uk')}
+               className="flex justify-center items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
+               title="Call via CallHippo using UK Number (+44)"
+             >
+                <Phone size={13} className="shrink-0" />
+                <span className="truncate">🇬🇧 Call UK (+44)</span>
+             </button>
 
-            return (
-              <div className="space-y-2 pt-1">
-                {/* Primary Action Buttons: Smart Direct Dial + WhatsApp */}
-                <div className="grid grid-cols-3 gap-2">
-                  <a 
-                    href={`tel:${cleanDestPhone}`}
-                    data-callhippo="true"
-                    onClick={(e) => handleStartCall(e, resolvedLine)}
-                    className={`col-span-2 flex justify-center items-center gap-2 text-white py-2.5 px-3 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95 ${
-                      isUsa
-                        ? 'bg-emerald-600 hover:bg-emerald-700'
-                        : isUk
-                        ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-emerald-600 hover:bg-emerald-700'
-                    }`}
-                    title={`Click to dial ${cleanDestPhone} via CallHippo (${resolvedLine === 'usa' ? 'USA Line' : 'UK Line'})`}
-                  >
-                    <Phone size={14} className="shrink-0" />
-                    <span className="truncate">
-                      {isUsa ? '🇺🇸 Call USA ' : isUk ? '🇬🇧 Call UK ' : '📞 Call '}
-                      {cleanDestPhone}
-                    </span>
-                  </a>
+             <button 
+               type="button"
+               onClick={(e) => handleStartCall(e, 'usa')}
+               className="flex justify-center items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-95"
+               title="Call via CallHippo using USA Number (+1)"
+             >
+                <Phone size={13} className="shrink-0" />
+                <span className="truncate">🇺🇸 Call USA (+1)</span>
+             </button>
 
-                  <a 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    href={`https://wa.me/${cleanDestPhone.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.name)},`} 
-                    onClick={() => logActivity('WhatsApp', 'Opened WhatsApp chat')} 
-                    className="flex justify-center items-center gap-1.5 bg-emerald-50 border border-emerald-200/80 hover:bg-emerald-100/70 text-emerald-700 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
-                  >
-                    <MessageCircle size={13} className="text-emerald-600 shrink-0" />
-                    <span>WhatsApp</span>
-                  </a>
-                </div>
+             <a 
+               target="_blank" 
+               rel="noreferrer" 
+               href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.name)},`} 
+               onClick={() => logActivity('WhatsApp', 'Opened WhatsApp chat')} 
+               className="flex justify-center items-center gap-1.5 bg-emerald-50 border border-emerald-200/80 hover:bg-emerald-100/70 text-emerald-700 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+             >
+                <MessageCircle size={13} className="text-emerald-600 shrink-0" />
+                <span>WhatsApp</span>
+             </a>
 
-                {/* Secondary Row: CallHippo Outbound Caller Line Switcher */}
-                <div className="bg-gray-50/90 border border-gray-200/70 rounded-xl p-2 text-xs">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-bold text-gray-700 flex items-center gap-1 uppercase tracking-wider">
-                      <Phone size={10} className="text-emerald-600" />
-                      <span>CallHippo Outbound Line:</span>
-                    </span>
-                    <span className="text-[10px] text-gray-500 font-medium">
-                      {activeLineChoice === 'usa' ? '🇺🇸 USA Line (+1)' : activeLineChoice === 'uk' ? '🇬🇧 UK Line (+44)' : '⚡ Auto-matched'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1 bg-white p-0.5 rounded-lg border border-gray-200 shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => updateLineConfig({ activeLine: 'uk' })}
-                      className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                        activeLineChoice === 'uk'
-                          ? 'bg-blue-600 text-white font-bold shadow-2xs'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                      title="Outbound call connects using UK Line (+44)"
-                    >
-                      <span>🇬🇧 UK Line</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateLineConfig({ activeLine: 'usa' })}
-                      className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                        activeLineChoice === 'usa'
-                          ? 'bg-emerald-600 text-white font-bold shadow-2xs'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                      title="Outbound call connects using USA Line (+1)"
-                    >
-                      <span>🇺🇸 USA Line</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateLineConfig({ activeLine: 'auto' })}
-                      className={`py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                        activeLineChoice === 'auto'
-                          ? 'bg-purple-600 text-white font-bold shadow-2xs'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                      title="Smart Auto: Automatically use USA line for USA leads, UK line for UK leads"
-                    >
-                      <span>⚡ Auto</span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-gray-200/50 text-[10px] text-gray-500">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-                          navigator.clipboard.writeText(cleanDestPhone)
-                          setCopiedPhoneToast(true)
-                          setTimeout(() => setCopiedPhoneToast(false), 2500)
-                        }
-                      }}
-                      className="text-gray-600 hover:text-gray-900 font-medium inline-flex items-center gap-1 cursor-pointer"
-                      title="Copy standard E.164 phone number to clipboard"
-                    >
-                      <Copy size={10} />
-                      <span>{copiedPhoneToast ? '✓ Copied!' : 'Copy Number'}</span>
-                    </button>
-
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setShowEmailModal(true)
-                        if (!emailSubject && !emailBody) {
-                          if (templates.length > 0) {
-                            handleSelectTemplate(templates[0].id)
-                          } else {
-                            setSelectedTemplate({ id: 'custom', name: 'Custom Message' })
-                            setEmailSubject(`Information for ${lead?.name || 'Student'}`)
-                            setEmailBody(`Hi ${lead?.name || 'Student'},\n\n`)
-                          }
-                        }
-                      }} 
-                      className="text-gray-600 hover:text-gray-900 font-medium inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Mail size={10} />
-                      <span>Send Email</span>
-                    </button>
-
-                    <a
-                      href="https://dialer.callhippo.com/dial"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-emerald-700 hover:underline font-semibold inline-flex items-center gap-0.5"
-                      title="Open CallHippo Web Dialer"
-                    >
-                      <span>Web Dialer</span>
-                      <ExternalLink size={9} />
-                    </a>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
+             <button 
+               type="button"
+               onClick={() => {
+                 setShowEmailModal(true)
+                 if (!emailSubject && !emailBody) {
+                   if (templates.length > 0) {
+                     handleSelectTemplate(templates[0].id)
+                   } else {
+                     setSelectedTemplate({ id: 'custom', name: 'Custom Message' })
+                     setEmailSubject(`Information for ${lead?.name || 'Student'}`)
+                     setEmailBody(`Hi ${lead?.name || 'Student'},\n\n`)
+                   }
+                 }
+               }} 
+               className="flex justify-center items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 py-2.5 px-2 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+             >
+                <Mail size={13} className="text-gray-500 shrink-0" />
+                <span>Email</span>
+             </button>
+          </div>
+          {copiedPhoneToast && (
+            <p className="text-[11px] text-emerald-600 font-medium pt-1 text-center animate-fade-in">
+              ✓ Number copied to clipboard! (CallHippo me paste karke dial karein)
+            </p>
+          )}
         </div>
 
         <div className="p-6 space-y-6">
