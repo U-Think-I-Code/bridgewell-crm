@@ -194,28 +194,44 @@ export function openCallHippoDialer(
   const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
   const url = getCallHippoDialerUrl(phone, options)
 
-  // 1. Copy phone to clipboard using synchronous fallback FIRST (before popup steals focus)
-  //    navigator.clipboard.writeText requires user gesture & active document focus.
-  //    window.open() consumes the gesture and shifts focus, so clipboard write silently fails.
-  //    Using execCommand('copy') as primary (synchronous, works in same tick as user click).
+  // 1. Copy phone to clipboard BEFORE popup opens (popup steals focus & kills clipboard access).
+  //    Strategy: fire BOTH methods in the same user-gesture tick so at least one succeeds:
+  //    - navigator.clipboard.writeText(): preferred on macOS Safari/Chrome (modern Clipboard API)
+  //    - document.execCommand('copy'): preferred on Windows Chrome/Edge (legacy sync method)
+  //    Both must run BEFORE window.open() to retain user activation context.
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    // Modern Clipboard API — works on macOS Safari, macOS Chrome, iOS Safari
+    // Must be initiated in the same call stack as the user click (before popup)
+    navigator.clipboard.writeText(cleanPhone).catch(() => {})
+  }
+  // Legacy sync fallback — works on Windows Chrome, Edge, Firefox
   if (typeof document !== 'undefined') {
     try {
-      const textArea = document.createElement('textarea')
-      textArea.value = cleanPhone
-      textArea.style.position = 'fixed'
-      textArea.style.left = '-9999px'
-      textArea.style.top = '-9999px'
-      textArea.style.opacity = '0'
-      document.body.appendChild(textArea)
-      textArea.focus()
-      textArea.select()
+      const ta = document.createElement('textarea')
+      ta.value = cleanPhone
+      // Keep it visible to the browser's clipboard engine but invisible to the user
+      ta.style.position = 'fixed'
+      ta.style.left = '0'
+      ta.style.top = '0'
+      ta.style.width = '1px'
+      ta.style.height = '1px'
+      ta.style.padding = '0'
+      ta.style.border = 'none'
+      ta.style.outline = 'none'
+      ta.style.boxShadow = 'none'
+      ta.style.background = 'transparent'
+      ta.style.opacity = '0.01'
+      ta.style.zIndex = '-1'
+      ta.setAttribute('readonly', '')
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      // iOS Safari needs setSelectionRange
+      ta.setSelectionRange(0, cleanPhone.length)
       document.execCommand('copy')
-      document.body.removeChild(textArea)
+      document.body.removeChild(ta)
     } catch {
-      // Fallback: try async clipboard API (may fail after popup opens)
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(cleanPhone).catch(() => {})
-      }
+      // Silent fail — modern clipboard API above should have succeeded on Mac
     }
   }
 
