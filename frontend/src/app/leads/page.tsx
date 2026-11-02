@@ -1818,14 +1818,17 @@ function LeadsContent() {
                               via {lead.source}
                             </span>
                           )}
-                          {lead.next_follow_up && (
-                            <span 
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs"
-                              title={`Scheduled Follow-up: ${formatDualTime(lead.next_follow_up, lead.phone, lead.country).badgeText}`}
-                            >
-                              ⏰ {formatDualTime(lead.next_follow_up, lead.phone, lead.country).badgeText}
-                            </span>
-                          )}
+                          {lead.next_follow_up && (() => {
+                            const dual = formatDualTime(lead.next_follow_up, lead.phone, lead.country)
+                            return (
+                              <span 
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs"
+                                title={`Scheduled Follow-up: ${dual.badgeText}`}
+                              >
+                                ⏰ {dual.badgeText}
+                              </span>
+                            )
+                          })()}
                         </div>
                       </div>
                     </td>

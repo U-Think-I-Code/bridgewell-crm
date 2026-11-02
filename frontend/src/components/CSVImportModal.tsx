@@ -406,11 +406,14 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
           })
         } else {
           // BRAND NEW LEAD: Round-robin counselor distribution
-          const resolvedCountry = rawCountry 
-            ? resolveCountryName(rawCountry) 
-            : (phoneResult.countryName && phoneResult.countryName !== 'Other'
-                ? phoneResult.countryName 
-                : (inferCountryFromPhone(cleanedPhone) || null))
+          // Physical location is primarily determined by phone number country code (+44 UK, +1 USA, etc.)
+          const phoneCountry = phoneResult.countryName && phoneResult.countryName !== 'Other'
+            ? phoneResult.countryName 
+            : (inferCountryFromPhone(cleanedPhone) || null)
+
+          const resolvedCountry = phoneCountry
+            ? (phoneCountry === 'USA' && rawCountry && (rawCountry.toLowerCase().includes('canada') || rawCountry.toLowerCase() === 'ca') ? 'Canada' : phoneCountry)
+            : (rawCountry ? resolveCountryName(rawCountry) : null)
 
           const record: any = {
             name: rawName,
