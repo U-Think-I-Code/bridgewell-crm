@@ -119,16 +119,22 @@ export function getCallHippoDialerUrl(phone: string, options?: CallHippoDialerOp
   const cleanPhone = formatPhoneNumberForCallHippo(phone, options?.country || (resolvedLine === 'usa' ? 'USA' : 'UK'))
   const params = new URLSearchParams()
 
-  // Primary CallHippo click-to-call parameters
-  params.set('to', cleanPhone)
+  // Pre-load phone number into CallHippo dialer keypad WITHOUT auto-dialing:
+  // In CallHippo's client code:
+  // - `phoneNumber` triggers: if (t.phoneNumber) e.setState({ isOpenDialerWithNumber: t.phoneNumber })
+  // - `to && !t.type` triggers auto-dial timer: e.onClickDial(...)
+  // By omitting `to` and setting `type=manual`, CallHippo loads the number on the dialpad
+  // but DOES NOT auto-dial, letting the counselor select their outbound line (USA/UK)
+  // and press the Call button manually!
   params.set('phoneNumber', cleanPhone)
-  params.set('number', cleanPhone)
+  params.set('type', 'manual')
 
   // Outbound Number / Caller ID configuration for CallHippo
   if (fromNumber) {
     const cleanFrom = fromNumber.replace(/[^\d+]/g, '')
     params.set('from', cleanFrom)
     params.set('callerId', cleanFrom)
+    params.set('defNo', cleanFrom)
     params.set('outboundNumber', cleanFrom)
   }
 
