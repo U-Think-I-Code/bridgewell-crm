@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } from 'react'
+import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
@@ -514,7 +515,7 @@ function LeadsContent() {
 
       setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: val, stage: 'New' } : l))
       await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', leadId)
-      const formattedPriority = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
+      const formattedPriority = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val
       await supabase.from('activities').insert([{
         lead: leadId,
         user_id: user?.id,
@@ -533,7 +534,7 @@ function LeadsContent() {
     await supabase.from('leads').update({ priority: val }).eq('id', leadId)
     
     // Log activity
-    const label = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : '⚪ Unset'
+    const label = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : '⚪ Unset'
     await supabase.from('activities').insert([{
       lead: leadId,
       user_id: user?.id,
@@ -575,7 +576,8 @@ function LeadsContent() {
   const getStageBadgeClass = (stage?: string | null): string => {
     const s = (stage || '').toLowerCase().trim()
     if (s === 'new') return 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/80'
-    if (s === 'attempted contact') return 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80'
+    if (s === 'ringing' || s === 'attempted contact') return 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80 font-semibold'
+    if (s === 'call back' || s === 'callback') return 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/80 font-semibold'
     if (s === 'not connected') return 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100/80 font-semibold'
     if (s === 'connected') return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80 font-semibold'
     if (s === 'qualified') return 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100/80'
@@ -660,20 +662,16 @@ function LeadsContent() {
     hotCount,
     warmCount,
     coldCount,
-    callbackCount,
-    ringingCount,
     unsetCount,
     studyAbroadCount,
     visaProcessCount
   } = useMemo(() => {
-    let hot = 0, warm = 0, cold = 0, callback = 0, ringing = 0, unset = 0, study = 0, visa = 0
+    let hot = 0, warm = 0, cold = 0, unset = 0, study = 0, visa = 0
     for (let i = 0; i < counselorScopedPool.length; i++) {
       const l = counselorScopedPool[i]
       if (l.priority === 'Hot') hot++
       else if (l.priority === 'Warm') warm++
       else if (l.priority === 'Cold') cold++
-      else if (l.priority === 'Callback') callback++
-      else if (l.priority === 'Ringing') ringing++
       else if (!l.priority) unset++
 
       if (getLeadServiceType(l) === 'visa_process') visa++
@@ -683,8 +681,6 @@ function LeadsContent() {
       hotCount: hot,
       warmCount: warm,
       coldCount: cold,
-      callbackCount: callback,
-      ringingCount: ringing,
       unsetCount: unset,
       studyAbroadCount: study,
       visaProcessCount: visa
@@ -1121,50 +1117,6 @@ function LeadsContent() {
             </span>
           </button>
 
-          {/* Callback */}
-          <button
-            onClick={() => {
-              startTransition(() => {
-                setSelectedPriority('Callback')
-                setDisplayLimit(100)
-              })
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedPriority === 'Callback'
-                ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-200 font-semibold'
-                : 'bg-white border border-purple-200 text-purple-700 hover:bg-purple-50'
-            }`}
-          >
-            <span>📞 Callback</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              selectedPriority === 'Callback' ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-800'
-            }`}>
-              {callbackCount}
-            </span>
-          </button>
-
-          {/* Ringing */}
-          <button
-            onClick={() => {
-              startTransition(() => {
-                setSelectedPriority('Ringing')
-                setDisplayLimit(100)
-              })
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedPriority === 'Ringing'
-                ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-200 font-semibold'
-                : 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
-            }`}
-          >
-            <span>🔔 Ringing</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              selectedPriority === 'Ringing' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {ringingCount}
-            </span>
-          </button>
-
           {/* Unset */}
           {unsetCount > 0 && (
             <button
@@ -1586,8 +1538,6 @@ function LeadsContent() {
                       <option value="Hot">🔥 Hot</option>
                       <option value="Warm">☀️ Warm</option>
                       <option value="Cold">❄️ Cold</option>
-                      <option value="Callback">📞 Callback</option>
-                      <option value="Ringing">🔔 Ringing</option>
                       <option value="UNSET">⚪ Unset</option>
                     </select>
                   </div>
@@ -1756,6 +1706,14 @@ function LeadsContent() {
                               via {lead.source}
                             </span>
                           )}
+                          {lead.next_follow_up && (
+                            <span 
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs"
+                              title={`Scheduled Follow-up: ${formatDualTime(lead.next_follow_up, lead.phone, lead.country).badgeText}`}
+                            >
+                              ⏰ {formatDualTime(lead.next_follow_up, lead.phone, lead.country).badgeText}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -1772,10 +1730,6 @@ function LeadsContent() {
                             ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100 focus:ring-2 focus:ring-amber-200'
                             : lead.priority === 'Cold'
                             ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 focus:ring-2 focus:ring-blue-200'
-                            : lead.priority === 'Callback'
-                            ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 focus:ring-2 focus:ring-purple-200'
-                            : lead.priority === 'Ringing'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 focus:ring-2 focus:ring-emerald-200'
                             : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
                         }`}
                       >
@@ -1783,8 +1737,6 @@ function LeadsContent() {
                         <option value="Hot">🔥 Hot</option>
                         <option value="Warm">☀️ Warm</option>
                         <option value="Cold">❄️ Cold</option>
-                        <option value="Callback">📞 Callback</option>
-                        <option value="Ringing">🔔 Ringing</option>
                       </select>
                     </td>
 
@@ -2016,13 +1968,9 @@ function LeadsContent() {
                                 ? 'bg-amber-50 text-amber-800 border-amber-200'
                                 : lead.priority === 'Cold'
                                 ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : lead.priority === 'Callback'
-                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                : lead.priority === 'Ringing'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : 'bg-gray-50 text-gray-700 border-gray-200'
                             }`}>
-                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
+                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
                             </span>
                           )}
                         </div>

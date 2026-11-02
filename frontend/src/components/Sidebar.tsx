@@ -53,7 +53,7 @@ export default function Sidebar() {
             </div>
             <span className="font-semibold text-gray-900 tracking-tight">Bridgewell</span>
           </div>
-          
+
           <button
             onClick={openDrawer}
             title="Open Notifications Drawer"
@@ -67,24 +67,24 @@ export default function Sidebar() {
             )}
           </button>
         </div>
-        
+
         <form onSubmit={handleSearch} className="relative mb-4 px-1">
           <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search leads..." 
+            placeholder="Search leads..."
             className="w-full pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all text-gray-900 placeholder-gray-400"
           />
         </form>
       </div>
-      
+
       <nav className="flex-1 px-3 space-y-1">
         {links.map((link) => {
           if ((link as any).managerOnly && !isManager(user)) return null
           if ((link as any).leaderOrManager && !canManageLeads(user)) return null
-          
+
           const Icon = link.icon
           const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href))
           return (
@@ -146,7 +146,7 @@ export default function Sidebar() {
                 lineConfig.activeLine === 'uk'
                   ? 'bg-white text-blue-700 shadow-2xs font-bold border border-blue-200'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
               title="Outgoing calls connect using UK Number (+44)"
             >
               <span>🇬🇧 UK</span>
@@ -158,7 +158,7 @@ export default function Sidebar() {
                 lineConfig.activeLine === 'usa'
                   ? 'bg-white text-emerald-700 shadow-2xs font-bold border border-emerald-200'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
               title="Outgoing calls connect using USA Number (+1)"
             >
               <span>🇺🇸 USA</span>
@@ -170,7 +170,7 @@ export default function Sidebar() {
                 lineConfig.activeLine === 'auto'
                   ? 'bg-white text-purple-700 shadow-2xs font-bold border border-purple-200'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
               title="Smart Auto: USA leads use USA line; UK/EU leads use UK line"
             >
               <span>⚡ Auto</span>
@@ -262,7 +262,7 @@ export default function Sidebar() {
           </div>
         </div>
       )}
-      
+
       <div className="p-3 mx-3 mt-auto mb-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-3">
         {/* Avatar with initials */}
         <div className="w-9 h-9 rounded-lg bg-gray-900 text-white flex items-center justify-center text-xs font-bold shrink-0 tracking-wide">

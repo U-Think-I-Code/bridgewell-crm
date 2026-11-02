@@ -242,6 +242,15 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString()
     }
 
+    // Auto-update stage based on call outcome
+    if ((outcome === 'Ringing' || outcome === 'No Answer') && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact')) {
+      updatePayload.stage = 'Ringing'
+    } else if ((outcome === 'Callback' || outcome === 'Call back') && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing')) {
+      updatePayload.stage = 'Call back'
+    } else if (outcome === 'Connected' && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing' || matchedLead.stage === 'Call back')) {
+      updatePayload.stage = 'Connected'
+    }
+
     // If answered, make sure priority reflects engagement
     if (outcome === 'Connected' && (!matchedLead.priority || matchedLead.priority === 'Unset')) {
       updatePayload.priority = 'Warm'

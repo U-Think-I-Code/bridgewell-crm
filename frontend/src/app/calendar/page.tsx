@@ -11,6 +11,7 @@ import {
   X, RefreshCw, User, CalendarDays, CalendarRange, ListFilter
 } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
+import { formatDualTime } from '@/lib/timezoneHelper'
 
 type ViewMode = 'month' | 'week' | 'day'
 
@@ -1044,16 +1045,24 @@ export default function CalendarPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm font-bold text-gray-900">
-                    {new Date(activeLead.next_follow_up).toLocaleString('en-IN', {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: true,
-                    })}
-                  </p>
+                  {(() => {
+                    const dual = formatDualTime(activeLead.next_follow_up, activeLead.phone, activeLead.country)
+                    return (
+                      <div className="space-y-1">
+                        <div className="text-sm font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
+                          <span className="bg-white px-2 py-0.5 rounded border border-blue-200">
+                            {dual.studentFlag} {dual.studentLabel}: {dual.studentDate}, {dual.studentTime} {dual.studentTz}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                          <span>⇄ 🇮🇳 India (IST): {dual.istDate}, {dual.istTime}</span>
+                          {dual.isDifferentTimezone && (
+                            <span className="text-[10px] text-blue-700">({dual.timeDiffDescription})</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Direct Action Buttons */}

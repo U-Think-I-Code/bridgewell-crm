@@ -6,6 +6,7 @@ import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
+import { getStudentTimezone, formatDualTime, getStudentCurrentTime, studentLocalToUTC, utcToStudentLocalInput, utcToISTLocalInput } from '@/lib/timezoneHelper'
 import { logAuditTrail } from '@/lib/auditLogger'
 import { openCallHippoDialer, getCallHippoDialerUrl, CallHippoLine, resolveOutboundLine } from '@/lib/callhippo'
 import { useCallHippoLine } from '@/lib/dialer'
@@ -133,6 +134,7 @@ export default function LeadProfile() {
   const isEditingNoteRef = useRef(false)
   const notesTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [followUpDate, setFollowUpDate] = useState('')
+  const [followUpTzMode, setFollowUpTzMode] = useState<'student' | 'ist'>('student')
   const [savingFollowUp, setSavingFollowUp] = useState(false)
   const [followUpSavedSuccess, setFollowUpSavedSuccess] = useState(false)
   const isEditingFollowUpRef = useRef(false)
@@ -271,7 +273,12 @@ export default function LeadProfile() {
     // Only set follow-up date if user is not actively editing in input
     if (!isEditingFollowUpRef.current) {
       if (leadData?.next_follow_up) {
-        setFollowUpDate(toLocalDatetimeString(leadData.next_follow_up))
+        const leadTz = getStudentTimezone(leadData.phone, leadData.country)
+        setFollowUpDate(
+          followUpTzMode === 'student' && !leadTz.isIndia
+            ? utcToStudentLocalInput(leadData.next_follow_up, leadTz.timeZone)
+            : utcToISTLocalInput(leadData.next_follow_up)
+        )
       } else {
         setFollowUpDate('')
       }
@@ -295,7 +302,10 @@ export default function LeadProfile() {
 
     setSavingFollowUp(true)
     try {
-      const isoString = new Date(targetDate).toISOString()
+      const tzInfo = getStudentTimezone(lead?.phone, lead?.country)
+      const isoString = (followUpTzMode === 'student' && !tzInfo.isIndia)
+        ? studentLocalToUTC(targetDate, tzInfo.timeZone)
+        : studentLocalToUTC(targetDate, 'Asia/Kolkata')
       
       const { error } = await supabase
         .from('leads')
@@ -304,21 +314,17 @@ export default function LeadProfile() {
         
       if (error) throw error
 
-      const formattedDate = new Date(isoString).toLocaleString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      })
+      const dual = formatDualTime(isoString, lead?.phone, lead?.country)
+      const activityText = dual.isDifferentTimezone
+        ? `Follow-up scheduled: ${dual.studentFlag} ${dual.studentTime} ${dual.studentTz} (${tzInfo.countryName}) ⇄ 🇮🇳 ${dual.istTime} IST`
+        : `Follow-up scheduled for ${dual.istDate}, ${dual.istTime} IST`
       
       await supabase.from('activities').insert([
         {
           lead: id,
           user_id: currentUser?.id || lead?.owner_id,
           type: 'followup_scheduled',
-          text: `Follow-up scheduled for ${formattedDate}`,
+          text: activityText,
           time: new Date().toISOString()
         }
       ])
@@ -330,12 +336,16 @@ export default function LeadProfile() {
         fieldName: 'next_follow_up',
         oldValue: lead?.next_follow_up || 'None',
         newValue: isoString,
-        summary: `Next follow-up set to ${formattedDate}`
+        summary: `Next follow-up set to ${activityText}`
       })
 
       isEditingFollowUpRef.current = false
       setLead((prev: any) => ({ ...prev, next_follow_up: isoString }))
-      setFollowUpDate(toLocalDatetimeString(isoString))
+      setFollowUpDate(
+        (followUpTzMode === 'student' && !tzInfo.isIndia)
+          ? utcToStudentLocalInput(isoString, tzInfo.timeZone)
+          : utcToISTLocalInput(isoString)
+      )
       setFollowUpSavedSuccess(true)
       setTimeout(() => setFollowUpSavedSuccess(false), 3000)
       fetchLeadAndActivities()
@@ -733,11 +743,21 @@ export default function LeadProfile() {
       const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
       const newAttempts = isUnanswered ? (lead?.attempts || 0) + 1 : (lead?.attempts || 0)
 
+      const stageUpdates: Record<string, any> = {}
+      if ((outcome === 'Ringing' || outcome === 'No Answer') && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
+        stageUpdates.stage = 'Ringing'
+      } else if ((outcome === 'Callback' || outcome === 'Call back') && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing')) {
+        stageUpdates.stage = 'Call back'
+      } else if (outcome === 'Connected' && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back')) {
+        stageUpdates.stage = 'Connected'
+      }
+
       await supabase
         .from('leads')
         .update({
           last_call_outcome: outcome,
           attempts: newAttempts,
+          ...stageUpdates,
           metadata: {
             ...(lead?.metadata || {}),
             last_call_duration: formattedDuration,
@@ -756,7 +776,7 @@ export default function LeadProfile() {
 
   const logCallOutcome = async (outcome: string) => {
     setSavingAction(true)
-    const isUnanswered = ['No Answer', 'Busy', 'Not Connected', 'Not connected'].includes(outcome)
+    const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
     const newAttempts = isUnanswered ? (lead.attempts || 0) + 1 : lead.attempts
 
     await supabase.from('activities').insert([
@@ -781,10 +801,14 @@ export default function LeadProfile() {
       next_follow_up: nextFollowUpIso,
     }
 
-    // Auto-update stage to 'Not connected' or 'Connected' if lead is in initial stages
-    if ((outcome === 'Not Connected' || outcome === 'Not connected') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
+    // Auto-update stage based on outcome if lead is in initial calling stages
+    if ((outcome === 'Ringing' || outcome === 'No Answer') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
+      updateLeadData.stage = 'Ringing'
+    } else if ((outcome === 'Call back' || outcome === 'Callback') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected')) {
+      updateLeadData.stage = 'Call back'
+    } else if ((outcome === 'Not Connected' || outcome === 'Not connected') && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing')) {
       updateLeadData.stage = 'Not connected'
-    } else if (outcome === 'Connected' && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Not connected')) {
+    } else if (outcome === 'Connected' && (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back')) {
       updateLeadData.stage = 'Connected'
     }
 
@@ -817,7 +841,7 @@ export default function LeadProfile() {
 
     let junkReason = ''
     if (newStage === 'Junk/duplicate') {
-      const isPrioritySet = lead.priority === 'Hot' || lead.priority === 'Warm' || lead.priority === 'Cold' || lead.priority === 'Callback' || lead.priority === 'Ringing'
+      const isPrioritySet = lead.priority === 'Hot' || lead.priority === 'Warm' || lead.priority === 'Cold'
       const confirmMsg = isPrioritySet
         ? `⚠️ Warning: This lead is currently marked as "${lead.priority}". Moving it to "Junk/duplicate" will reset its priority to Unset and clear follow-up reminders.\n\nAre you sure you want to move this lead to Junk?`
         : `Are you sure you want to mark this lead as Junk/duplicate?`
@@ -979,7 +1003,7 @@ export default function LeadProfile() {
       )
       if (!shouldRevive) return
 
-      const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
+      const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val
       setSavingAction(true)
       await supabase.from('leads').update({ priority: val, stage: 'New' }).eq('id', id)
       await supabase.from('activities').insert([
@@ -998,7 +1022,7 @@ export default function LeadProfile() {
     }
 
     setSavingAction(true)
-    const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val === 'Callback' ? '📞 Callback' : val === 'Ringing' ? '🔔 Ringing' : val
+    const priorityLabel = val === 'Hot' ? '🔥 Hot' : val === 'Warm' ? '☀️ Warm' : val === 'Cold' ? '❄️ Cold' : val
     await supabase.from('leads').update({ priority: val }).eq('id', id)
     await supabase.from('activities').insert([
       { 
@@ -1578,11 +1602,15 @@ export default function LeadProfile() {
                 {lead.last_call_outcome && (
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                     lead.last_call_outcome === 'Connected' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    lead.last_call_outcome === 'Ringing' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                    lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                     lead.last_call_outcome === 'No Answer' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                     lead.last_call_outcome === 'Busy' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                     'bg-gray-100 text-gray-700 border-gray-200'
                   }`}>
                     {lead.last_call_outcome === 'Connected' ? '📞 Connected' :
+                     lead.last_call_outcome === 'Ringing' ? '🔔 Ringing' :
+                     lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? '📞 Call Back' :
                      lead.last_call_outcome === 'No Answer' ? '📵 No Answer' :
                      lead.last_call_outcome === 'Busy' ? '⏳ Busy' : '↪️ ' + lead.last_call_outcome}
                   </span>
@@ -1595,13 +1623,9 @@ export default function LeadProfile() {
                       ? 'bg-amber-50 text-amber-800 border-amber-200'
                       : lead.priority === 'Cold'
                       ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : lead.priority === 'Callback'
-                      ? 'bg-purple-50 text-purple-700 border-purple-200'
-                      : lead.priority === 'Ringing'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-gray-50 text-gray-700 border-gray-200'
                   }`}>
-                    {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
+                    {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
                   </span>
                 )}
                 {/* Service Track Badge */}
@@ -1616,15 +1640,26 @@ export default function LeadProfile() {
                 )}
               </div>
             </div>
-            <p className="text-gray-400 text-xs flex items-center gap-1.5 font-normal mt-1.5 flex-wrap">
-              <Clock size={12} /> Added {new Date(lead.created_at).toLocaleDateString()}
+            <div className="text-gray-400 text-xs flex items-center gap-1.5 font-normal mt-1.5 flex-wrap">
+              <span className="flex items-center gap-1"><Clock size={12} /> Added {new Date(lead.created_at).toLocaleDateString()}</span>
               {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
                   {formatCountryBadge(lead.country, lead.phone)} Ad
                 </span>
               )}
-              {lead.source ? `• via ${lead.source}` : ''}
-            </p>
+              {/* Student Country Local Clock */}
+              {(() => {
+                const sClock = getStudentCurrentTime(lead.phone, lead.country)
+                return (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] bg-slate-900 text-white shadow-2xs" title={`Local time in student's country (${sClock.countryName})`}>
+                    <Clock size={11} className="text-amber-400" />
+                    <span>{sClock.flag} {sClock.countryName}: {sClock.time} ({sClock.tzCode})</span>
+                    <span className="text-[10px] text-gray-300 font-normal">• {sClock.statusText}</span>
+                  </span>
+                )
+              })()}
+              {lead.source ? <span>• via {lead.source}</span> : ''}
+            </div>
           </div>
 
           {/* Enrolled Status Celebration Banner */}
@@ -1697,10 +1732,6 @@ export default function LeadProfile() {
                       ? 'border-amber-300 text-amber-800 bg-amber-50/70 focus:ring-2 focus:ring-amber-200' 
                       : lead.priority === 'Cold' 
                       ? 'border-blue-300 text-blue-700 bg-blue-50/70 focus:ring-2 focus:ring-blue-200' 
-                      : lead.priority === 'Callback'
-                      ? 'border-purple-300 text-purple-700 bg-purple-50/70 focus:ring-2 focus:ring-purple-200'
-                      : lead.priority === 'Ringing'
-                      ? 'border-emerald-300 text-emerald-700 bg-emerald-50/70 focus:ring-2 focus:ring-emerald-200'
                       : 'border-gray-200 text-gray-800 bg-white hover:bg-gray-50'
                   }`}
                 >
@@ -1708,8 +1739,6 @@ export default function LeadProfile() {
                   <option value="Hot">🔥 Hot</option>
                   <option value="Warm">☀️ Warm</option>
                   <option value="Cold">❄️ Cold</option>
-                  <option value="Callback">📞 Callback</option>
-                  <option value="Ringing">🔔 Ringing</option>
                 </select>
               </div>
 
@@ -2444,74 +2473,161 @@ export default function LeadProfile() {
              </div>
            )}
            
-           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200 flex-wrap">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap flex items-center gap-1.5">
-                <Calendar size={15} className="text-gray-500" />
-                <span>Next Follow-up:</span>
-              </label>
-              
-              <input 
-                type="datetime-local" 
-                value={followUpDate}
-                onFocus={() => { isEditingFollowUpRef.current = true }}
-                onChange={e => {
-                  isEditingFollowUpRef.current = true
-                  setFollowUpDate(e.target.value)
-                }}
-                className="bg-white border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 shadow-2xs font-medium"
-              />
+           {/* Timezone-Aware Follow-up Scheduling Section */}
+           {(() => {
+             const studentTzInfo = getStudentTimezone(lead?.phone, lead?.country)
+             return (
+               <div className="bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white border border-blue-200/80 rounded-2xl p-4 mb-4 shadow-xs">
+                 <div className="flex items-center justify-between gap-3 mb-2.5 flex-wrap">
+                   <div className="flex items-center gap-2 flex-wrap">
+                     <Calendar size={16} className="text-blue-600" />
+                     <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                       Follow-up Schedule
+                     </span>
+                     {/* Student Timezone Flag & Label */}
+                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white text-gray-800 border border-blue-200 shadow-2xs">
+                       {studentTzInfo.flag} {studentTzInfo.label}
+                     </span>
+                   </div>
 
-              {/* Direct Save Follow-up button */}
-              <button
-                type="button"
-                onClick={() => handleSaveFollowUp()}
-                disabled={savingFollowUp || !followUpDate}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
-                  followUpDate
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                }`}
-                title="Save selected follow-up date and time"
-              >
-                <Check size={13} />
-                <span>{savingFollowUp ? 'Saving...' : 'Save Follow-up'}</span>
-              </button>
+                   {/* Timezone Switcher Toggle */}
+                   {!studentTzInfo.isIndia && (
+                     <div className="inline-flex items-center rounded-lg border border-blue-200 bg-white p-0.5 text-[11px] shadow-2xs">
+                       <button
+                         type="button"
+                         onClick={() => {
+                           if (followUpTzMode !== 'student') {
+                             setFollowUpTzMode('student')
+                             if (lead?.next_follow_up) {
+                               setFollowUpDate(utcToStudentLocalInput(lead.next_follow_up, studentTzInfo.timeZone))
+                             }
+                           }
+                         }}
+                         className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                           followUpTzMode === 'student'
+                             ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                             : 'text-gray-600 hover:text-gray-900'
+                         }`}
+                         title={`Pick time according to student's country (${studentTzInfo.countryName})`}
+                       >
+                         {studentTzInfo.flag} {studentTzInfo.countryName} Time
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => {
+                           if (followUpTzMode !== 'ist') {
+                             setFollowUpTzMode('ist')
+                             if (lead?.next_follow_up) {
+                               setFollowUpDate(utcToISTLocalInput(lead.next_follow_up))
+                             }
+                           }
+                         }}
+                         className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                           followUpTzMode === 'ist'
+                             ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                             : 'text-gray-600 hover:text-gray-900'
+                         }`}
+                         title="Pick time in Indian Standard Time (IST)"
+                       >
+                         🇮🇳 India (IST)
+                       </button>
+                     </div>
+                   )}
+                 </div>
 
-              {/* Clear button when date is selected or lead has follow-up */}
-              {(lead?.next_follow_up || followUpDate) && (
-                <button
-                  type="button"
-                  onClick={handleClearFollowUp}
-                  disabled={savingFollowUp}
-                  className="text-xs text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-lg transition-colors font-semibold flex items-center gap-1 cursor-pointer shadow-2xs"
-                  title="Remove follow-up date"
-                >
-                  <X size={12} />
-                  <span>Clear</span>
-                </button>
-              )}
+                 {/* Input & Action Row */}
+                 <div className="flex items-center gap-2.5 flex-wrap">
+                   <div className="relative">
+                     <input 
+                       type="datetime-local" 
+                       value={followUpDate}
+                       onFocus={() => { isEditingFollowUpRef.current = true }}
+                       onChange={e => {
+                         isEditingFollowUpRef.current = true
+                         setFollowUpDate(e.target.value)
+                       }}
+                       className="bg-white border border-gray-300 rounded-xl text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 shadow-2xs font-bold"
+                     />
+                   </div>
 
-              {/* Success Badge */}
-              {followUpSavedSuccess && (
-                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1 animate-fade-in">
-                  <CheckCircle2 size={13} className="text-emerald-600" />
-                  <span>Saved!</span>
-                </span>
-              )}
+                   <button
+                     type="button"
+                     onClick={() => handleSaveFollowUp()}
+                     disabled={savingFollowUp || !followUpDate}
+                     className={`text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                       followUpDate
+                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+                         : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                     }`}
+                     title="Save selected follow-up date and time"
+                   >
+                     <Check size={14} />
+                     <span>{savingFollowUp ? 'Saving...' : 'Save Follow-up'}</span>
+                   </button>
 
-              {/* Scheduled info badge */}
-              {lead?.next_follow_up && !followUpSavedSuccess && (
-                <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
-                  <span>Scheduled: {new Date(lead.next_follow_up).toLocaleString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true
-                  })}</span>
-                </span>
-              )}
-           </div>
+                   {(lead?.next_follow_up || followUpDate) && (
+                     <button
+                       type="button"
+                       onClick={handleClearFollowUp}
+                       disabled={savingFollowUp}
+                       className="text-xs text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-2 rounded-xl transition-colors font-bold flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
+                       title="Remove follow-up date"
+                     >
+                       <X size={13} />
+                       <span>Clear</span>
+                     </button>
+                   )}
+
+                   {followUpSavedSuccess && (
+                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 animate-fade-in shadow-2xs">
+                       <CheckCircle2 size={14} className="text-emerald-600" />
+                       <span>Saved!</span>
+                     </span>
+                   )}
+                 </div>
+
+                 {/* Live Dual Time Preview */}
+                 {followUpDate && (
+                   <div className="mt-2.5 pt-2.5 border-t border-blue-200/60 flex items-center gap-2 flex-wrap text-xs">
+                     <span className="text-gray-500 font-semibold">Selected Time:</span>
+                     {(() => {
+                       const tz = getStudentTimezone(lead?.phone, lead?.country)
+                       const previewUtc = (followUpTzMode === 'student' && !tz.isIndia)
+                         ? studentLocalToUTC(followUpDate, tz.timeZone)
+                         : studentLocalToUTC(followUpDate, 'Asia/Kolkata')
+                       const dual = formatDualTime(previewUtc, lead?.phone, lead?.country)
+                       return (
+                         <div className="flex items-center gap-2 flex-wrap font-bold">
+                           <span className="bg-white text-blue-900 border border-blue-200 px-2.5 py-1 rounded-lg shadow-2xs">
+                             {dual.studentFlag} {dual.studentDate}, {dual.studentTime} {dual.studentTz} ({tz.countryName})
+                           </span>
+                           <span className="text-gray-400">⇄</span>
+                           <span className="bg-white text-emerald-900 border border-emerald-200 px-2.5 py-1 rounded-lg shadow-2xs">
+                             🇮🇳 {dual.istDate}, {dual.istTime} IST (India)
+                           </span>
+                           {dual.isDifferentTimezone && (
+                             <span className="text-[11px] font-semibold text-blue-700">
+                               ({dual.timeDiffDescription})
+                             </span>
+                           )}
+                         </div>
+                       )
+                     })()}
+                   </div>
+                 )}
+
+                 {/* Current Scheduled Info */}
+                 {lead?.next_follow_up && !followUpSavedSuccess && (
+                   <div className="mt-2.5 pt-2 border-t border-blue-200/40 text-xs flex items-center gap-2 flex-wrap">
+                     <span className="text-blue-800 font-bold">⏰ Scheduled:</span>
+                     <span className="bg-white text-gray-900 border border-blue-200 px-2.5 py-0.5 rounded-md font-bold shadow-2xs">
+                       {formatDualTime(lead.next_follow_up, lead.phone, lead.country).badgeText}
+                     </span>
+                   </div>
+                 )}
+               </div>
+             )
+           })()}
 
            <div className="flex justify-between items-end">
               <div className="flex flex-col gap-2 w-full">
@@ -2520,7 +2636,7 @@ export default function LeadProfile() {
                     <button 
                       onClick={() => logCallOutcome('Connected')} 
                       disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
                         lead.last_call_outcome === 'Connected'
                           ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-200 shadow-md font-bold'
                           : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
@@ -2529,9 +2645,31 @@ export default function LeadProfile() {
                        <PhoneCall size={12} /> Connected
                     </button>
                     <button 
+                      onClick={() => logCallOutcome('Ringing')} 
+                      disabled={savingAction} 
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                        lead.last_call_outcome === 'Ringing'
+                          ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-200 shadow-md font-bold'
+                          : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
+                      }`}
+                    >
+                       🔔 Ringing
+                    </button>
+                    <button 
+                      onClick={() => logCallOutcome('Call back')} 
+                      disabled={savingAction} 
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                        lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback'
+                          ? 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-200 shadow-md font-bold'
+                          : 'bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700'
+                      }`}
+                    >
+                       📞 Call Back
+                    </button>
+                    <button 
                       onClick={() => logCallOutcome('Not Connected')} 
                       disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
                         lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected'
                           ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200 shadow-md font-bold'
                           : 'bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700'
@@ -2542,7 +2680,7 @@ export default function LeadProfile() {
                     <button 
                       onClick={() => logCallOutcome('No Answer')} 
                       disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
                         lead.last_call_outcome === 'No Answer'
                           ? 'bg-red-600 text-white border-red-600 ring-2 ring-red-200 shadow-md font-bold'
                           : 'bg-red-50 hover:bg-red-100 border-red-200 text-red-700'
@@ -2553,7 +2691,7 @@ export default function LeadProfile() {
                     <button 
                       onClick={() => logCallOutcome('Busy')} 
                       disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
                         lead.last_call_outcome === 'Busy'
                           ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-200 shadow-md font-bold'
                           : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700'
@@ -2564,7 +2702,7 @@ export default function LeadProfile() {
                     <button 
                       onClick={() => logCallOutcome('Wrong Num')} 
                       disabled={savingAction} 
-                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs ${
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
                         lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number'
                           ? 'bg-gray-800 text-white border-gray-800 ring-2 ring-gray-200 shadow-md font-bold'
                           : 'bg-white hover:bg-gray-100 border-gray-200 text-gray-700'

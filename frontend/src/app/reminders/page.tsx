@@ -17,6 +17,7 @@ import {
   FollowUpRuleConfig,
   toLocalDatetimeString,
 } from '@/lib/followupRules'
+import { formatDualTime, getStudentCurrentTime, getStudentTimezone, studentLocalToUTC, utcToStudentLocalInput, utcToISTLocalInput } from '@/lib/timezoneHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 import { useCallHippoLine } from '@/lib/dialer'
 
@@ -582,14 +583,10 @@ export default function RemindersPage() {
                               ? 'bg-amber-50 text-amber-800 border border-amber-200'
                               : lead.priority === 'Cold'
                               ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : lead.priority === 'Callback'
-                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                              : lead.priority === 'Ringing'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : 'bg-gray-100 text-gray-700'
                           }`}
                         >
-                          {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
+                          {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
                         </span>
                       )}
 
@@ -605,21 +602,24 @@ export default function RemindersPage() {
                       <span>👤 Counselor: {lead.owner_name}</span>
                     </div>
 
-                    {lead.next_follow_up && (
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        Scheduled Time:{' '}
-                        <strong className="text-gray-700">
-                          {new Date(lead.next_follow_up).toLocaleString('en-IN', {
-                            weekday: 'short',
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                          })}
-                        </strong>
-                      </p>
-                    )}
+                    {lead.next_follow_up && (() => {
+                      const dual = formatDualTime(lead.next_follow_up, lead.phone, lead.country)
+                      const sClock = getStudentCurrentTime(lead.phone, lead.country)
+                      return (
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap text-[11px]">
+                          <span className="font-bold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md shadow-2xs">
+                            ⏰ {dual.studentFlag} {dual.studentLabel}: {dual.studentDate}, {dual.studentTime} {dual.studentTz}
+                          </span>
+                          <span className="text-gray-400">⇄</span>
+                          <span className="font-bold text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs">
+                            🇮🇳 India (IST): {dual.istDate}, {dual.istTime}
+                          </span>
+                          <span className="text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md border border-gray-200" title={`Current live time in student's country (${sClock.countryName})`}>
+                            🕒 Live in {sClock.countryName}: <strong>{sClock.time}</strong> • {sClock.statusText}
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 

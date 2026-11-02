@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { playNotificationSound, startContinuousAlarm, stopContinuousAlarm } from '@/lib/notifications'
 import { getFollowUpStatus } from '@/lib/followupRules'
+import { formatDualTime } from '@/lib/timezoneHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 import { useCallHippoLine } from '@/lib/dialer'
 
@@ -257,16 +258,25 @@ export default function AutoReminderWatcher() {
                   </span>
                 </div>
               )}
-              <div className="flex items-center justify-between text-gray-500 text-[11px] pt-1 border-t border-gray-200">
-                <span>Scheduled for:</span>
-                <span className="font-semibold text-rose-700">
-                  {new Date(activePopupLead.next_follow_up).toLocaleTimeString('en-IN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true,
-                  })}
-                </span>
-              </div>
+              {(() => {
+                const dual = formatDualTime(activePopupLead.next_follow_up, activePopupLead.phone, activePopupLead.country)
+                return (
+                  <div className="pt-1.5 border-t border-gray-200 text-[11px] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">{dual.studentFlag} Student Local Time:</span>
+                      <span className="font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                        {dual.studentTime} {dual.studentTz}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">🇮🇳 India (IST):</span>
+                      <span className="font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                        {dual.istTime} IST
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Direct Calling & Action Buttons: UK Line vs USA Line */}

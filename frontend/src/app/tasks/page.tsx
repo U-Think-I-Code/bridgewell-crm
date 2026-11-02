@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { Calendar, CheckCircle2, Clock, CalendarDays } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
+import { formatDualTime } from '@/lib/timezoneHelper'
 
 export default function TasksPage() {
   const [overdueLeads, setOverdueLeads] = useState<any[]>([])
@@ -115,13 +116,18 @@ export default function TasksPage() {
                           <span className="font-semibold text-gray-900 text-sm">{lead.name}</span>
                           {lead.priority && (
                             <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
-                              lead.priority === 'Hot' ? 'bg-rose-100 text-rose-800 border-rose-200' : lead.priority === 'Warm' ? 'bg-amber-100 text-amber-800 border-amber-200' : lead.priority === 'Cold' ? 'bg-blue-100 text-blue-800 border-blue-200' : lead.priority === 'Callback' ? 'bg-purple-100 text-purple-800 border-purple-200' : lead.priority === 'Ringing' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-gray-100 text-gray-800 border-gray-200'
+                              lead.priority === 'Hot' ? 'bg-rose-100 text-rose-800 border-rose-200' : lead.priority === 'Warm' ? 'bg-amber-100 text-amber-800 border-amber-200' : lead.priority === 'Cold' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-gray-100 text-gray-800 border-gray-200'
                             }`}>
-                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
+                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
                             </span>
                           )}
                         </div>
-                        <span className="text-xs text-red-600 font-medium bg-red-100 px-2 py-0.5 rounded-full">Overdue</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-blue-800 font-bold bg-blue-100 px-2 py-0.5 rounded-full">
+                            {formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentFlag} {formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentTime} ({formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentTz})
+                          </span>
+                          <span className="text-xs text-red-600 font-medium bg-red-100 px-2 py-0.5 rounded-full">Overdue</span>
+                        </div>
                       </div>
                       <p className="text-xs text-gray-600">{lead.phone} • {lead.stage}</p>
                     </Link>
@@ -145,13 +151,20 @@ export default function TasksPage() {
                           <span className="font-semibold text-gray-900 text-sm">{lead.name}</span>
                           {lead.priority && (
                             <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
-                              lead.priority === 'Hot' ? 'bg-rose-50 text-rose-700 border-rose-200' : lead.priority === 'Warm' ? 'bg-amber-50 text-amber-800 border-amber-200' : lead.priority === 'Cold' ? 'bg-blue-50 text-blue-700 border-blue-200' : lead.priority === 'Callback' ? 'bg-purple-50 text-purple-700 border-purple-200' : lead.priority === 'Ringing' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-700 border-gray-200'
+                              lead.priority === 'Hot' ? 'bg-rose-50 text-rose-700 border-rose-200' : lead.priority === 'Warm' ? 'bg-amber-50 text-amber-800 border-amber-200' : lead.priority === 'Cold' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-700 border-gray-200'
                             }`}>
-                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority === 'Callback' ? '📞 Callback' : lead.priority === 'Ringing' ? '🔔 Ringing' : lead.priority}
+                              {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
                             </span>
                           )}
                         </div>
-                        <span className="text-xs text-gray-500 font-medium bg-gray-100 px-2 py-0.5 rounded-full">{new Date(lead.next_follow_up).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-blue-800 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                            {formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentFlag} {formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentTime} ({formatDualTime(lead.next_follow_up, lead.phone, lead.country).studentTz})
+                          </span>
+                          <span className="text-xs text-gray-500 font-medium bg-gray-100 px-2 py-0.5 rounded-full">
+                            🇮🇳 {new Date(lead.next_follow_up).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} IST
+                          </span>
+                        </div>
                       </div>
                       <p className="text-xs text-gray-500">{lead.phone} • {lead.stage}</p>
                     </Link>
