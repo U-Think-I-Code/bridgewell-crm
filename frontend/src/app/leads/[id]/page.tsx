@@ -1584,8 +1584,15 @@ export default function LeadProfile() {
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-[#FAFAFA]/95 backdrop-blur-md z-10 space-y-4">
           <div className="flex items-center justify-between">
             <button 
-              onClick={() => router.push('/leads')} 
-              className="text-gray-500 hover:text-gray-900 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.history.length > 1) {
+                  router.back()
+                } else {
+                  router.push('/leads')
+                }
+              }} 
+              className="text-gray-500 hover:text-gray-900 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors cursor-pointer"
+              title="Back to leads (preserves active filters)"
             >
               <ArrowLeft size={14} /> Back to Leads
             </button>

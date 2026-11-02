@@ -457,3 +457,4 @@ export function utcToStudentLocalInput(
 export function utcToISTLocalInput(isoString: string | null | undefined): string {
   return utcToStudentLocalInput(isoString, 'Asia/Kolkata')
 }
+

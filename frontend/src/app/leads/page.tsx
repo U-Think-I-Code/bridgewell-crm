@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useTransition, useCallback, Suspense } from 'react'
+import { useState, useEffect, useMemo, useTransition, useCallback, useRef, Suspense } from 'react'
 import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
@@ -37,78 +37,35 @@ function LeadsContent() {
   const initialPriority = searchParams?.get('priority') || 'ALL'
   const counselorParam = searchParams?.get('counselor') || ''
   const tabParam = searchParams?.get('tab')
+  const countryParam = searchParams?.get('country') || 'ALL'
+  const programmeParam = searchParams?.get('programme') || 'ALL'
+  const dateParam = searchParams?.get('date') || 'ALL'
+  const outcomeParam = searchParams?.get('outcome') || 'ALL'
+  const serviceParam = (searchParams?.get('service') as ServiceTrack) || 'all'
+
+  const LEADS_FILTERS_STORAGE_KEY = 'bridgewell_leads_filters_v2'
 
   // Tab State: 'active' (Default: excludes Enrolled & Junk) | 'enrolled' (Only Enrolled) | 'junk' (Only Junk) | 'all' (Master)
   const [activeTab, setActiveTab] = useState<'active' | 'enrolled' | 'junk' | 'all'>(
     tabParam === 'enrolled' ? 'enrolled' : tabParam === 'junk' ? 'junk' : tabParam === 'all' ? 'all' : 'active'
   )
 
-  useEffect(() => {
-    if (tabParam === 'enrolled') {
-      setActiveTab('enrolled')
-    } else if (tabParam === 'junk') {
-      setActiveTab('junk')
-    } else if (tabParam === 'all') {
-      setActiveTab('all')
-    } else {
-      setActiveTab('active')
-    }
-  }, [tabParam])
-
-  const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
-    startTransition(() => {
-      setActiveTab(t)
-      setDisplayLimit(100)
-    })
-    const currentParams = new URLSearchParams(searchParams?.toString() || '')
-    if (t === 'active') {
-      currentParams.delete('tab')
-    } else {
-      currentParams.set('tab', t)
-    }
-    const q = currentParams.toString() ? `?${currentParams.toString()}` : ''
-    router.replace(`/leads${q}`, { scroll: false })
-  }
-  
   // Counselor Filter State: 'ALL' | 'UNASSIGNED' | 'MY_POOL' | counselor_id
   const [selectedCounselor, setSelectedCounselor] = useState<string>(counselorParam || 'ALL')
 
-  useEffect(() => {
-    if (counselorParam) {
-      setSelectedCounselor(counselorParam)
-    } else {
-      setSelectedCounselor('ALL')
-    }
-  }, [counselorParam])
-
-  const handleCounselorFilterChange = (counselorId: string) => {
-    startTransition(() => {
-      setSelectedCounselor(counselorId)
-      setDisplayLimit(100)
-    })
-    const currentParams = new URLSearchParams(searchParams?.toString() || '')
-    if (counselorId === 'ALL') {
-      currentParams.delete('counselor')
-    } else {
-      currentParams.set('counselor', counselorId)
-    }
-    const q = currentParams.toString() ? `?${currentParams.toString()}` : ''
-    router.replace(`/leads${q}`, { scroll: false })
-  }
-
   // Priority Filter State: 'ALL' | 'Hot' | 'Warm' | 'Cold' | 'UNSET'
   const [selectedPriority, setSelectedPriority] = useState<string>(initialPriority)
+
   // Call Outcome Filter State: 'ALL' | 'Connected' | 'No Answer' | 'Busy' | 'Wrong Num' | 'UNSET'
-  const [selectedOutcome, setSelectedOutcome] = useState<string>('ALL')
+  const [selectedOutcome, setSelectedOutcome] = useState<string>(outcomeParam)
+
   // Country / Ad Target Filter State: 'ALL' | 'USA' | 'UK' | 'Canada' | 'Australia' | etc.
-  const countryParam = searchParams?.get('country') || 'ALL'
   const [selectedCountry, setSelectedCountry] = useState<string>(countryParam)
+
   // Programme / Degree Level Filter State: 'ALL' | 'Master' | 'Bachelor' | 'Doctorate'
-  const programmeParam = searchParams?.get('programme') || 'ALL'
   const [selectedProgramme, setSelectedProgramme] = useState<string>(programmeParam)
 
   // Date Filter State: 'ALL' | 'today' | 'yesterday' | 'last7' | 'last30' | 'this_month' | 'custom'
-  const dateParam = searchParams?.get('date') || 'ALL'
   const [selectedDatePreset, setSelectedDatePreset] = useState<string>(dateParam)
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -117,10 +74,147 @@ function LeadsContent() {
   const [displayLimit, setDisplayLimit] = useState<number>(100)
 
   // Service Stream Track: 'all' | 'study_abroad' | 'visa_process'
-  const serviceParam = (searchParams?.get('service') as ServiceTrack) || 'all'
   const [serviceTrack, setServiceTrack] = useState<ServiceTrack>(
     serviceParam === 'visa_process' || serviceParam === 'study_abroad' ? serviceParam : 'all'
   )
+
+  // 1. On Initial Mount: Restore saved filters from sessionStorage if URL has no explicit query params
+  const hasHydratedRef = useRef(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || hasHydratedRef.current) return
+    hasHydratedRef.current = true
+
+    try {
+      const savedStr = sessionStorage.getItem(LEADS_FILTERS_STORAGE_KEY)
+      if (!savedStr) return
+      const saved = JSON.parse(savedStr)
+      const currentUrl = new URL(window.location.href)
+      const params = currentUrl.searchParams
+
+      // If URL does NOT have this explicit param, restore it from sessionStorage
+      if (!params.get('tab') && saved.activeTab && saved.activeTab !== 'active') {
+        setActiveTab(saved.activeTab)
+      }
+      if (!params.get('counselor') && saved.selectedCounselor && saved.selectedCounselor !== 'ALL') {
+        setSelectedCounselor(saved.selectedCounselor)
+      }
+      if (!params.get('priority') && saved.selectedPriority && saved.selectedPriority !== 'ALL') {
+        setSelectedPriority(saved.selectedPriority)
+      }
+      if (!params.get('outcome') && saved.selectedOutcome && saved.selectedOutcome !== 'ALL') {
+        setSelectedOutcome(saved.selectedOutcome)
+      }
+      if (!params.get('country') && saved.selectedCountry && saved.selectedCountry !== 'ALL') {
+        setSelectedCountry(saved.selectedCountry)
+      }
+      if (!params.get('programme') && saved.selectedProgramme && saved.selectedProgramme !== 'ALL') {
+        setSelectedProgramme(saved.selectedProgramme)
+      }
+      if (!params.get('date') && saved.selectedDatePreset && saved.selectedDatePreset !== 'ALL') {
+        setSelectedDatePreset(saved.selectedDatePreset)
+      }
+      if (saved.customStartDate) setCustomStartDate(saved.customStartDate)
+      if (saved.customEndDate) setCustomEndDate(saved.customEndDate)
+      if (!params.get('service') && saved.serviceTrack && saved.serviceTrack !== 'all') {
+        setServiceTrack(saved.serviceTrack)
+      }
+      if (saved.view && (saved.view === 'list' || saved.view === 'kanban')) {
+        setView(saved.view)
+      }
+    } catch {}
+  }, [])
+
+  // 2. Persist active filter state to sessionStorage whenever any filter changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stateToSave = {
+        activeTab,
+        selectedCounselor,
+        selectedPriority,
+        selectedOutcome,
+        selectedCountry,
+        selectedProgramme,
+        selectedDatePreset,
+        customStartDate,
+        customEndDate,
+        serviceTrack,
+        view,
+      }
+      sessionStorage.setItem(LEADS_FILTERS_STORAGE_KEY, JSON.stringify(stateToSave))
+    } catch {}
+  }, [
+    activeTab,
+    selectedCounselor,
+    selectedPriority,
+    selectedOutcome,
+    selectedCountry,
+    selectedProgramme,
+    selectedDatePreset,
+    customStartDate,
+    customEndDate,
+    serviceTrack,
+    view,
+  ])
+
+  // 3. Keep browser URL query string synchronized so back/forward button preserves the exact filters
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const currentParams = new URLSearchParams(window.location.search)
+    let changed = false
+
+    const syncParam = (paramName: string, val: string | null | undefined, defaultVal: string) => {
+      if (val && val !== defaultVal) {
+        if (currentParams.get(paramName) !== val) {
+          currentParams.set(paramName, val)
+          changed = true
+        }
+      } else {
+        if (currentParams.has(paramName)) {
+          currentParams.delete(paramName)
+          changed = true
+        }
+      }
+    }
+
+    syncParam('tab', activeTab, 'active')
+    syncParam('counselor', selectedCounselor, 'ALL')
+    syncParam('priority', selectedPriority, 'ALL')
+    syncParam('outcome', selectedOutcome, 'ALL')
+    syncParam('country', selectedCountry, 'ALL')
+    syncParam('programme', selectedProgramme, 'ALL')
+    syncParam('date', selectedDatePreset, 'ALL')
+    syncParam('service', serviceTrack, 'all')
+
+    if (changed) {
+      const q = currentParams.toString() ? `?${currentParams.toString()}` : ''
+      router.replace(`/leads${q}`, { scroll: false })
+    }
+  }, [
+    activeTab,
+    selectedCounselor,
+    selectedPriority,
+    selectedOutcome,
+    selectedCountry,
+    selectedProgramme,
+    selectedDatePreset,
+    serviceTrack,
+    router
+  ])
+
+  const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
+    startTransition(() => {
+      setActiveTab(t)
+      setDisplayLimit(100)
+    })
+  }
+  
+  const handleCounselorFilterChange = (counselorId: string) => {
+    startTransition(() => {
+      setSelectedCounselor(counselorId)
+      setDisplayLimit(100)
+    })
+  }
 
   const fetchStages = async () => {
     const { data } = await supabase.from('stages').select('name').order('stage_order', { ascending: true })
@@ -1346,15 +1440,33 @@ function LeadsContent() {
           {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
             <button
               onClick={() => {
-                setSelectedPriority('ALL');
-                setSelectedOutcome('ALL');
-                setSelectedCountry('ALL');
-                setSelectedProgramme('ALL');
-                setSelectedDatePreset('ALL');
-                setServiceTrack('all');
-                setCustomStartDate('');
-                setCustomEndDate('');
-                handleCounselorFilterChange('ALL');
+                startTransition(() => {
+                  setSelectedPriority('ALL')
+                  setSelectedOutcome('ALL')
+                  setSelectedCountry('ALL')
+                  setSelectedProgramme('ALL')
+                  setSelectedDatePreset('ALL')
+                  setServiceTrack('all')
+                  setCustomStartDate('')
+                  setCustomEndDate('')
+                  setSelectedCounselor('ALL')
+                  setDisplayLimit(100)
+                })
+                if (typeof window !== 'undefined') {
+                  try {
+                    sessionStorage.removeItem(LEADS_FILTERS_STORAGE_KEY)
+                  } catch {}
+                }
+                const currentParams = new URLSearchParams(window.location.search)
+                currentParams.delete('priority')
+                currentParams.delete('outcome')
+                currentParams.delete('country')
+                currentParams.delete('programme')
+                currentParams.delete('date')
+                currentParams.delete('counselor')
+                currentParams.delete('service')
+                const q = currentParams.toString() ? `?${currentParams.toString()}` : ''
+                router.replace(`/leads${q}`, { scroll: false })
               }}
               className="text-xs text-blue-600 hover:text-black font-semibold underline cursor-pointer"
             >
