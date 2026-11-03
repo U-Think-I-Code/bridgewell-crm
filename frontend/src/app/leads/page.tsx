@@ -856,16 +856,36 @@ function LeadsContent() {
     return true
   }, [selectedDatePreset, customStartDate, customEndDate])
 
+  // Helper to determine if a lead has already been called or attempted
+  const isLeadCalled = useCallback((l: any): boolean => {
+    if (l.last_call_outcome) return true
+    if (typeof l.attempts === 'number' && l.attempts > 0) return true
+    if (l.metadata?.last_call_at || l.metadata?.last_call_outcome) return true
+    if (l.stage && !['New', 'Unassigned'].includes(l.stage)) return true
+    return false
+  }, [])
+
+  // Count of pending (uncalled) leads in current pool
+  const pendingCallCount = useMemo(() => {
+    let count = 0
+    for (let i = 0; i < counselorScopedPool.length; i++) {
+      if (!isLeadCalled(counselorScopedPool[i])) count++
+    }
+    return count
+  }, [counselorScopedPool, isLeadCalled])
+
   // Memoized filtered leads based on priority, call outcome, country, programme level, and date
+  // Sorted: Uncalled / Pending leads stay at the TOP (newest first).
+  // Once called, leads move DOWN into the lower section in descending order.
   const filteredLeads = useMemo(() => {
-    return counselorScopedPool.filter(l => {
+    const list = counselorScopedPool.filter(l => {
       if (selectedPriority !== 'ALL') {
         if (selectedPriority === 'UNSET' && l.priority) return false
         if (selectedPriority !== 'UNSET' && l.priority !== selectedPriority) return false
       }
 
       if (selectedOutcome !== 'ALL') {
-        if (selectedOutcome === 'UNSET' && l.last_call_outcome) return false
+        if (selectedOutcome === 'UNSET' && isLeadCalled(l)) return false
         if (selectedOutcome !== 'UNSET' && l.last_call_outcome !== selectedOutcome) return false
       }
 
@@ -888,7 +908,28 @@ function LeadsContent() {
 
       return true
     })
-  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter])
+
+    return list.sort((a, b) => {
+      const aCalled = isLeadCalled(a)
+      const bCalled = isLeadCalled(b)
+
+      // 1. Uncalled leads come FIRST at the top
+      if (!aCalled && bCalled) return -1
+      if (aCalled && !bCalled) return 1
+
+      // 2. Both uncalled: newest first (created_at descending)
+      if (!aCalled && !bCalled) {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+        return bTime - aTime
+      }
+
+      // 3. Both called: descending order (newest called or newest created)
+      const aCallTime = a.metadata?.last_call_at ? new Date(a.metadata.last_call_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0)
+      const bCallTime = b.metadata?.last_call_at ? new Date(b.metadata.last_call_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0)
+      return bCallTime - aCallTime
+    })
+  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter, isLeadCalled])
 
   // Progressive slice of leads for instant initial and filtered table paints (< 16ms INP)
   const visibleLeads = useMemo(() => {
@@ -1266,12 +1307,12 @@ function LeadsContent() {
               className="bg-white border border-gray-200 text-gray-700 text-xs rounded-lg px-2.5 py-1.5 font-medium outline-none shadow-xs hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 transition-all cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
+              <option value="UNSET">⚡ Pending Call ({pendingCallCount})</option>
               <option value="Connected">📞 Connected</option>
               <option value="Ringing">🔔 Ringing</option>
               <option value="Call back">📞 Call Back</option>
               <option value="Not Connected">📵 Not Connected</option>
               <option value="Wrong Num">↪️ Wrong Num</option>
-              <option value="UNSET">⚪ Not Called</option>
             </select>
           </div>
 
@@ -1958,9 +1999,9 @@ function LeadsContent() {
                             <span>Wrong Num</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100 transition-colors">
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
-                            <span>Not Called</span>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors shadow-2xs" title="Pending Call — Counselor has not dialed yet">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                            <span>Pending Call</span>
                           </span>
                         )}
                       </Link>
@@ -2175,14 +2216,22 @@ function LeadsContent() {
                               </span>
                             )}
                             {lead.source && <span className="font-medium uppercase tracking-wider text-gray-400">{lead.source}</span>}
-                            {lead.last_call_outcome && (
+                            {lead.last_call_outcome ? (
                               <span className={`px-1.5 py-0.5 rounded font-semibold text-[10px] ${
                                 lead.last_call_outcome === 'Connected' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                lead.last_call_outcome === 'Ringing' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                lead.last_call_outcome === 'Call back' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? 'bg-orange-50 text-orange-700 border border-orange-200' :
                                 lead.last_call_outcome === 'No Answer' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                                 lead.last_call_outcome === 'Busy' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                                 'bg-gray-100 text-gray-700 border border-gray-200'
                               }`}>
                                 {lead.last_call_outcome}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                Pending Call
                               </span>
                             )}
                           </div>
