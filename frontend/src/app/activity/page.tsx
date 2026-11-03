@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/AuthWrapper'
+import { countRealCalls } from '@/lib/callDeduplicator'
 import { 
   ResponsiveContainer, 
   BarChart, 
@@ -150,7 +151,8 @@ export default function EmployeeActivityLogPage() {
       const presences: UserPresence[] = usersList.map(u => {
         const userActs = actsList.filter(a => a.user_id === u.id)
         const todayActs = userActs.filter(a => a.time && a.time.startsWith(todayStr))
-        const todayCalls = todayActs.filter(a => a.type?.toLowerCase() === 'call').length
+        // Accurate call count matching CallHippo's Agent Performance Report
+        const todayCalls = countRealCalls(todayActs)
 
         // Last action
         const lastAct = userActs[0]
@@ -401,7 +403,7 @@ export default function EmployeeActivityLogPage() {
   // Top Counters
   const totalCallsToday = useMemo(() => {
     const todayStr = new Date().toDateString()
-    return activities.filter(a => a.type?.toLowerCase() === 'call' && new Date(a.time).toDateString() === todayStr).length
+    return countRealCalls(activities.filter(a => new Date(a.time).toDateString() === todayStr))
   }, [activities])
 
   const onlineStaffCount = counselors.filter(c => c.status === 'online').length

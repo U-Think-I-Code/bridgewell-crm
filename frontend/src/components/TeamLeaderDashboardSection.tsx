@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { parseUserTeamMeta } from '@/lib/teamHelper'
+import { countRealCalls } from '@/lib/callDeduplicator'
 
 interface TeamMember {
   id: string
@@ -105,20 +106,27 @@ export default function TeamLeaderDashboardSection({ currentUser }: TeamLeaderDa
 
       const acts = actsData || []
 
-      // Map calls today and logins today
+      // Map calls today (de-duplicated to match CallHippo) and logins today
       const callsCountMap: Record<string, number> = {}
       const firstLoginMap: Record<string, string> = {}
 
+      // Group acts by user
+      const userActsMap: Record<string, any[]> = {}
       acts.forEach(a => {
         if (!a.user_id) return
-        if (a.type === 'call') {
-          callsCountMap[a.user_id] = (callsCountMap[a.user_id] || 0) + 1
-        }
+        if (!userActsMap[a.user_id]) userActsMap[a.user_id] = []
+        userActsMap[a.user_id].push(a)
+
         if (a.type === 'login' && a.time) {
           if (!firstLoginMap[a.user_id] || new Date(a.time) < new Date(firstLoginMap[a.user_id])) {
             firstLoginMap[a.user_id] = a.time
           }
         }
+      })
+
+      // Count real calls per user
+      Object.keys(userActsMap).forEach(uid => {
+        callsCountMap[uid] = countRealCalls(userActsMap[uid])
       })
 
       // 5. Enrich members

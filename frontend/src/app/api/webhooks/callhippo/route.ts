@@ -214,7 +214,23 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 1. Log Activity to Student Timeline
+    // 1. Identify counselor/agent user ID accurately from CallHippo agent email
+    let counselorUserId = matchedLead.owner_id || null
+    if (agentEmail) {
+      try {
+        const { data: agentUser } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('email', agentEmail.trim())
+          .limit(1)
+          .maybeSingle()
+        if (agentUser?.id) {
+          counselorUserId = agentUser.id
+        }
+      } catch {}
+    }
+
+    // 2. Log Activity to Student Timeline (de-duplicate against frontend call timer)
     const activityText = [
       `🎙️ CallHippo Call Logged (${outcome})`,
       `• Call Duration: ${formatCallDuration(durationSeconds)}`,
@@ -225,14 +241,35 @@ export async function POST(request: NextRequest) {
       recordingUrl ? `• Recording: ${recordingUrl}` : null,
     ].filter(Boolean).join('\n')
 
-    await supabase.from('activities').insert([{
-      lead: matchedLead.id,
-      user_id: matchedLead.owner_id || null,
-      type: 'call',
-      outcome: outcome,
-      text: activityText,
-      time: new Date().toISOString()
-    }])
+    // Check if an in-progress or recent call activity already exists for this lead within last 15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    const { data: existingCallActs } = await supabase
+      .from('activities')
+      .select('id, text')
+      .eq('lead', matchedLead.id)
+      .eq('type', 'call')
+      .gte('time', fifteenMinutesAgo)
+      .order('time', { ascending: false })
+      .limit(1)
+
+    if (existingCallActs && existingCallActs.length > 0) {
+      // Merge official CallHippo details into existing activity so no duplicate record is created!
+      await supabase.from('activities').update({
+        outcome: outcome,
+        text: activityText,
+        user_id: counselorUserId,
+        time: new Date().toISOString()
+      }).eq('id', existingCallActs[0].id)
+    } else {
+      await supabase.from('activities').insert([{
+        lead: matchedLead.id,
+        user_id: counselorUserId,
+        type: 'call',
+        outcome: outcome,
+        text: activityText,
+        time: new Date().toISOString()
+      }])
+    }
 
     // 2. Update Lead record (attempts, outcome, last contact)
     const newAttempts = (matchedLead.attempts || 0) + 1

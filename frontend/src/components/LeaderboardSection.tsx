@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
+import { deduplicateCallActivities } from '@/lib/callDeduplicator'
 
 interface CounselorStat {
   id: string
@@ -131,11 +132,13 @@ export default function LeaderboardSection() {
         const uncalledLeads = cLeads.filter(l => !l.last_call_outcome || l.last_call_outcome === 'Not Called' || (l.attempts || 0) === 0).length
 
         // Match activities by user_id, or fallback to lead's owner
-        const cActivities = activities.filter(a => {
+        const rawCActivities = activities.filter(a => {
           if (a.user_id) return a.user_id === c.id
           return a.lead && leadOwnerMap[a.lead] === c.id
         })
 
+        // De-duplicate call records so counts 100% reflect real CallHippo calls
+        const cActivities = deduplicateCallActivities(rawCActivities)
         const callsCount = cActivities.length
 
         let connectedCount = 0

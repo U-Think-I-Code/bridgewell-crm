@@ -777,18 +777,29 @@ export default function LeadProfile() {
     const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
     const newAttempts = isUnanswered ? (lead.attempts || 0) + 1 : lead.attempts
 
-    await supabase.from('activities').insert([
-      { 
-        lead: id, 
-        user_id: currentUser?.id || lead?.owner_id, 
-        type: 'call', 
+    const actId = activeCallActIdRef.current
+    const callText = note 
+      ? `Call logged (${outcome}).\n\n--- Call Notes ---\n${note}`
+      : `Call logged. Outcome: ${outcome}.`
+
+    if (actId) {
+      await supabase.from('activities').update({
         outcome: outcome,
-        text: note 
-          ? `Call logged (${outcome}).\n\n--- Call Notes ---\n${note}`
-          : `Call logged. Outcome: ${outcome}.`, 
-        time: new Date().toISOString() 
-      }
-    ])
+        text: callText,
+        time: new Date().toISOString()
+      }).eq('id', actId)
+    } else {
+      await supabase.from('activities').insert([
+        { 
+          lead: id, 
+          user_id: currentUser?.id || lead?.owner_id, 
+          type: 'call', 
+          outcome: outcome,
+          text: callText, 
+          time: new Date().toISOString() 
+        }
+      ])
+    }
 
     // Only set next_follow_up if the counselor MANUALLY selected one in the input; never auto-calculate
     const nextFollowUpIso = followUpDate ? new Date(followUpDate).toISOString() : (lead?.next_follow_up || null)
