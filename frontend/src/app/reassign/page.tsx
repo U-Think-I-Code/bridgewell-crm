@@ -307,7 +307,7 @@ export default function LeadReassignmentPage() {
 
     try {
       // 1. Update Lead table (Auto-revive to 'New' if lead was in Junk/duplicate)
-      const updatePayload: any = { owner_id: newOwnerId, updated_at: new Date().toISOString() }
+      const updatePayload: any = { owner_id: newOwnerId }
       if (isJunkLead) {
         updatePayload.stage = 'New'
       }
@@ -381,7 +381,7 @@ export default function LeadReassignmentPage() {
           const lead = unassignedList[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
-          const updatePayload: any = { owner_id: targetCounselor.id, updated_at: new Date().toISOString() }
+          const updatePayload: any = { owner_id: targetCounselor.id }
           if (isJunk) updatePayload.stage = 'New'
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
@@ -449,7 +449,7 @@ export default function LeadReassignmentPage() {
           const lead = myPool[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
-          const updatePayload: any = { owner_id: targetCounselor.id, updated_at: new Date().toISOString() }
+          const updatePayload: any = { owner_id: targetCounselor.id }
           if (isJunk) updatePayload.stage = 'New'
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
@@ -514,7 +514,7 @@ export default function LeadReassignmentPage() {
       for (const leadId of selectedLeadIds) {
         const lead = leads.find(l => l.id === leadId)
         const isJunk = lead?.stage === 'Junk/duplicate'
-        const updatePayload: any = { owner_id: bulkTargetCounselorId, updated_at: new Date().toISOString() }
+        const updatePayload: any = { owner_id: bulkTargetCounselorId }
         if (isJunk) updatePayload.stage = 'New'
         await supabase.from('leads').update(updatePayload).eq('id', leadId)
 

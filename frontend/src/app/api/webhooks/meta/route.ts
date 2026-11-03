@@ -541,7 +541,6 @@ export async function POST(request: NextRequest) {
         }
 
         const updatePayload: any = {
-          updated_at: new Date().toISOString(),
           metadata: {
             ...existingMeta,
             campaign_answers: mergedAnswers,

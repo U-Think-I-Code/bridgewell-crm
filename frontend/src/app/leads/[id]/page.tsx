@@ -762,8 +762,7 @@ export default function LeadProfile() {
             last_call_duration: formattedDuration,
             last_call_outcome: outcome,
             last_call_at: new Date().toISOString()
-          },
-          updated_at: new Date().toISOString()
+          }
         })
         .eq('id', id)
 

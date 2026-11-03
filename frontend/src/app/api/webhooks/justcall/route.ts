@@ -328,8 +328,7 @@ export async function POST(request: NextRequest) {
       .update({
         attempts: newAttempts,
         last_call_outcome: outcome,
-        metadata: updatedMetadata,
-        updated_at: new Date().toISOString()
+        metadata: updatedMetadata
       })
       .eq('id', matchingLead.id)
 

@@ -720,7 +720,7 @@ function LeadsContent() {
     try {
       const { error } = await supabase
         .from('leads')
-        .update({ stage: newStage, updated_at: new Date().toISOString() })
+        .update({ stage: newStage })
         .eq('id', leadId)
 
       if (error) throw error
@@ -1557,7 +1557,7 @@ function LeadsContent() {
                   try {
                     const { error } = await supabase
                       .from('leads')
-                      .update({ stage: 'New', updated_at: new Date().toISOString() })
+                      .update({ stage: 'New' })
                       .in('id', targetIds)
                     if (error) throw error
 

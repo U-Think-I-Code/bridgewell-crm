@@ -238,8 +238,7 @@ export async function POST(request: NextRequest) {
     const newAttempts = (matchedLead.attempts || 0) + 1
     const updatePayload: Record<string, any> = {
       last_call_outcome: outcome,
-      attempts: newAttempts,
-      updated_at: new Date().toISOString()
+      attempts: newAttempts
     }
 
     // Auto-update stage based on call outcome
