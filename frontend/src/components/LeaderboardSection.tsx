@@ -161,7 +161,14 @@ export default function LeaderboardSection() {
         })
 
         const connectRate = callsCount > 0 ? Math.round((connectedCount / callsCount) * 100) : 0
-        const lastCallTime = cActivities.length > 0 ? cActivities[0].time : null
+        // Find the most recent call timestamp
+        const lastCallTime = cActivities.length > 0
+          ? cActivities.reduce((latest, curr) => {
+              if (!latest) return curr.time || null
+              if (!curr.time) return latest
+              return new Date(curr.time).getTime() > new Date(latest).getTime() ? curr.time : latest
+            }, cActivities[0]?.time || null)
+          : null
 
         let activityStatus: 'active_now' | 'active_today' | 'idle' = 'idle'
         if (lastCallTime) {

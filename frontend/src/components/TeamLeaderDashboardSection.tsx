@@ -100,7 +100,7 @@ export default function TeamLeaderDashboardSection({ currentUser }: TeamLeaderDa
 
       const { data: actsData } = await supabase
         .from('activities')
-        .select('id, user_id, type, time')
+        .select('id, user_id, lead, type, outcome, text, time')
         .in('user_id', allScopeIds)
         .gte('time', todayISO)
 

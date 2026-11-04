@@ -42,12 +42,12 @@ export function deduplicateCallActivities<T extends CallActivityItem>(activities
 
   sorted.forEach(act => {
     const actTime = act.time ? new Date(act.time).getTime() : 0
-    const leadKey = act.lead || act.lead_id || act.id
+    const leadKey = act.lead || act.lead_id || (act.text && act.text.includes('Destination:') ? act.text.split('Destination:')[1].split('\n')[0].trim() : act.id)
     const userKey = act.user_id || 'unassigned'
 
     // Match if same lead and same user within 10 minutes (600,000ms)
     const existingIndex = sessions.findIndex(s => {
-      const sLead = s.lead || s.lead_id || s.id
+      const sLead = s.lead || s.lead_id || (s.text && s.text.includes('Destination:') ? s.text.split('Destination:')[1].split('\n')[0].trim() : s.id)
       const sUser = s.user_id || 'unassigned'
       return sLead === leadKey && sUser === userKey && Math.abs(s._timeMs - actTime) < 10 * 60 * 1000
     })
@@ -81,8 +81,10 @@ export function deduplicateCallActivities<T extends CallActivityItem>(activities
     }
   })
 
-  // Return without internal metadata
-  return sessions.map(({ _timeMs, ...rest }) => rest as unknown as T)
+  // Return sorted descending (newest first) so callers can directly use [0] for latest call
+  return sessions
+    .sort((a, b) => b._timeMs - a._timeMs)
+    .map(({ _timeMs, ...rest }) => rest as unknown as T)
 }
 
 /**
@@ -91,3 +93,4 @@ export function deduplicateCallActivities<T extends CallActivityItem>(activities
 export function countRealCalls(activities: CallActivityItem[]): number {
   return deduplicateCallActivities(activities).length
 }
+

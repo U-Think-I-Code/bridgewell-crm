@@ -169,10 +169,16 @@ export async function POST(request: NextRequest) {
       outcome = 'No Answer'
     }
 
-    const cleaned = cleanPhone(rawPhone)
-    const last10Digits = cleaned.slice(-10)
+    const digitsOnly = (rawPhone || '').replace(/\D/g, '')
+    const noTrunk = digitsOnly
+      .replace(/^440/, '44')
+      .replace(/^910/, '91')
+      .replace(/^10/, '1')
 
-    if (!last10Digits) {
+    const last10 = digitsOnly.slice(-10)
+    const last10NoTrunk = noTrunk.slice(-10)
+
+    if (!last10 && !last10NoTrunk) {
       return NextResponse.json({
         success: false,
         message: 'No valid phone number found in CallHippo webhook payload',
@@ -180,11 +186,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Try finding lead using both last10 and last10NoTrunk
+    const orQuery = last10 === last10NoTrunk 
+      ? `phone.ilike.%${last10}%` 
+      : `phone.ilike.%${last10}%,phone.ilike.%${last10NoTrunk}%`
+
     // Find the student in Bridgewell CRM leads table
     const { data: leads, error: leadSearchError } = await supabase
       .from('leads')
       .select('id, name, phone, attempts, stage, priority, owner_id')
-      .or(`phone.ilike.%${last10Digits}%`)
+      .or(orQuery)
       .limit(3)
 
     if (leadSearchError) {
@@ -193,6 +204,35 @@ export async function POST(request: NextRequest) {
     }
 
     const matchedLead = leads && leads.length > 0 ? leads[0] : null
+
+    // 1. Identify counselor/agent user ID accurately from CallHippo agent email or name
+    let counselorUserId = matchedLead?.owner_id || null
+    if (agentEmail) {
+      try {
+        const { data: agentUser } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('email', agentEmail.trim())
+          .limit(1)
+          .maybeSingle()
+        if (agentUser?.id) {
+          counselorUserId = agentUser.id
+        }
+      } catch {}
+    }
+    if (!counselorUserId && agentName && agentName !== 'Counselor') {
+      try {
+        const { data: agentUser } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('name', `%${agentName.trim()}%`)
+          .limit(1)
+          .maybeSingle()
+        if (agentUser?.id) {
+          counselorUserId = agentUser.id
+        }
+      } catch {}
+    }
 
     if (!matchedLead) {
       // Still log general audit entry so no call is lost
@@ -207,27 +247,53 @@ export async function POST(request: NextRequest) {
         console.error('[CallHippo Webhook] Failed to insert audit log for unmatched call:', err)
       }
 
+      // If we identified the counselor, insert a call activity so their call count in CRM matches CallHippo!
+      if (counselorUserId) {
+        const unmatchedActivityText = [
+          `🎙️ CallHippo Call Logged (${outcome})`,
+          `• Destination: ${rawPhone}`,
+          `• Call Duration: ${formatCallDuration(durationSeconds)}`,
+          `• Outcome: ${outcome}`,
+          `• Direction: ${direction}`,
+          `• Agent: ${agentName}${agentEmail ? ` (${agentEmail})` : ''}`,
+          callNotes ? `• Notes: ${callNotes}` : null,
+          recordingUrl ? `• Recording: ${recordingUrl}` : null,
+        ].filter(Boolean).join('\n')
+
+        // De-duplicate if webhook sends multiple events (e.g. answered + completed) for the same unmatched destination
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+        const { data: recentUnmatchedActs } = await supabase
+          .from('activities')
+          .select('id')
+          .eq('user_id', counselorUserId)
+          .eq('type', 'call')
+          .ilike('text', `%${rawPhone}%`)
+          .gte('time', fiveMinutesAgo)
+          .limit(1)
+
+        if (recentUnmatchedActs && recentUnmatchedActs.length > 0) {
+          await supabase.from('activities').update({
+            outcome,
+            text: unmatchedActivityText
+          }).eq('id', recentUnmatchedActs[0].id)
+        } else {
+          await supabase.from('activities').insert([{
+            lead: null,
+            user_id: counselorUserId,
+            type: 'call',
+            outcome,
+            text: unmatchedActivityText,
+            time: new Date().toISOString()
+          }])
+        }
+      }
+
       return NextResponse.json({
         success: true,
         matched: false,
-        message: `Call processed but no lead found for phone ${rawPhone}. Outcome: ${outcome}, Duration: ${durationSeconds}s`
+        counted_for_counselor: !!counselorUserId,
+        message: `Call processed for ${rawPhone}. Outcome: ${outcome}, Duration: ${durationSeconds}s`
       })
-    }
-
-    // 1. Identify counselor/agent user ID accurately from CallHippo agent email
-    let counselorUserId = matchedLead.owner_id || null
-    if (agentEmail) {
-      try {
-        const { data: agentUser } = await supabase
-          .from('users')
-          .select('id')
-          .ilike('email', agentEmail.trim())
-          .limit(1)
-          .maybeSingle()
-        if (agentUser?.id) {
-          counselorUserId = agentUser.id
-        }
-      } catch {}
     }
 
     // 2. Log Activity to Student Timeline (de-duplicate against frontend call timer)
