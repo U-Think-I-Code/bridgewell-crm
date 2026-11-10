@@ -48,21 +48,10 @@ function LeadsContent() {
 
   const LEADS_FILTERS_STORAGE_KEY = 'bridgewell_leads_filters_v2'
 
-  // Tab State: 'active' | 'called_today' | 'called_yesterday' | 'enrolled' | 'junk' | 'all'
-  const [activeTab, setActiveTab] = useState<'active' | 'called_today' | 'called_yesterday' | 'enrolled' | 'junk' | 'all'>(
-    tabParam === 'called_today' ? 'called_today' :
-    tabParam === 'called_yesterday' ? 'called_yesterday' :
-    tabParam === 'enrolled' ? 'enrolled' :
-    tabParam === 'junk' ? 'junk' :
-    tabParam === 'all' ? 'all' : 'active'
+  // Tab State: 'active' (Default: excludes Enrolled & Junk) | 'enrolled' (Only Enrolled) | 'junk' (Only Junk) | 'all' (Master)
+  const [activeTab, setActiveTab] = useState<'active' | 'enrolled' | 'junk' | 'all'>(
+    tabParam === 'enrolled' ? 'enrolled' : tabParam === 'junk' ? 'junk' : tabParam === 'all' ? 'all' : 'active'
   )
-
-  // Date Filter Target Mode: 'call_date' (Default: filter by when call happened) | 'added_date' (filter by lead creation date)
-  const dateTargetParam = (searchParams?.get('date_target') as 'call_date' | 'added_date') || 'call_date'
-  const [dateFilterTarget, setDateFilterTarget] = useState<'call_date' | 'added_date'>(dateTargetParam)
-
-  // Call Activities State
-  const [callActivities, setCallActivities] = useState<any[]>([])
 
   // Counselor Filter State: 'ALL' | 'UNASSIGNED' | 'MY_POOL' | counselor_id
   const [selectedCounselor, setSelectedCounselor] = useState<string>(counselorParam || 'ALL')
@@ -109,9 +98,6 @@ function LeadsContent() {
       if (!params.get('tab') && saved.activeTab && saved.activeTab !== 'active') {
         setActiveTab(saved.activeTab)
       }
-      if (!params.get('date_target') && saved.dateFilterTarget) {
-        setDateFilterTarget(saved.dateFilterTarget)
-      }
       if (!params.get('counselor') && saved.selectedCounselor && saved.selectedCounselor !== 'ALL') {
         setSelectedCounselor(saved.selectedCounselor)
       }
@@ -147,7 +133,6 @@ function LeadsContent() {
     try {
       const stateToSave = {
         activeTab,
-        dateFilterTarget,
         selectedCounselor,
         selectedPriority,
         selectedOutcome,
@@ -163,7 +148,6 @@ function LeadsContent() {
     } catch {}
   }, [
     activeTab,
-    dateFilterTarget,
     selectedCounselor,
     selectedPriority,
     selectedOutcome,
@@ -197,7 +181,6 @@ function LeadsContent() {
     }
 
     syncParam('tab', activeTab, 'active')
-    syncParam('date_target', dateFilterTarget, 'call_date')
     syncParam('counselor', selectedCounselor, 'ALL')
     syncParam('priority', selectedPriority, 'ALL')
     syncParam('outcome', selectedOutcome, 'ALL')
@@ -212,7 +195,6 @@ function LeadsContent() {
     }
   }, [
     activeTab,
-    dateFilterTarget,
     selectedCounselor,
     selectedPriority,
     selectedOutcome,
@@ -223,12 +205,9 @@ function LeadsContent() {
     router
   ])
 
-  const handleTabChange = (t: 'active' | 'called_today' | 'called_yesterday' | 'enrolled' | 'junk' | 'all') => {
+  const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
     startTransition(() => {
       setActiveTab(t)
-      if (t === 'called_today' || t === 'called_yesterday') {
-        setDateFilterTarget('call_date')
-      }
       setDisplayLimit(100)
     })
   }
@@ -287,22 +266,9 @@ function LeadsContent() {
       }
     }
 
-    const [leadsRes, actsRes] = await Promise.all([
-      query,
-      supabase
-        .from('activities')
-        .select('id, lead, user_id, outcome, time, text')
-        .eq('type', 'call')
-        .order('time', { ascending: false })
-        .limit(3000)
-    ])
-
-    if (leadsRes.error) console.error('Supabase Error (leads):', leadsRes.error)
-    else setLeads(leadsRes.data || [])
-
-    if (actsRes.error) console.error('Supabase Error (activities):', actsRes.error)
-    else setCallActivities(actsRes.data || [])
-
+    const { data, error } = await query
+    if (error) console.error('Supabase Error:', error)
+    else setLeads(data || [])
     setLoading(false)
   }
 
@@ -793,65 +759,6 @@ function LeadsContent() {
     }
   }
 
-  // Date boundaries for Today and Yesterday (calculated in user local time)
-  const { startOfToday, endOfToday, startOfYesterday, endOfYesterday } = useMemo(() => {
-    const now = new Date()
-    const sToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-    const eToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-    const sYesterday = new Date(sToday.getTime() - 24 * 60 * 60 * 1000)
-    const eYesterday = new Date(sToday.getTime() - 1)
-    return {
-      startOfToday: sToday,
-      endOfToday: eToday,
-      startOfYesterday: sYesterday,
-      endOfYesterday: eYesterday
-    }
-  }, [])
-
-  // Single-pass mapping of calls per lead scoped by counselor selection
-  const leadCallStatsMap = useMemo(() => {
-    const map = new Map<string, {
-      lastCallTime: string
-      lastOutcome: string
-      lastUserId: string
-      calls: Array<{ id: string; time: string; outcome: string; user_id: string; text?: string }>
-    }>()
-
-    for (let i = 0; i < callActivities.length; i++) {
-      const act = callActivities[i]
-      if (!act.lead || !act.time) continue
-
-      // Counselor Scoping:
-      // If current user is a Counselor, scope calls to their own calls
-      if (isCounselor(user)) {
-        if (act.user_id !== user.id) continue
-      } else if (isTeamLeader(user)) {
-        if (selectedCounselor !== 'ALL') {
-          const targetId = selectedCounselor === 'MY_POOL' ? user?.id : selectedCounselor
-          if (act.user_id !== targetId) continue
-        }
-      } else if (isManager(user)) {
-        if (selectedCounselor !== 'ALL' && selectedCounselor !== 'UNASSIGNED') {
-          if (act.user_id !== selectedCounselor) continue
-        }
-      }
-
-      const existing = map.get(act.lead)
-      if (!existing) {
-        map.set(act.lead, {
-          lastCallTime: act.time,
-          lastOutcome: act.outcome || 'Unknown',
-          lastUserId: act.user_id,
-          calls: [act]
-        })
-      } else {
-        existing.calls.push(act)
-      }
-    }
-
-    return map
-  }, [callActivities, user, selectedCounselor])
-
   // Scope all leads by counselor filter first so tab counts are always accurate
   const counselorFilteredAllLeads = useMemo(() => {
     if (selectedCounselor === 'ALL') return leads
@@ -861,59 +768,13 @@ function LeadsContent() {
   }, [leads, selectedCounselor, user?.id])
 
   // Counts for the primary view switcher tabs (scoped by selected counselor)
-  const activeCount = useMemo(() => counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate').length, [counselorFilteredAllLeads])
-  const enrolledCount = useMemo(() => counselorFilteredAllLeads.filter(l => l.stage === 'Enrolled').length, [counselorFilteredAllLeads])
-  const junkCount = useMemo(() => counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate').length, [counselorFilteredAllLeads])
+  const activeCount = counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate').length
+  const enrolledCount = counselorFilteredAllLeads.filter(l => l.stage === 'Enrolled').length
+  const junkCount = counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate').length
   const totalCount = counselorFilteredAllLeads.length
-
-  const calledTodayCount = useMemo(() => {
-    let count = 0
-    for (let i = 0; i < counselorFilteredAllLeads.length; i++) {
-      const stats = leadCallStatsMap.get(counselorFilteredAllLeads[i].id)
-      if (stats && stats.calls.some(c => {
-        const t = new Date(c.time)
-        return t >= startOfToday && t <= endOfToday
-      })) {
-        count++
-      }
-    }
-    return count
-  }, [counselorFilteredAllLeads, leadCallStatsMap, startOfToday, endOfToday])
-
-  const calledYesterdayCount = useMemo(() => {
-    let count = 0
-    for (let i = 0; i < counselorFilteredAllLeads.length; i++) {
-      const stats = leadCallStatsMap.get(counselorFilteredAllLeads[i].id)
-      if (stats && stats.calls.some(c => {
-        const t = new Date(c.time)
-        return t >= startOfYesterday && t <= endOfYesterday
-      })) {
-        count++
-      }
-    }
-    return count
-  }, [counselorFilteredAllLeads, leadCallStatsMap, startOfYesterday, endOfYesterday])
 
   // Base pool depending on current tab
   const counselorScopedPool = useMemo(() => {
-    if (activeTab === 'called_today') {
-      return counselorFilteredAllLeads.filter(l => {
-        const stats = leadCallStatsMap.get(l.id)
-        return stats && stats.calls.some(c => {
-          const t = new Date(c.time)
-          return t >= startOfToday && t <= endOfToday
-        })
-      })
-    }
-    if (activeTab === 'called_yesterday') {
-      return counselorFilteredAllLeads.filter(l => {
-        const stats = leadCallStatsMap.get(l.id)
-        return stats && stats.calls.some(c => {
-          const t = new Date(c.time)
-          return t >= startOfYesterday && t <= endOfYesterday
-        })
-      })
-    }
     if (activeTab === 'active') {
       return counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate')
     }
@@ -924,7 +785,7 @@ function LeadsContent() {
       return counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate')
     }
     return counselorFilteredAllLeads
-  }, [counselorFilteredAllLeads, activeTab, leadCallStatsMap, startOfToday, endOfToday, startOfYesterday, endOfYesterday])
+  }, [counselorFilteredAllLeads, activeTab])
 
   const basePool = counselorScopedPool
 
@@ -958,83 +819,68 @@ function LeadsContent() {
     }
   }, [counselorScopedPool])
 
-  // Helper to test if a date falls inside the selected date filter range
-  const checkDateInRange = useCallback((dateObj: Date): boolean => {
+  // Helper to test if a lead created_at falls inside selected date filter
+  const matchesDateFilter = useCallback((createdAtStr: string | null | undefined): boolean => {
     if (selectedDatePreset === 'ALL') return true
-    if (isNaN(dateObj.getTime())) return false
+    if (!createdAtStr) return false
+
+    const leadDate = new Date(createdAtStr)
+    if (isNaN(leadDate.getTime())) return false
+
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
 
     if (selectedDatePreset === 'today') {
-      return dateObj >= startOfToday && dateObj <= endOfToday
+      return leadDate >= startOfToday && leadDate <= endOfToday
     }
 
     if (selectedDatePreset === 'yesterday') {
-      return dateObj >= startOfYesterday && dateObj <= endOfYesterday
+      const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000)
+      const endOfYesterday = new Date(endOfToday.getTime() - 24 * 60 * 60 * 1000)
+      return leadDate >= startOfYesterday && leadDate <= endOfYesterday
     }
 
     if (selectedDatePreset === 'last7') {
       const startOf7DaysAgo = new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000)
-      return dateObj >= startOf7DaysAgo && dateObj <= endOfToday
+      return leadDate >= startOf7DaysAgo && leadDate <= endOfToday
     }
 
     if (selectedDatePreset === 'last30') {
       const startOf30DaysAgo = new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000)
-      return dateObj >= startOf30DaysAgo && dateObj <= endOfToday
+      return leadDate >= startOf30DaysAgo && leadDate <= endOfToday
     }
 
     if (selectedDatePreset === 'this_month') {
-      const startOfMonth = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1, 0, 0, 0, 0)
-      return dateObj >= startOfMonth && dateObj <= endOfToday
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+      return leadDate >= startOfMonth && leadDate <= endOfToday
     }
 
     if (selectedDatePreset === 'custom') {
       if (customStartDate) {
         const s = new Date(customStartDate)
         s.setHours(0, 0, 0, 0)
-        if (dateObj < s) return false
+        if (leadDate < s) return false
       }
       if (customEndDate) {
         const e = new Date(customEndDate)
         e.setHours(23, 59, 59, 999)
-        if (dateObj > e) return false
+        if (leadDate > e) return false
       }
       return true
     }
 
     return true
-  }, [selectedDatePreset, customStartDate, customEndDate, startOfToday, endOfToday, startOfYesterday, endOfYesterday])
-
-  // Matches Date Filter: checks Call Date or Lead Added Date according to dateFilterTarget
-  const matchesDateFilter = useCallback((lead: any): boolean => {
-    if (selectedDatePreset === 'ALL') return true
-
-    // If active tab is already called_today or called_yesterday, it is already filtered by call date
-    if (activeTab === 'called_today' || activeTab === 'called_yesterday') {
-      return true
-    }
-
-    if (dateFilterTarget === 'call_date') {
-      const stats = leadCallStatsMap.get(lead.id)
-      if (!stats || stats.calls.length === 0) return false
-      return stats.calls.some(c => {
-        const d = new Date(c.time)
-        return checkDateInRange(d)
-      })
-    } else {
-      if (!lead.created_at) return false
-      const d = new Date(lead.created_at)
-      return checkDateInRange(d)
-    }
-  }, [selectedDatePreset, activeTab, dateFilterTarget, leadCallStatsMap, checkDateInRange])
+  }, [selectedDatePreset, customStartDate, customEndDate])
 
   // Helper to determine if a lead has already been called or attempted
   const isLeadCalled = useCallback((l: any): boolean => {
-    if (leadCallStatsMap.has(l.id)) return true
     if (l.last_call_outcome) return true
     if (typeof l.attempts === 'number' && l.attempts > 0) return true
     if (l.metadata?.last_call_at || l.metadata?.last_call_outcome) return true
     if (l.stage && !['New', 'Unassigned'].includes(l.stage)) return true
     return false
-  }, [leadCallStatsMap])
+  }, [])
 
   // Count of pending (uncalled) leads in current pool
   const pendingCallCount = useMemo(() => {
@@ -1046,8 +892,8 @@ function LeadsContent() {
   }, [counselorScopedPool, isLeadCalled])
 
   // Memoized filtered leads based on priority, call outcome, country, programme level, and date
-  // Sorted: For Called Tabs, latest call is at the top.
-  // For Active Tab: Uncalled / Pending leads stay at the TOP. Once called, leads move DOWN.
+  // Sorted: Uncalled / Pending leads stay at the TOP (newest first).
+  // Once called, leads move DOWN into the lower section in descending order.
   const filteredLeads = useMemo(() => {
     const list = counselorScopedPool.filter(l => {
       if (selectedPriority !== 'ALL') {
@@ -1068,7 +914,7 @@ function LeadsContent() {
         if (!matchesProgrammeFilter(l, selectedProgramme)) return false
       }
 
-      if (!matchesDateFilter(l)) {
+      if (!matchesDateFilter(l.created_at)) {
         return false
       }
 
@@ -1081,17 +927,6 @@ function LeadsContent() {
     })
 
     return list.sort((a, b) => {
-      // If viewing called tabs, sort by most recent call time descending
-      if (activeTab === 'called_today' || activeTab === 'called_yesterday') {
-        const aCallTime = leadCallStatsMap.get(a.id)?.lastCallTime
-          ? new Date(leadCallStatsMap.get(a.id)!.lastCallTime).getTime()
-          : (a.created_at ? new Date(a.created_at).getTime() : 0)
-        const bCallTime = leadCallStatsMap.get(b.id)?.lastCallTime
-          ? new Date(leadCallStatsMap.get(b.id)!.lastCallTime).getTime()
-          : (b.created_at ? new Date(b.created_at).getTime() : 0)
-        return bCallTime - aCallTime
-      }
-
       const aCalled = isLeadCalled(a)
       const bCalled = isLeadCalled(b)
 
@@ -1107,15 +942,11 @@ function LeadsContent() {
       }
 
       // 3. Both called: descending order (newest called or newest created)
-      const aCallTime = leadCallStatsMap.get(a.id)?.lastCallTime
-        ? new Date(leadCallStatsMap.get(a.id)!.lastCallTime).getTime()
-        : (a.metadata?.last_call_at ? new Date(a.metadata.last_call_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0))
-      const bCallTime = leadCallStatsMap.get(b.id)?.lastCallTime
-        ? new Date(leadCallStatsMap.get(b.id)!.lastCallTime).getTime()
-        : (b.metadata?.last_call_at ? new Date(b.metadata.last_call_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0))
+      const aCallTime = a.metadata?.last_call_at ? new Date(a.metadata.last_call_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0)
+      const bCallTime = b.metadata?.last_call_at ? new Date(b.metadata.last_call_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0)
       return bCallTime - aCallTime
     })
-  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter, isLeadCalled, activeTab, leadCallStatsMap])
+  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter, isLeadCalled])
 
   // Progressive slice of leads for instant initial and filtered table paints (< 16ms INP)
   const visibleLeads = useMemo(() => {
@@ -1140,14 +971,7 @@ function LeadsContent() {
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>{
-                activeTab === 'called_today' ? "📞 Today's Called Leads" :
-                activeTab === 'called_yesterday' ? "⏪ Yesterday's Called Leads" :
-                activeTab === 'enrolled' ? '🎓 Enrolled Students' :
-                activeTab === 'junk' ? '🗑️ Junk Leads Archive' :
-                activeTab === 'all' ? 'All Leads Master' :
-                'Active Leads Pipeline'
-              }</span>
+              <span>{activeTab === 'enrolled' ? '🎓 Enrolled Students' : activeTab === 'junk' ? '🗑️ Junk Leads Archive' : activeTab === 'all' ? 'All Leads Master' : 'Active Leads Pipeline'}</span>
             </h1>
             {searchQuery && (
               <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">
@@ -1171,7 +995,7 @@ function LeadsContent() {
             )}
             {selectedDatePreset !== 'ALL' && (
               <span className="text-xs font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
-                <span>📅 {dateFilterTarget === 'call_date' ? 'Call Date' : 'Added Date'}: {selectedDatePreset === 'today' ? 'Today' : selectedDatePreset === 'yesterday' ? 'Yesterday' : selectedDatePreset === 'last7' ? 'Last 7 Days' : selectedDatePreset === 'last30' ? 'Last 30 Days' : selectedDatePreset === 'this_month' ? 'This Month' : customStartDate || customEndDate ? `${customStartDate || '...'} to ${customEndDate || '...'}` : 'Custom Range'}</span>
+                <span>📅 Date: {selectedDatePreset === 'today' ? 'Today' : selectedDatePreset === 'yesterday' ? 'Yesterday' : selectedDatePreset === 'last7' ? 'Last 7 Days' : selectedDatePreset === 'last30' ? 'Last 30 Days' : selectedDatePreset === 'this_month' ? 'This Month' : customStartDate || customEndDate ? `${customStartDate || '...'} to ${customEndDate || '...'}` : 'Custom Range'}</span>
                 <button
                   type="button"
                   onClick={() => { setSelectedDatePreset('ALL'); setCustomStartDate(''); setCustomEndDate(''); }}
@@ -1189,7 +1013,7 @@ function LeadsContent() {
             </span>
           </div>
 
-          {/* Primary View Switcher: Active Leads vs Called Today vs Called Yesterday vs Enrolled Students vs Junk vs All */}
+          {/* Primary View Switcher: Active Leads vs Enrolled Students vs Junk vs All */}
           <div className="flex items-center gap-1.5 bg-gray-100/90 p-1 rounded-xl w-fit flex-wrap">
             <button
               onClick={() => handleTabChange('active')}
@@ -1204,42 +1028,6 @@ function LeadsContent() {
                 activeTab === 'active' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'
               }`}>
                 {activeCount}
-              </span>
-            </button>
-
-            <button
-              onClick={() => handleTabChange('called_today')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'called_today'
-                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                  : 'text-gray-700 hover:text-emerald-800 hover:bg-emerald-50/70'
-              }`}
-              title="View all leads that received a call today"
-            >
-              <PhoneCall size={14} className={activeTab === 'called_today' ? 'text-white' : 'text-emerald-600'} />
-              <span>📞 Called Today</span>
-              <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'called_today' ? 'bg-white text-emerald-800' : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                {calledTodayCount}
-              </span>
-            </button>
-
-            <button
-              onClick={() => handleTabChange('called_yesterday')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'called_yesterday'
-                  ? 'bg-blue-600 text-white shadow-xs font-bold'
-                  : 'text-gray-700 hover:text-blue-800 hover:bg-blue-50/70'
-              }`}
-              title="View all leads that received a call yesterday"
-            >
-              <Phone size={14} className={activeTab === 'called_yesterday' ? 'text-white' : 'text-blue-600'} />
-              <span>⏪ Called Yesterday</span>
-              <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'called_yesterday' ? 'bg-white text-blue-800' : 'bg-blue-100 text-blue-800'
-              }`}>
-                {calledYesterdayCount}
               </span>
             </button>
 
@@ -1600,45 +1388,10 @@ function LeadsContent() {
           </div>
 
           {/* Date Filter */}
-          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
               <Calendar size={13} className="text-emerald-600" /> Date:
             </span>
-
-            {/* Date Target Mode Toggle: Call Date vs Added Date */}
-            <div className="flex items-center bg-white border border-gray-200 p-0.5 rounded-lg shadow-2xs text-[11px] font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setDateFilterTarget('call_date')
-                  setDisplayLimit(100)
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                  dateFilterTarget === 'call_date'
-                    ? 'bg-emerald-600 text-white shadow-2xs font-bold'
-                    : 'text-gray-600 hover:text-emerald-700 hover:bg-gray-50'
-                }`}
-                title="Filter leads by the date when the call took place"
-              >
-                📞 Call Date
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDateFilterTarget('added_date')
-                  setDisplayLimit(100)
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                  dateFilterTarget === 'added_date'
-                    ? 'bg-gray-800 text-white shadow-2xs font-bold'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-                title="Filter leads by the date they were added / imported into CRM"
-              >
-                📥 Added Date
-              </button>
-            </div>
-
             <select
               value={selectedDatePreset}
               onChange={(e) => {
@@ -1881,58 +1634,6 @@ function LeadsContent() {
 
       {/* Main Area */}
       <div className="flex-1 overflow-auto p-8">
-
-        {activeTab === 'called_today' && (
-          <div className="mb-6 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-emerald-500/10 border border-emerald-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-                <PhoneCall size={22} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
-                  <span>📞 Today&apos;s Called Leads</span>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full">
-                    {filteredLeads.length} Leads Dialed Today
-                  </span>
-                </h3>
-                <p className="text-xs text-emerald-800 mt-0.5">
-                  Showing all leads dialed today. Your most recent call appears at the top. You can redial, update outcomes, or add notes directly.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-semibold text-emerald-900 bg-white border border-emerald-200 px-3 py-1.5 rounded-xl shadow-2xs">
-                📅 Today ({new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
-              </span>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'called_yesterday' && (
-          <div className="mb-6 bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-cyan-500/10 border border-blue-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-                <Phone size={22} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-blue-950 flex items-center gap-2">
-                  <span>⏪ Yesterday&apos;s Called Leads</span>
-                  <span className="text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded-full">
-                    {filteredLeads.length} Leads Dialed Yesterday
-                  </span>
-                </h3>
-                <p className="text-xs text-blue-800 mt-0.5">
-                  Review leads called yesterday for fast follow-ups, pending callbacks, and progress tracking.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-semibold text-blue-900 bg-white border border-blue-200 px-3 py-1.5 rounded-xl shadow-2xs">
-                📅 Yesterday ({new Date(startOfYesterday).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
-              </span>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'enrolled' && (
           <div className="mb-6 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-300/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
@@ -2269,11 +1970,7 @@ function LeadsContent() {
                   <th className="px-6 py-3 font-medium text-gray-500">Call Outcome</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Assigned To</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Stage</th>
-                  <th className="px-6 py-3 font-medium text-gray-500">
-                    {activeTab === 'called_today' || activeTab === 'called_yesterday' || dateFilterTarget === 'call_date'
-                      ? '📞 Call Time & Added'
-                      : 'Added'}
-                  </th>
+                  <th className="px-6 py-3 font-medium text-gray-500">Added</th>
                   <th className="px-6 py-3"></th>
                 </tr>
               </thead>
@@ -2555,37 +2252,7 @@ function LeadsContent() {
                         </select>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {(() => {
-                        const stats = leadCallStatsMap.get(lead.id)
-                        if (stats?.lastCallTime) {
-                          const callDate = new Date(stats.lastCallTime)
-                          const isCallToday = callDate >= startOfToday && callDate <= endOfToday
-                          const isCallYesterday = callDate >= startOfYesterday && callDate <= endOfYesterday
-                          const timeStr = callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          const dateLabel = isCallToday ? 'Today' : isCallYesterday ? 'Yesterday' : callDate.toLocaleDateString([], { day: '2-digit', month: 'short' })
-
-                          return (
-                            <div className="flex flex-col">
-                              <span className={`inline-flex items-center gap-1 font-bold text-xs ${
-                                isCallToday ? 'text-emerald-700' : 'text-blue-700'
-                              }`}>
-                                <PhoneCall size={11} className={isCallToday ? 'text-emerald-600' : 'text-blue-600'} />
-                                <span>{dateLabel}, {timeStr}</span>
-                              </span>
-                              <span className="text-[10px] text-gray-400 mt-0.5">
-                                Added: {new Date(lead.created_at).toLocaleDateString()}
-                              </span>
-                            </div>
-                          )
-                        }
-                        return (
-                          <span className="text-xs text-gray-500">
-                            {new Date(lead.created_at).toLocaleDateString()}
-                          </span>
-                        )
-                      })()}
-                    </td>
+                    <td className="px-6 py-4 text-gray-500">{new Date(lead.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
                       <Link href={`/leads/${lead.id}`} className="text-gray-400 hover:text-black opacity-0 group-hover:opacity-100 transition-all inline-flex items-center gap-1 text-xs font-medium">
                         View <ArrowRight size={14} />

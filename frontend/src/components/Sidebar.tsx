@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, LogOut, Search, UserCheck, BarChart3, Bell, Megaphone, ArrowLeftRight, AlarmClock, Clock, ClipboardList, GraduationCap, Phone } from 'lucide-react'
+import { Activity, LayoutDashboard, Users, Calendar, CalendarDays, Settings, LogOut, Search, UserCheck, BarChart3, Bell, Megaphone, ArrowLeftRight, AlarmClock, Clock, ClipboardList, GraduationCap, Phone, PhoneCall } from 'lucide-react'
 import { useAuth } from '@/components/AuthWrapper'
 import { useNotifications } from '@/components/NotificationContext'
 import { canManageLeads, isManager } from '@/lib/teamHelper'
@@ -27,7 +27,7 @@ export default function Sidebar() {
     { name: 'Calendar', href: '/calendar', icon: CalendarDays },
     { name: 'My Day', href: '/tasks', icon: Calendar },
     { name: 'Notifications', href: '/notifications', icon: Bell, badge: unreadCount },
-    { name: "Today's Calls", href: '/leads?tab=called_today', icon: Phone },
+    { name: "Today's Calls", href: '/today-calls', icon: PhoneCall },
     { name: 'Audit Trail', href: '/audit', icon: ClipboardList, managerOnly: true },
     { name: 'Reassignment', href: '/reassign', icon: ArrowLeftRight, leaderOrManager: true },
     { name: 'Analytics', href: '/analytics', icon: BarChart3, managerOnly: true },
