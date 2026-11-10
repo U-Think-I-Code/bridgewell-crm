@@ -30,7 +30,7 @@ function LeadsContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [bulkTargetCounselor, setBulkTargetCounselor] = useState<string>('')
   const [bulkProcessing, setBulkProcessing] = useState(false)
-  const [showCustomSelectPopover, setShowCustomSelectPopover] = useState(false)
+  const [showCustomSelectPopover, setShowCustomSelectPopover] = useState<'toolbar' | 'table' | null>(null)
   const [customSelectInput, setCustomSelectInput] = useState<string>('')
   const [lineConfig] = useCallHippoLine()
   const [updatingStageId, setUpdatingStageId] = useState<string | null>(null)
@@ -468,7 +468,7 @@ function LeadsContent() {
     if (n <= 0 || filteredLeads.length === 0) return
     const topIds = filteredLeads.slice(0, n).map(l => l.id)
     setSelectedLeadIds(topIds)
-    setShowCustomSelectPopover(false)
+    setShowCustomSelectPopover(null)
     setCustomSelectInput('')
   }
 
@@ -1519,7 +1519,7 @@ function LeadsContent() {
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowCustomSelectPopover(v => !v)}
+                onClick={() => setShowCustomSelectPopover(v => v === 'toolbar' ? null : 'toolbar')}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer bg-white text-gray-700 border-gray-200 hover:bg-gray-100"
                 title="Select a custom number of leads from the top of the list"
               >
@@ -1527,7 +1527,7 @@ function LeadsContent() {
                 <span className="text-gray-400 text-[10px]">▾</span>
               </button>
 
-              {showCustomSelectPopover && (
+              {showCustomSelectPopover === 'toolbar' && (
                 <div className="absolute left-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56">
                   <p className="text-[11px] font-bold text-gray-700 mb-2">Select top N leads from list</p>
                   <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1580,7 +1580,7 @@ function LeadsContent() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowCustomSelectPopover(false)}
+                    onClick={() => setShowCustomSelectPopover(null)}
                     className="mt-2 w-full text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
                   >
                     Close
@@ -1765,14 +1765,14 @@ function LeadsContent() {
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setShowCustomSelectPopover(v => !v)}
+                      onClick={() => setShowCustomSelectPopover(v => v === 'table' ? null : 'table')}
                       className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 border cursor-pointer bg-white text-gray-700 border-gray-300 hover:bg-gray-50 shadow-2xs"
                       title="Select a custom number of leads from the top"
                     >
                       ⚡ Custom
                       <span className="text-gray-400 text-[9px]">▾</span>
                     </button>
-                    {showCustomSelectPopover && (
+                    {showCustomSelectPopover === 'table' && (
                       <div className="absolute left-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-56">
                         <p className="text-[11px] font-bold text-gray-700 mb-2">Select top N leads</p>
                         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1823,7 +1823,7 @@ function LeadsContent() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setShowCustomSelectPopover(false)}
+                          onClick={() => setShowCustomSelectPopover(null)}
                           className="mt-2 w-full text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
                         >
                           Close
