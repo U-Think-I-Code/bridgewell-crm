@@ -1642,54 +1642,59 @@ export default function LeadProfile() {
             </span>
           </div>
           
-          <div>
-            <div className="flex items-start justify-between gap-3">
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight leading-tight">{lead.name}</h1>
-              <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                {lead.last_call_outcome && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    lead.last_call_outcome === 'Connected' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    lead.last_call_outcome === 'Ringing' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                    lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                    lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                    lead.last_call_outcome === 'No Answer' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                    lead.last_call_outcome === 'Busy' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                    'bg-gray-100 text-gray-700 border-gray-200'
-                  }`}>
-                    {lead.last_call_outcome === 'Connected' ? '📞 Connected' :
-                     lead.last_call_outcome === 'Ringing' ? '🔔 Ringing' :
-                     lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? '📞 Call Back' :
-                     lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? '📵 Not Connected' :
-                     lead.last_call_outcome === 'No Answer' ? '📵 No Answer' :
-                     lead.last_call_outcome === 'Busy' ? '⏳ Busy' : '↪️ ' + lead.last_call_outcome}
-                  </span>
-                )}
-                {lead.priority && (
-                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
-                    lead.priority === 'Hot'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : lead.priority === 'Warm'
-                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : lead.priority === 'Cold'
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'bg-gray-50 text-gray-700 border-gray-200'
-                  }`}>
-                    {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
-                  </span>
-                )}
-                {/* Service Track Badge */}
-                {getLeadServiceType(lead) === 'visa_process' ? (
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 flex items-center gap-1 shadow-2xs">
-                    <span>🛂 Visa Process Lead</span>
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1 shadow-2xs">
-                    <span>🎓 Study Abroad Lead</span>
-                  </span>
-                )}
-              </div>
+          <div className="space-y-2">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 tracking-tight leading-tight break-words">
+                {lead.name}
+              </h1>
             </div>
-            <div className="text-gray-400 text-xs flex items-center gap-1.5 font-normal mt-1.5 flex-wrap">
+
+            {/* Badges row - outcome, priority, service track */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {lead.last_call_outcome && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 ${
+                  lead.last_call_outcome === 'Connected' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  lead.last_call_outcome === 'Ringing' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                  lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                  lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                  lead.last_call_outcome === 'No Answer' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                  lead.last_call_outcome === 'Busy' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                  'bg-gray-100 text-gray-700 border-gray-200'
+                }`}>
+                  {lead.last_call_outcome === 'Connected' ? '📞 Connected' :
+                   lead.last_call_outcome === 'Ringing' ? '🔔 Ringing' :
+                   lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback' ? '📞 Call Back' :
+                   lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected' ? '📵 Not Connected' :
+                   lead.last_call_outcome === 'No Answer' ? '📵 No Answer' :
+                   lead.last_call_outcome === 'Busy' ? '⏳ Busy' : '↪️ ' + lead.last_call_outcome}
+                </span>
+              )}
+              {lead.priority && (
+                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 ${
+                  lead.priority === 'Hot'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : lead.priority === 'Warm'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : lead.priority === 'Cold'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-gray-50 text-gray-700 border-gray-200'
+                }`}>
+                  {lead.priority === 'Hot' ? '🔥 Hot' : lead.priority === 'Warm' ? '☀️ Warm' : lead.priority === 'Cold' ? '❄️ Cold' : lead.priority}
+                </span>
+              )}
+              {/* Service Track Badge */}
+              {getLeadServiceType(lead) === 'visa_process' ? (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 inline-flex items-center gap-1 shadow-2xs">
+                  <span>🛂 Visa Process Lead</span>
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 inline-flex items-center gap-1 shadow-2xs">
+                  <span>🎓 Study Abroad Lead</span>
+                </span>
+              )}
+            </div>
+
+            <div className="text-gray-400 text-xs flex items-center gap-1.5 font-normal pt-0.5 flex-wrap">
               <span className="flex items-center gap-1"><Clock size={12} /> Added {new Date(lead.created_at).toLocaleDateString()}</span>
               {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
