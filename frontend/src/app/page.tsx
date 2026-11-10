@@ -1,15 +1,17 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Activity, TrendingUp, Users, Clock, ArrowRight, Flame, Crown } from 'lucide-react'
+import { Activity, TrendingUp, Users, Clock, ArrowRight, Flame, Crown, PhoneCall } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
 import LeaderboardSection from '@/components/LeaderboardSection'
 import TeamLeaderDashboardSection from '@/components/TeamLeaderDashboardSection'
+import TodayCallsLogSection from '@/components/TodayCallsLogSection'
+import { countRealCalls } from '@/lib/callDeduplicator'
 import { isTeamLeader, isManager, parseUserTeamMeta } from '@/lib/teamHelper'
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ total: 0, newToday: 0, enrolled: 0, overdue: 0, hot: 0 })
+  const [stats, setStats] = useState({ total: 0, newToday: 0, enrolled: 0, overdue: 0, hot: 0, callsToday: 0 })
   const [recentLeads, setRecentLeads] = useState<any[]>([])
   const [teamLeaders, setTeamLeaders] = useState<any[]>([])
   const [selectedTLId, setSelectedTLId] = useState<string>('')
@@ -58,13 +60,14 @@ export default function Dashboard() {
         return query
       }
 
-      // Execute all 5 count queries + recent leads in parallel
+      // Execute all count queries + today call activities + recent leads in parallel
       const [
         { count: total },
         { count: newToday },
         { count: enrolled },
         { count: overdue },
         { count: hot },
+        { data: todayActsData },
         { data: recentData }
       ] = await Promise.all([
         applyScope(supabase.from('leads').select('id', { count: 'exact', head: true })),
@@ -72,6 +75,21 @@ export default function Dashboard() {
         applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).eq('stage', 'Enrolled')),
         applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).lt('next_follow_up', nowISO)),
         applyScope(supabase.from('leads').select('id', { count: 'exact', head: true }).eq('priority', 'Hot')),
+        (() => {
+          let q = supabase
+            .from('activities')
+            .select('id, user_id, lead, type, outcome, text, time')
+            .eq('type', 'call')
+            .gte('time', today.toISOString())
+          if (allowedOwnerIds !== null) {
+            if (allowedOwnerIds.length > 0) {
+              q = q.in('user_id', allowedOwnerIds)
+            } else {
+              q = q.in('user_id', ['00000000-0000-0000-0000-000000000000'])
+            }
+          }
+          return q
+        })(),
         (() => {
           let q = supabase
             .from('leads')
@@ -89,12 +107,15 @@ export default function Dashboard() {
         })(),
       ])
 
+      const realCallsCount = countRealCalls(todayActsData || [])
+
       setStats({
         total: total || 0,
         newToday: newToday || 0,
         enrolled: enrolled || 0,
         overdue: overdue || 0,
         hot: hot || 0,
+        callsToday: realCallsCount
       })
 
       setRecentLeads(recentData || [])
@@ -153,7 +174,7 @@ export default function Dashboard() {
       </header>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         <Link href="/leads" className="bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md rounded-xl p-5 shadow-sm transition-all group">
           <div className="flex items-center gap-2.5 mb-3">
             <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
@@ -163,6 +184,16 @@ export default function Dashboard() {
           </div>
           <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
         </Link>
+
+        <a href="#todays-calls" className="bg-white border border-blue-200 hover:border-blue-400 hover:shadow-md rounded-xl p-5 shadow-sm transition-all group cursor-pointer">
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <PhoneCall size={15} className="text-blue-600" />
+            </div>
+            <h3 className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Calls Today</h3>
+          </div>
+          <p className="text-3xl font-bold text-blue-600">{stats.callsToday}</p>
+        </a>
         
         <Link href="/leads?priority=Hot" className="bg-white border border-rose-200 hover:border-rose-300 hover:shadow-md rounded-xl p-5 shadow-sm transition-all group">
           <div className="flex items-center gap-2.5 mb-3">
@@ -176,8 +207,8 @@ export default function Dashboard() {
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center gap-2.5 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-              <Activity size={15} className="text-blue-500" />
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+              <Activity size={15} className="text-indigo-500" />
             </div>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">New Today</h3>
           </div>
@@ -251,6 +282,9 @@ export default function Dashboard() {
       <div className="mb-6">
         <LeaderboardSection />
       </div>
+
+      {/* Today's Calls Log - "Kis Kis Ko Call Ki" Live Feed */}
+      <TodayCallsLogSection currentUser={user} />
 
       {/* Recent Leads */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">

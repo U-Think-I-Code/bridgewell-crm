@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { 
   Clock, 
@@ -86,8 +87,11 @@ interface SessionRecord {
   user_name?: string
 }
 
-export default function EmployeeActivityLogPage() {
+function ActivityLogContent() {
   const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const initialType = searchParams?.get('type') || 'all'
+
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [counselors, setCounselors] = useState<UserPresence[]>([])
   const [sessions, setSessions] = useState<SessionRecord[]>([])
@@ -97,7 +101,7 @@ export default function EmployeeActivityLogPage() {
   
   // Filters
   const [selectedCounselorId, setSelectedCounselorId] = useState<string>('all')
-  const [selectedType, setSelectedType] = useState<string>('all')
+  const [selectedType, setSelectedType] = useState<string>(initialType)
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days' | 'all'>('today')
   const [searchQuery, setSearchQuery] = useState('')
   const [newActivityAlert, setNewActivityAlert] = useState<string | null>(null)
@@ -1142,5 +1146,13 @@ export default function EmployeeActivityLogPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function EmployeeActivityLogPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading activity...</div>}>
+      <ActivityLogContent />
+    </Suspense>
   )
 }

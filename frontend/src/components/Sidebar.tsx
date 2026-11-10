@@ -27,7 +27,7 @@ export default function Sidebar() {
     { name: 'Calendar', href: '/calendar', icon: CalendarDays },
     { name: 'My Day', href: '/tasks', icon: Calendar },
     { name: 'Notifications', href: '/notifications', icon: Bell, badge: unreadCount },
-    { name: 'Activity Log', href: '/activity', icon: Clock, managerOnly: true },
+    { name: "Today's Calls", href: '/activity?type=call', icon: Phone },
     { name: 'Audit Trail', href: '/audit', icon: ClipboardList, managerOnly: true },
     { name: 'Reassignment', href: '/reassign', icon: ArrowLeftRight, leaderOrManager: true },
     { name: 'Analytics', href: '/analytics', icon: BarChart3, managerOnly: true },
