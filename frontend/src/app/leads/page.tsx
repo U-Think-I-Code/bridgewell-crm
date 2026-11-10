@@ -30,6 +30,8 @@ function LeadsContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [bulkTargetCounselor, setBulkTargetCounselor] = useState<string>('')
   const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [showCustomSelectPopover, setShowCustomSelectPopover] = useState(false)
+  const [customSelectInput, setCustomSelectInput] = useState<string>('')
   const [lineConfig] = useCallHippoLine()
   const [updatingStageId, setUpdatingStageId] = useState<string | null>(null)
   const { user } = useAuth()
@@ -456,6 +458,18 @@ function LeadsContent() {
     } else {
       setSelectedLeadIds(prev => Array.from(new Set([...prev, ...filteredIds])))
     }
+  }
+
+  /**
+   * Select the top-N leads from the current filtered list (from the top of the list as displayed).
+   * Replaces current selection with the first N leads.
+   */
+  const selectTopN = (n: number) => {
+    if (n <= 0 || filteredLeads.length === 0) return
+    const topIds = filteredLeads.slice(0, n).map(l => l.id)
+    setSelectedLeadIds(topIds)
+    setShowCustomSelectPopover(false)
+    setCustomSelectInput('')
   }
 
   const handleBulkReassignLeads = async (customIds?: string[]) => {
@@ -1500,6 +1514,82 @@ function LeadsContent() {
             </button>
           )}
 
+          {/* Custom Select N button — only for TL / Admin who can assign leads */}
+          {canManageLeads(user) && filteredLeads.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowCustomSelectPopover(v => !v)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer bg-white text-gray-700 border-gray-200 hover:bg-gray-100"
+                title="Select a custom number of leads from the top of the list"
+              >
+                <span>⚡ Custom Select</span>
+                <span className="text-gray-400 text-[10px]">▾</span>
+              </button>
+
+              {showCustomSelectPopover && (
+                <div className="absolute left-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-56">
+                  <p className="text-[11px] font-bold text-gray-700 mb-2">Select top N leads from list</p>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {[10, 20, 30, 50].filter(n => n <= filteredLeads.length).map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => selectTopN(n)}
+                        className="px-3 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer transition-colors"
+                      >
+                        Top {n}
+                      </button>
+                    ))}
+                    {filteredLeads.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => selectTopN(filteredLeads.length)}
+                        className="px-3 py-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 cursor-pointer transition-colors"
+                      >
+                        All {filteredLeads.length}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={1}
+                      max={filteredLeads.length}
+                      placeholder={`1–${filteredLeads.length}`}
+                      value={customSelectInput}
+                      onChange={e => setCustomSelectInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          const n = parseInt(customSelectInput, 10)
+                          if (!isNaN(n) && n > 0) selectTopN(Math.min(n, filteredLeads.length))
+                        }
+                      }}
+                      className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const n = parseInt(customSelectInput, 10)
+                        if (!isNaN(n) && n > 0) selectTopN(Math.min(n, filteredLeads.length))
+                      }}
+                      className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer transition-colors"
+                    >
+                      Go
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomSelectPopover(false)}
+                    className="mt-2 w-full text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
             <button
               onClick={() => {
@@ -1669,6 +1759,79 @@ function LeadsContent() {
                       : `Select All (${filteredLeads.length} leads)`}
                   </span>
                 </button>
+
+                {/* ⚡ Custom Select N — inline in the bulk bar */}
+                {canManageLeads(user) && filteredLeads.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomSelectPopover(v => !v)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 border cursor-pointer bg-white text-gray-700 border-gray-300 hover:bg-gray-50 shadow-2xs"
+                      title="Select a custom number of leads from the top"
+                    >
+                      ⚡ Custom
+                      <span className="text-gray-400 text-[9px]">▾</span>
+                    </button>
+                    {showCustomSelectPopover && (
+                      <div className="absolute left-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-56">
+                        <p className="text-[11px] font-bold text-gray-700 mb-2">Select top N leads</p>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {[10, 20, 30, 50].filter(n => n <= filteredLeads.length).map(n => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => selectTopN(n)}
+                              className="px-3 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer transition-colors"
+                            >
+                              Top {n}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => selectTopN(filteredLeads.length)}
+                            className="px-3 py-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 cursor-pointer transition-colors"
+                          >
+                            All {filteredLeads.length}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            max={filteredLeads.length}
+                            placeholder={`1–${filteredLeads.length}`}
+                            value={customSelectInput}
+                            onChange={e => setCustomSelectInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                const n = parseInt(customSelectInput, 10)
+                                if (!isNaN(n) && n > 0) selectTopN(Math.min(n, filteredLeads.length))
+                              }
+                            }}
+                            className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const n = parseInt(customSelectInput, 10)
+                              if (!isNaN(n) && n > 0) selectTopN(Math.min(n, filteredLeads.length))
+                            }}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                          >
+                            Go
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomSelectPopover(false)}
+                          className="mt-2 w-full text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {selectedLeadIds.length > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-200 animate-in fade-in">
