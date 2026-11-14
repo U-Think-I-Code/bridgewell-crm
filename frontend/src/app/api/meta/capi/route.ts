@@ -44,13 +44,68 @@ export async function POST(request: NextRequest) {
 
     // 2. Action: Track Stage Change
     if (action === 'stage_change') {
-      const { leadId, stage, email, phone, country } = body
+      let { leadId, stage, email, phone, country } = body
 
-      // Map stage to Meta standard event if applicable
-      let eventName = 'Lead'
-      if (stage === 'Qualified' || stage === 'Counselling done') eventName = 'Qualified'
-      else if (stage === 'Enrolled') eventName = 'CompleteRegistration'
-      else if (stage === 'Application submitted') eventName = 'SubmitApplication'
+      // Map CRM stages to Meta Standard Events
+      let eventName: string | null = null
+
+      switch (stage) {
+        case 'Connected':
+          eventName = 'Contact' // Meta standard event for call/contact established
+          break
+        case 'Call back':
+          eventName = 'Schedule' // Meta standard event for follow-up scheduled
+          break
+        case 'Qualified':
+        case 'Counselling done':
+          eventName = 'Qualified' // Meta standard event for qualified student
+          break
+        case 'Documents in progress':
+        case 'Application submitted':
+          eventName = 'SubmitApplication' // Meta standard event for program application
+          break
+        case 'Offer received':
+        case 'Enrolled':
+          eventName = 'CompleteRegistration' // Meta standard event for enrollment
+          break
+        case 'New':
+          eventName = 'Lead'
+          break
+        default:
+          // Negative or non-conversion stages:
+          // 'Not connected', 'Not reachable', 'Not interested', 'Lost', 'Junk/duplicate'
+          // Intentionally skipped so Meta algorithm does NOT optimize for bad leads!
+          eventName = null
+          break
+      }
+
+      if (!eventName) {
+        return NextResponse.json({
+          success: true,
+          skipped: true,
+          stage,
+          reason: `Stage '${stage}' is not a positive conversion milestone; skipped from Meta CAPI to prevent optimizing for unqualified leads.`
+        })
+      }
+
+      // If email or phone missing from payload, fetch from DB
+      if (leadId && (!email || !phone)) {
+        try {
+          const { data: leadData } = await supabase
+            .from('leads')
+            .select('email, phone, country')
+            .eq('id', leadId)
+            .maybeSingle()
+
+          if (leadData) {
+            email = email || leadData.email
+            phone = phone || leadData.phone
+            country = country || leadData.country
+          }
+        } catch (dbErr) {
+          console.warn('[Meta CAPI] Could not fetch lead details from DB:', dbErr)
+        }
+      }
 
       const result = await sendMetaCrmEvent({
         eventName,

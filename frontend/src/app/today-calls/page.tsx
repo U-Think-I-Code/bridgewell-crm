@@ -360,6 +360,18 @@ function TodayCallsContent() {
         text: `Changed stage to ${newStage} from Today's Calls Dashboard`,
         time: new Date().toISOString()
       }])
+
+      // Sync stage change to Meta Conversions API (CAPI) in background
+      fetch('/api/meta/capi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'stage_change',
+          leadId,
+          stage: newStage,
+        })
+      }).catch(console.error)
+
       await fetchData()
     } catch (err: any) {
       alert(`Failed to update stage: ${err.message}`)

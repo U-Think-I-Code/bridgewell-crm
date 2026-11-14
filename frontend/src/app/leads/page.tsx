@@ -794,6 +794,20 @@ function LeadsContent() {
         text: `Changed stage to ${newStage}`,
         time: new Date().toISOString()
       }])
+
+      // Sync stage change to Meta Conversions API (CAPI) in background
+      fetch('/api/meta/capi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'stage_change',
+          leadId,
+          stage: newStage,
+          email: lead.email,
+          phone: lead.phone,
+          country: lead.country,
+        })
+      }).catch(console.error)
     } catch (err: any) {
       console.error('Failed to update stage:', err)
       alert('Failed to update stage: ' + (err.message || 'Unknown error'))
