@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { normalizePhone, cleanPhoneE164 } from '@/lib/phoneHelper'
 import { notifyLeadAssigned } from '@/lib/notifications'
+import { sendMetaCrmEvent } from '@/lib/metaConversions'
 import crypto from 'crypto'
 
 // Verify token for Meta webhook handshake (configurable via env)
@@ -685,6 +686,17 @@ export async function POST(request: NextRequest) {
         is_read: false,
       },
     ])
+
+    // 5. Send real-time Lead conversion event to Meta Conversions API (CAPI)
+    sendMetaCrmEvent({
+      eventName: 'Lead',
+      leadId: leadData.raw_meta?.leadgen_id,
+      crmLeadId: newLeadId,
+      email: cleanEmail,
+      phone: cleanPhone,
+      country: targetCountry,
+      stage: 'New',
+    }).catch(err => console.error('[Meta Webhook] CAPI dispatch warning:', err))
 
     return NextResponse.json({
       success: true,

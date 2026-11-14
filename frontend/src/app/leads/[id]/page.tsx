@@ -938,6 +938,20 @@ export default function LeadProfile() {
 
     await supabase.from('leads').update(updatePayload).eq('id', id)
 
+    // Sync stage change to Meta Conversions API (CAPI) in background
+    fetch('/api/meta/capi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'stage_change',
+        leadId: id,
+        stage: newStage,
+        email: lead.email,
+        phone: lead.phone,
+        country: lead.country,
+      })
+    }).catch(console.error)
+
     // Auto-notify enrollment
     if (newStage === 'Enrolled') {
       setFollowUpDate('')

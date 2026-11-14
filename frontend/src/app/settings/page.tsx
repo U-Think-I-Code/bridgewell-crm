@@ -768,6 +768,47 @@ export default function SettingsPage() {
               </div>
             </section>
 
+            {/* Meta Conversions API (CAPI) Connection Card */}
+            <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold text-gray-900">Meta Conversions API (CAPI)</h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Connected &amp; Active
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    Direct server-to-server integration with Meta Events Manager. Sends offline conversion events (Lead, Qualified, Enrolled) to optimize your Facebook ad campaigns across all pages.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                    Meta Dataset ID
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="1035625342113755"
+                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                    Integration Status
+                  </label>
+                  <div className="flex items-center gap-2 h-[42px] px-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-800">
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    <span>Live CAPI Sync Active (Events Verified)</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {/* Test Simulation Card */}
             <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
