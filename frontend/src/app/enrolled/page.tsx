@@ -3,9 +3,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/AuthWrapper'
 import Link from 'next/link'
-import { 
-  GraduationCap, Search, Phone, MessageCircle, Mail, ArrowRight, 
-  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles 
+import {
+  GraduationCap, Search, Phone, MessageCircle, Mail, ArrowRight,
+  Users, CheckCircle2, Award, BookOpen, Globe, Calendar, Download, RefreshCw, Sparkles
 } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'

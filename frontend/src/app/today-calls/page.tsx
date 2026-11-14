@@ -4,23 +4,24 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/AuthWrapper'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { 
-  Phone, 
-  PhoneCall, 
-  PhoneOff, 
-  Calendar, 
-  Search, 
-  Users, 
-  ArrowRight, 
-  Clock, 
-  Filter, 
-  Sparkles, 
-  GraduationCap, 
-  Globe, 
-  XCircle, 
+import {
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  Calendar,
+  Search,
+  Users,
+  ArrowRight,
+  Clock,
+  Filter,
+  Sparkles,
+  GraduationCap,
+  Globe,
+  XCircle,
   RotateCcw,
   TrendingUp,
-  LayoutList
+  LayoutList,
+  Layers
 } from 'lucide-react'
 import { openCallHippoDialer, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
@@ -68,6 +69,9 @@ function TodayCallsContent() {
 
   // Outcome Filter: 'ALL' | 'Connected' | 'Ringing' | 'Call back' | 'Not Connected' | 'No Answer' | 'Busy'
   const [selectedOutcome, setSelectedOutcome] = useState<string>('ALL')
+
+  // Pipeline Stage Filter: 'ALL' | 'New' | 'Connected' | etc.
+  const [selectedStage, setSelectedStage] = useState<string>('ALL')
 
   // Search query
   const [searchTerm, setSearchTerm] = useState<string>('')
@@ -130,7 +134,7 @@ function TodayCallsContent() {
 
       if (leadsError) console.error('Error fetching leads:', leadsError)
       const lMap = new Map<string, any>()
-      ;(leadsData || []).forEach(l => lMap.set(l.id, l))
+        ; (leadsData || []).forEach(l => lMap.set(l.id, l))
       setLeadsMap(lMap)
     } catch (err) {
       console.error('Failed to fetch data:', err)
@@ -297,11 +301,16 @@ function TodayCallsContent() {
     }
   }, [calledRows])
 
-  // Filtered rows based on outcome, search, and service track
+  // Filtered rows based on outcome, stage, search, and service track
   const filteredRows = useMemo(() => {
     return calledRows.filter(r => {
       if (selectedOutcome !== 'ALL') {
         if (r.callOutcome !== selectedOutcome) return false
+      }
+
+      if (selectedStage !== 'ALL') {
+        const rowStage = r.leadStage || 'New'
+        if (rowStage !== selectedStage) return false
       }
 
       if (serviceFilter !== 'all') {
@@ -318,7 +327,7 @@ function TodayCallsContent() {
 
       return true
     })
-  }, [calledRows, selectedOutcome, serviceFilter, searchTerm])
+  }, [calledRows, selectedOutcome, selectedStage, serviceFilter, searchTerm])
 
   // Inline call trigger
   const handleCall = (e: React.MouseEvent, row: CallRow, targetLine?: CallHippoLine) => {
@@ -381,10 +390,10 @@ function TodayCallsContent() {
               <PhoneCall className="text-emerald-600" size={24} />
               <span>
                 {dateRange === 'today' ? "Today's Calls Dashboard" :
-                 dateRange === 'yesterday' ? "Yesterday's Calls Dashboard" :
-                 dateRange === 'last7' ? "Last 7 Days Calls Dashboard" :
-                 dateRange === 'last30' ? "Last 30 Days Calls Dashboard" :
-                 "Custom Date Calls Dashboard"}
+                  dateRange === 'yesterday' ? "Yesterday's Calls Dashboard" :
+                    dateRange === 'last7' ? "Last 7 Days Calls Dashboard" :
+                      dateRange === 'last30' ? "Last 30 Days Calls Dashboard" :
+                        "Custom Date Calls Dashboard"}
               </span>
             </h1>
 
@@ -407,41 +416,37 @@ function TodayCallsContent() {
         <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl shrink-0 flex-wrap">
           <button
             onClick={() => setDateRange('today')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              dateRange === 'today'
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${dateRange === 'today'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-gray-600 hover:text-black hover:bg-white/60'
-            }`}
+              }`}
           >
             ⚡ Today
           </button>
           <button
             onClick={() => setDateRange('yesterday')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              dateRange === 'yesterday'
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${dateRange === 'yesterday'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-gray-600 hover:text-black hover:bg-white/60'
-            }`}
+              }`}
           >
             ⏪ Yesterday
           </button>
           <button
             onClick={() => setDateRange('last7')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              dateRange === 'last7'
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${dateRange === 'last7'
                 ? 'bg-black text-white shadow-xs'
                 : 'text-gray-600 hover:text-black hover:bg-white/60'
-            }`}
+              }`}
           >
             🗓️ Last 7 Days
           </button>
           <button
             onClick={() => setDateRange('custom')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              dateRange === 'custom'
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${dateRange === 'custom'
                 ? 'bg-purple-600 text-white shadow-xs'
                 : 'text-gray-600 hover:text-black hover:bg-white/60'
-            }`}
+              }`}
           >
             ✏️ Custom Range
           </button>
@@ -538,6 +543,25 @@ function TodayCallsContent() {
               <option value="Not Connected">📵 Not Connected</option>
               <option value="No Answer">⛔ No Answer</option>
               <option value="Busy">⏳ Busy</option>
+            </select>
+          </div>
+
+          {/* Stage Filter */}
+          <div className="flex items-center gap-1.5 border-l border-gray-200 pl-3">
+            <span className="text-xs text-gray-400 font-medium flex items-center gap-1">
+              <Layers size={12} className="text-indigo-600" /> Stage:
+            </span>
+            <select
+              value={selectedStage}
+              onChange={e => setSelectedStage(e.target.value)}
+              className="text-xs font-semibold bg-white border border-indigo-200 text-indigo-900 rounded-lg px-2.5 py-1.5 outline-none shadow-2xs cursor-pointer hover:bg-indigo-50/50"
+            >
+              <option value="ALL">🏷️ All Stages</option>
+              {stages.map(s => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -775,9 +799,8 @@ function TodayCallsContent() {
                       {/* Exact Call Time */}
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className={`inline-flex items-center gap-1 font-bold text-xs ${
-                            isCallToday ? 'text-emerald-700' : 'text-blue-700'
-                          }`}>
+                          <span className={`inline-flex items-center gap-1 font-bold text-xs ${isCallToday ? 'text-emerald-700' : 'text-blue-700'
+                            }`}>
                             <Clock size={12} className={isCallToday ? 'text-emerald-600' : 'text-blue-600'} />
                             <span>{dateLabel}, {timeStr}</span>
                           </span>
@@ -790,11 +813,10 @@ function TodayCallsContent() {
                           value={row.leadStage || 'New'}
                           disabled={updatingStageId === row.leadId}
                           onChange={(e) => handleStageChange(row.leadId, e.target.value)}
-                          className={`text-xs font-semibold px-2.5 py-1 rounded-md border outline-none cursor-pointer transition-all shadow-2xs ${
-                            updatingStageId === row.leadId
+                          className={`text-xs font-semibold px-2.5 py-1 rounded-md border outline-none cursor-pointer transition-all shadow-2xs ${updatingStageId === row.leadId
                               ? 'opacity-50 cursor-wait bg-gray-100 text-gray-400'
                               : getStageBadgeClass(row.leadStage)
-                          }`}
+                            }`}
                         >
                           {stages.map(s => (
                             <option key={s} value={s} className="bg-white text-gray-900 font-medium">

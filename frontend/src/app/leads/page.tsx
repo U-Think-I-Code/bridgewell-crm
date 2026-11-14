@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef, Suspense } from 'react'
 import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers } from 'lucide-react'
 import { openCallHippoDialer, getCallHippoDialerUrl, copyPhoneToClipboard, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { useCallHippoLine } from '@/lib/dialer'
@@ -15,6 +15,33 @@ import { useAuth } from '@/components/AuthWrapper'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { canManageLeads, isCounselor, isTeamLeader, isManager, parseUserTeamMeta, getAssignableCounselors } from '@/lib/teamHelper'
 import { notifyLeadAssigned } from '@/lib/notifications'
+
+const DEFAULT_STAGES = [
+  'New', 'Ringing', 'Call back', 'Not connected', 'Connected', 'Qualified',
+  'Counselling done', 'Documents in progress', 'Application submitted',
+  'Offer received', 'Enrolled', 'Not reachable', 'Not interested', 'Lost', 'Junk/duplicate'
+]
+
+const getStageEmoji = (s: string) => {
+  switch (s) {
+    case 'New': return '✨'
+    case 'Ringing': return '🔔'
+    case 'Call back': return '📞'
+    case 'Not connected': return '📵'
+    case 'Connected': return '🟢'
+    case 'Qualified': return '🎯'
+    case 'Counselling done': return '🗣️'
+    case 'Documents in progress': return '📁'
+    case 'Application submitted': return '📝'
+    case 'Offer received': return '🎉'
+    case 'Enrolled': return '🎓'
+    case 'Not reachable': return '🚫'
+    case 'Not interested': return '✖️'
+    case 'Lost': return '📉'
+    case 'Junk/duplicate': return '🗑️'
+    default: return '🏷️'
+  }
+}
 
 function LeadsContent() {
   const router = useRouter()
@@ -44,6 +71,7 @@ function LeadsContent() {
   const programmeParam = searchParams?.get('programme') || 'ALL'
   const dateParam = searchParams?.get('date') || 'ALL'
   const outcomeParam = searchParams?.get('outcome') || 'ALL'
+  const stageParam = searchParams?.get('stage') || 'ALL'
   const serviceParam = (searchParams?.get('service') as ServiceTrack) || 'all'
 
   const LEADS_FILTERS_STORAGE_KEY = 'bridgewell_leads_filters_v2'
@@ -61,6 +89,9 @@ function LeadsContent() {
 
   // Call Outcome Filter State: 'ALL' | 'Connected' | 'No Answer' | 'Busy' | 'Wrong Num' | 'UNSET'
   const [selectedOutcome, setSelectedOutcome] = useState<string>(outcomeParam)
+
+  // Pipeline Stage Filter State: 'ALL' | 'New' | 'Ringing' | 'Call back' | etc.
+  const [selectedStage, setSelectedStage] = useState<string>(stageParam)
 
   // Country / Ad Target Filter State: 'ALL' | 'USA' | 'UK' | 'Canada' | 'Australia' | etc.
   const [selectedCountry, setSelectedCountry] = useState<string>(countryParam)
@@ -107,6 +138,9 @@ function LeadsContent() {
       if (!params.get('outcome') && saved.selectedOutcome && saved.selectedOutcome !== 'ALL') {
         setSelectedOutcome(saved.selectedOutcome)
       }
+      if (!params.get('stage') && saved.selectedStage && saved.selectedStage !== 'ALL') {
+        setSelectedStage(saved.selectedStage)
+      }
       if (!params.get('country') && saved.selectedCountry && saved.selectedCountry !== 'ALL') {
         setSelectedCountry(saved.selectedCountry)
       }
@@ -136,6 +170,7 @@ function LeadsContent() {
         selectedCounselor,
         selectedPriority,
         selectedOutcome,
+        selectedStage,
         selectedCountry,
         selectedProgramme,
         selectedDatePreset,
@@ -151,6 +186,7 @@ function LeadsContent() {
     selectedCounselor,
     selectedPriority,
     selectedOutcome,
+    selectedStage,
     selectedCountry,
     selectedProgramme,
     selectedDatePreset,
@@ -184,6 +220,7 @@ function LeadsContent() {
     syncParam('counselor', selectedCounselor, 'ALL')
     syncParam('priority', selectedPriority, 'ALL')
     syncParam('outcome', selectedOutcome, 'ALL')
+    syncParam('stage', selectedStage, 'ALL')
     syncParam('country', selectedCountry, 'ALL')
     syncParam('programme', selectedProgramme, 'ALL')
     syncParam('date', selectedDatePreset, 'ALL')
@@ -198,6 +235,7 @@ function LeadsContent() {
     selectedCounselor,
     selectedPriority,
     selectedOutcome,
+    selectedStage,
     selectedCountry,
     selectedProgramme,
     selectedDatePreset,
@@ -208,6 +246,13 @@ function LeadsContent() {
   const handleTabChange = (t: 'active' | 'enrolled' | 'junk' | 'all') => {
     startTransition(() => {
       setActiveTab(t)
+      if (t === 'active' && (selectedStage === 'Enrolled' || selectedStage === 'Junk/duplicate')) {
+        setSelectedStage('ALL')
+      } else if (t === 'enrolled' && selectedStage !== 'Enrolled') {
+        setSelectedStage('ALL')
+      } else if (t === 'junk' && selectedStage !== 'Junk/duplicate') {
+        setSelectedStage('ALL')
+      }
       setDisplayLimit(100)
     })
   }
@@ -773,8 +818,17 @@ function LeadsContent() {
   const junkCount = counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate').length
   const totalCount = counselorFilteredAllLeads.length
 
-  // Base pool depending on current tab
+  // Base pool depending on current tab and selectedStage
   const counselorScopedPool = useMemo(() => {
+    // If a specific stage is selected, override tab restriction if filtering Enrolled or Junk
+    if (selectedStage !== 'ALL') {
+      if (selectedStage === 'Enrolled' && activeTab === 'active') {
+        return counselorFilteredAllLeads.filter(l => (l.stage || 'New') === selectedStage)
+      }
+      if (selectedStage === 'Junk/duplicate' && activeTab === 'active') {
+        return counselorFilteredAllLeads.filter(l => (l.stage || 'New') === selectedStage)
+      }
+    }
     if (activeTab === 'active') {
       return counselorFilteredAllLeads.filter(l => l.stage !== 'Enrolled' && l.stage !== 'Junk/duplicate')
     }
@@ -785,7 +839,17 @@ function LeadsContent() {
       return counselorFilteredAllLeads.filter(l => l.stage === 'Junk/duplicate')
     }
     return counselorFilteredAllLeads
-  }, [counselorFilteredAllLeads, activeTab])
+  }, [counselorFilteredAllLeads, activeTab, selectedStage])
+
+  // Pre-calculate count of leads per stage within the counselor's pool
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (let i = 0; i < counselorFilteredAllLeads.length; i++) {
+      const s = counselorFilteredAllLeads[i].stage || 'New'
+      counts[s] = (counts[s] || 0) + 1
+    }
+    return counts
+  }, [counselorFilteredAllLeads])
 
   const basePool = counselorScopedPool
 
@@ -906,6 +970,11 @@ function LeadsContent() {
         if (selectedOutcome !== 'UNSET' && l.last_call_outcome !== selectedOutcome) return false
       }
 
+      if (selectedStage !== 'ALL') {
+        const leadStage = l.stage || 'New'
+        if (leadStage !== selectedStage) return false
+      }
+
       if (selectedCountry !== 'ALL') {
         if (!matchesCountryFilter(l, selectedCountry)) return false
       }
@@ -946,7 +1015,7 @@ function LeadsContent() {
       const bCallTime = b.metadata?.last_call_at ? new Date(b.metadata.last_call_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0)
       return bCallTime - aCallTime
     })
-  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter, isLeadCalled])
+  }, [counselorScopedPool, selectedPriority, selectedOutcome, selectedStage, selectedCountry, selectedProgramme, serviceTrack, matchesDateFilter, isLeadCalled])
 
   // Progressive slice of leads for instant initial and filtered table paints (< 16ms INP)
   const visibleLeads = useMemo(() => {
@@ -1333,6 +1402,41 @@ function LeadsContent() {
             </select>
           </div>
 
+          {/* Stage Filter */}
+          <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
+              <Layers size={13} className="text-indigo-600" /> Stage:
+            </span>
+            <select
+              value={selectedStage}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => {
+                  setSelectedStage(val)
+                  setDisplayLimit(100)
+                  if (val === 'Enrolled' && activeTab === 'active') {
+                    setActiveTab('enrolled')
+                  } else if (val === 'Junk/duplicate' && activeTab === 'active') {
+                    setActiveTab('junk')
+                  } else if (val !== 'ALL' && val !== 'Enrolled' && val !== 'Junk/duplicate' && (activeTab === 'enrolled' || activeTab === 'junk')) {
+                    setActiveTab('active')
+                  }
+                })
+              }}
+              className="bg-white border border-indigo-200 text-indigo-900 text-xs rounded-lg px-2.5 py-1.5 font-semibold outline-none shadow-xs hover:bg-indigo-50/50 focus:ring-2 focus:ring-indigo-200 transition-all cursor-pointer"
+            >
+              <option value="ALL">🏷️ All Stages</option>
+              {(stages.length > 0 ? stages : DEFAULT_STAGES).map((stg) => {
+                const count = stageCounts[stg] || 0
+                return (
+                  <option key={stg} value={stg}>
+                    {getStageEmoji(stg)} {stg} ({count})
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+
           {/* Country / Ad Campaign Filter */}
           <div className="flex items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3 sm:ml-1">
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap flex items-center gap-1">
@@ -1593,12 +1697,13 @@ function LeadsContent() {
             </div>
           )}
 
-          {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
+          {(selectedPriority !== 'ALL' || selectedOutcome !== 'ALL' || selectedStage !== 'ALL' || selectedCountry !== 'ALL' || selectedProgramme !== 'ALL' || selectedDatePreset !== 'ALL' || serviceTrack !== 'all' || selectedCounselor !== 'ALL') && (
             <button
               onClick={() => {
                 startTransition(() => {
                   setSelectedPriority('ALL')
                   setSelectedOutcome('ALL')
+                  setSelectedStage('ALL')
                   setSelectedCountry('ALL')
                   setSelectedProgramme('ALL')
                   setSelectedDatePreset('ALL')
@@ -1616,6 +1721,7 @@ function LeadsContent() {
                 const currentParams = new URLSearchParams(window.location.search)
                 currentParams.delete('priority')
                 currentParams.delete('outcome')
+                currentParams.delete('stage')
                 currentParams.delete('country')
                 currentParams.delete('programme')
                 currentParams.delete('date')
