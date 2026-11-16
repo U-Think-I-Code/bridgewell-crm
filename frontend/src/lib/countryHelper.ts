@@ -366,6 +366,10 @@ const IN_REGEX = /\b(india)\b/i
 const SA_REGEX = /\b(saudi|ksa)\b/i
 const ZA_REGEX = /\b(south africa)\b/i
 const EU_REGEX = /\b(europe|european)\b/i
+const PH_REGEX = /\b(philippines|pilipinas|ph)\b/i
+const ID_REGEX = /\b(indonesia|indonesian|jakarta)\b/i
+const DK_REGEX = /\b(denmark|danish|copenhagen)\b/i
+const NL_REGEX = /\b(netherlands|dutch|holland|amsterdam)\b/i
 
 const MASTER_REGEX = /\b(mba|msc|ma|mtech|mca|mcom|llm|m\.sc|m\.a|m\.tech|pg)\b/i
 const BACHELOR_REGEX = /\b(bsc|bba|ba|btech|bca|bcom|llb|b\.sc|b\.a|b\.tech|b\.e|ug)\b/i
@@ -444,6 +448,26 @@ export function matchesCountryFilter(
       return d === 'south africa'
     }
 
+    // Philippines
+    if (normFilter === 'philippines' || normFilter === 'ph') {
+      return d === 'philippines'
+    }
+
+    // Indonesia
+    if (normFilter === 'indonesia' || normFilter === 'id') {
+      return d === 'indonesia'
+    }
+
+    // Denmark
+    if (normFilter === 'denmark' || normFilter === 'dk') {
+      return d === 'denmark'
+    }
+
+    // Netherlands
+    if (normFilter === 'netherlands' || normFilter === 'nl') {
+      return d === 'netherlands'
+    }
+
     // Europe (Excluding UK)
     if (normFilter === 'europe' || normFilter === 'eu' || normFilter === 'europe (excluding uk)') {
       const euro = [
@@ -494,6 +518,18 @@ export function matchesCountryFilter(
   }
   if (normFilter === 'south africa' || normFilter === 'za') {
     return ZA_REGEX.test(sourceText)
+  }
+  if (normFilter === 'philippines' || normFilter === 'ph') {
+    return PH_REGEX.test(sourceText)
+  }
+  if (normFilter === 'indonesia' || normFilter === 'id') {
+    return ID_REGEX.test(sourceText)
+  }
+  if (normFilter === 'denmark' || normFilter === 'dk') {
+    return DK_REGEX.test(sourceText)
+  }
+  if (normFilter === 'netherlands' || normFilter === 'nl') {
+    return NL_REGEX.test(sourceText)
   }
   if (normFilter === 'europe' || normFilter === 'eu') {
     return EU_REGEX.test(sourceText)

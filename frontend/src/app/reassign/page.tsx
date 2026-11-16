@@ -836,6 +836,10 @@ export default function LeadReassignmentPage() {
                 <option value="Europe">🇪🇺 Europe Ad Leads</option>
                 <option value="Saudi Arabia">🇸🇦 Saudi Arabia Leads</option>
                 <option value="South Africa">🇿🇦 South Africa Leads</option>
+                <option value="Philippines">🇵🇭 Philippines Leads</option>
+                <option value="Indonesia">🇮🇩 Indonesia Leads</option>
+                <option value="Denmark">🇩🇰 Denmark Leads</option>
+                <option value="Netherlands">🇳🇱 Netherlands Leads</option>
                 <option value="UAE">🇦🇪 UAE Ad Leads</option>
                 <option value="India">🇮🇳 India Leads</option>
               </select>

@@ -109,6 +109,10 @@ function detectTargetCountry(data: {
     if (c === 'EU' || c === 'EUROPE') return 'Europe'
     if (c === 'UAE' || c === 'DUBAI') return 'UAE'
     if (c === 'INDIA' || c === 'IN') return 'India'
+    if (c === 'PH' || c === 'PHILIPPINES') return 'Philippines'
+    if (c === 'ID' || c === 'INDONESIA') return 'Indonesia'
+    if (c === 'DK' || c === 'DENMARK') return 'Denmark'
+    if (c === 'NL' || c === 'NETHERLANDS' || c === 'HOLLAND') return 'Netherlands'
     return data.country.charAt(0).toUpperCase() + data.country.slice(1)
   }
 
@@ -132,6 +136,10 @@ function detectTargetCountry(data: {
   if (/\b(EUROPE|EUROPEAN|EU AD)\b/.test(haystack)) return 'Europe'
   if (/\b(DUBAI|UAE|EMIRATES)\b/.test(haystack)) return 'UAE'
   if (/\b(INDIA|DELHI|MUMBAI)\b/.test(haystack)) return 'India'
+  if (/\b(PHILIPPINES|PILIPINAS|MANILA|CEBU)\b/.test(haystack)) return 'Philippines'
+  if (/\b(INDONESIA|JAKARTA|BALI|SURABAYA)\b/.test(haystack)) return 'Indonesia'
+  if (/\b(DENMARK|DANISH|COPENHAGEN)\b/.test(haystack)) return 'Denmark'
+  if (/\b(NETHERLANDS|DUTCH|HOLLAND|AMSTERDAM)\b/.test(haystack)) return 'Netherlands'
 
   // 3. Fallback to phone number country prefix
   const phone = (data.phone || '').trim().replace(/[^0-9+]/g, '')
@@ -144,6 +152,10 @@ function detectTargetCountry(data: {
   if (phone.startsWith('+27')) return 'South Africa'
   if (phone.startsWith('+971')) return 'UAE'
   if (phone.startsWith('+91')) return 'India'
+  if (phone.startsWith('+63')) return 'Philippines'
+  if (phone.startsWith('+62')) return 'Indonesia'
+  if (phone.startsWith('+45')) return 'Denmark'
+  if (phone.startsWith('+31')) return 'Netherlands'
 
   return 'Global'
 }
