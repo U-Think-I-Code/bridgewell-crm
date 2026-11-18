@@ -113,6 +113,7 @@ function detectTargetCountry(data: {
     if (c === 'ID' || c === 'INDONESIA') return 'Indonesia'
     if (c === 'DK' || c === 'DENMARK') return 'Denmark'
     if (c === 'NL' || c === 'NETHERLANDS' || c === 'HOLLAND') return 'Netherlands'
+    if (c === 'TT' || c === 'TRINIDAD' || c === 'TRINIDAD AND TOBAGO' || c === 'TRINIDAD & TOBAGO') return 'Trinidad & Tobago'
     return data.country.charAt(0).toUpperCase() + data.country.slice(1)
   }
 
@@ -140,6 +141,7 @@ function detectTargetCountry(data: {
   if (/\b(INDONESIA|JAKARTA|BALI|SURABAYA)\b/.test(haystack)) return 'Indonesia'
   if (/\b(DENMARK|DANISH|COPENHAGEN)\b/.test(haystack)) return 'Denmark'
   if (/\b(NETHERLANDS|DUTCH|HOLLAND|AMSTERDAM)\b/.test(haystack)) return 'Netherlands'
+  if (/\b(TRINIDAD|TOBAGO|PORT OF SPAIN)\b/.test(haystack)) return 'Trinidad & Tobago'
 
   // 3. Fallback to phone number country prefix
   const phone = (data.phone || '').trim().replace(/[^0-9+]/g, '')
@@ -156,6 +158,7 @@ function detectTargetCountry(data: {
   if (phone.startsWith('+62')) return 'Indonesia'
   if (phone.startsWith('+45')) return 'Denmark'
   if (phone.startsWith('+31')) return 'Netherlands'
+  if (phone.startsWith('+1868')) return 'Trinidad & Tobago'
 
   return 'Global'
 }

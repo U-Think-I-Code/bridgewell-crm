@@ -61,6 +61,7 @@ export const ISO_COUNTRY_NAMES: Record<string, string> = {
   TR: 'Turkey',
   UZ: 'Uzbekistan',
   KZ: 'Kazakhstan',
+  TT: 'Trinidad & Tobago',
 }
 
 export function getCountryFlag(country?: string | null): string {
@@ -370,6 +371,7 @@ const PH_REGEX = /\b(philippines|pilipinas|ph)\b/i
 const ID_REGEX = /\b(indonesia|indonesian|jakarta)\b/i
 const DK_REGEX = /\b(denmark|danish|copenhagen)\b/i
 const NL_REGEX = /\b(netherlands|dutch|holland|amsterdam)\b/i
+const TT_REGEX = /\b(trinidad|tobago|port of spain)\b/i
 
 const MASTER_REGEX = /\b(mba|msc|ma|mtech|mca|mcom|llm|m\.sc|m\.a|m\.tech|pg)\b/i
 const BACHELOR_REGEX = /\b(bsc|bba|ba|btech|bca|bcom|llb|b\.sc|b\.a|b\.tech|b\.e|ug)\b/i
@@ -468,6 +470,11 @@ export function matchesCountryFilter(
       return d === 'netherlands'
     }
 
+    // Trinidad & Tobago
+    if (normFilter === 'trinidad & tobago' || normFilter === 'trinidad' || normFilter === 'tt') {
+      return d === 'trinidad & tobago'
+    }
+
     // Europe (Excluding UK)
     if (normFilter === 'europe' || normFilter === 'eu' || normFilter === 'europe (excluding uk)') {
       const euro = [
@@ -530,6 +537,9 @@ export function matchesCountryFilter(
   }
   if (normFilter === 'netherlands' || normFilter === 'nl') {
     return NL_REGEX.test(sourceText)
+  }
+  if (normFilter === 'trinidad & tobago' || normFilter === 'trinidad' || normFilter === 'tt') {
+    return TT_REGEX.test(sourceText)
   }
   if (normFilter === 'europe' || normFilter === 'eu') {
     return EU_REGEX.test(sourceText)
