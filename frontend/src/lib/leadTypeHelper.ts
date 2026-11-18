@@ -11,6 +11,8 @@ export function getLeadServiceType(lead: {
   source?: string | null
   course?: string | null
   programme_level?: string | null
+  country?: string | null
+  phone?: string | null
   metadata?: any
 }): 'study_abroad' | 'visa_process' {
   if (!lead) return 'study_abroad'
@@ -19,18 +21,47 @@ export function getLeadServiceType(lead: {
   const campaignAnswers = meta.campaign_answers || {}
   const sourceStr = String(lead.source || '').toLowerCase()
   const fileName = String(meta.imported_file || '').toLowerCase()
-  const courseStr = String(lead.course || '').toLowerCase()
+  const countryStr = String(lead.country || '').toLowerCase()
+  const phoneClean = String(lead.phone || '').replace(/[^\d+]/g, '')
 
-  // 1. Explicitly tagged service type in metadata
+  // 1. Explicitly tagged as visa_process in metadata
   if (meta.service_type === 'visa_process' || meta.service_type === 'visa') return 'visa_process'
+
+  // 2. Trinidad & Tobago leads (+1868) are dedicated Visa Process campaigns
+  if (
+    countryStr.includes('trinidad') ||
+    countryStr.includes('tobago') ||
+    countryStr === 'tt' ||
+    sourceStr.includes('trinidad') ||
+    fileName.includes('trinidad') ||
+    phoneClean.startsWith('+1868') ||
+    phoneClean.startsWith('1868')
+  ) {
+    return 'visa_process'
+  }
+
+  // 3. Check for Visa service campaign questions (e.g. "1. Which visa service are you interested in?")
+  const allMetaKeys = [
+    ...Object.keys(meta),
+    ...Object.keys(campaignAnswers),
+  ].map(k => k.toLowerCase())
+
+  const hasVisaServiceQuestion = allMetaKeys.some(
+    k => k.includes('visa_service') || k.includes('visa service') || k.includes('which visa')
+  )
+  if (hasVisaServiceQuestion) {
+    return 'visa_process'
+  }
+
+  // 4. Explicitly tagged as study_abroad in metadata
   if (meta.service_type === 'study_abroad') return 'study_abroad'
 
-  // 2. Check for Visa keywords in source or uploaded file name
+  // 5. Check for Visa keywords in source or uploaded file name
   if (sourceStr.includes('visa') || fileName.includes('visa')) {
     return 'visa_process'
   }
 
-  // 3. Check for US Student Visa campaign questions (SEVIS, I-20, DS-160, Embassy)
+  // 6. Check for US Student Visa campaign questions (SEVIS, I-20, DS-160, Embassy)
   const isVisaCampaign =
     campaignAnswers['SEVIS I-901 Fee Paid?'] !== undefined ||
     campaignAnswers['I-20 Received From US University?'] !== undefined ||
@@ -43,7 +74,7 @@ export function getLeadServiceType(lead: {
     return 'visa_process'
   }
 
-  // 4. Default to study abroad for course/degree applicants
+  // 7. Default to study abroad for course/degree applicants
   return 'study_abroad'
 }
 

@@ -209,6 +209,10 @@ export function cleanPhoneE164(
     countryCode = '+44'
     countryName = 'UK'
     region = 'UK'
+  } else if (clean.startsWith('+1868')) {
+    countryCode = '+1868'
+    countryName = 'Trinidad & Tobago'
+    region = 'Other'
   } else if (clean.startsWith('+1')) {
     countryCode = '+1'
     countryName = 'USA'
@@ -237,6 +241,12 @@ export function cleanPhoneE164(
     } else if (clean.startsWith('+61')) {
       countryCode = '+61'
       countryName = 'Australia'
+    } else if (clean.startsWith('+63')) {
+      countryCode = '+63'
+      countryName = 'Philippines'
+    } else if (clean.startsWith('+62')) {
+      countryCode = '+62'
+      countryName = 'Indonesia'
     } else if (clean.length >= 3) {
       countryCode = clean.slice(0, 3)
     }

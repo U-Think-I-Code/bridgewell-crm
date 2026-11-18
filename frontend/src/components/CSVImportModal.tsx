@@ -353,8 +353,19 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
           }
         })
 
+        const hasVisaServiceHeader = fileHeaders.some(h => {
+          const lh = h.toLowerCase()
+          return lh.includes('visa_service') || lh.includes('visa service') || lh.includes('which visa')
+        })
+        const isTrinidadLead =
+          (file?.name || '').toLowerCase().includes('trinidad') ||
+          String(rawSource || '').toLowerCase().includes('trinidad') ||
+          cleanedPhone.startsWith('+1868')
+
         const isVisaFile = (file?.name || '').toLowerCase().includes('visa') || 
                            String(rawSource || '').toLowerCase().includes('visa') ||
+                           isTrinidadLead ||
+                           hasVisaServiceHeader ||
                            campaignAnswers['SEVIS I-901 Fee Paid?'] !== undefined ||
                            campaignAnswers['I-20 Received From US University?'] !== undefined
         const inferredServiceType = isVisaFile ? 'visa_process' : 'study_abroad'
