@@ -143,22 +143,22 @@ function detectTargetCountry(data: {
   if (/\b(NETHERLANDS|DUTCH|HOLLAND|AMSTERDAM)\b/.test(haystack)) return 'Netherlands'
   if (/\b(TRINIDAD|TOBAGO|PORT OF SPAIN)\b/.test(haystack)) return 'Trinidad & Tobago'
 
-  // 3. Fallback to phone number country prefix
+  // 3. Fallback to phone number country prefix (check longer prefixes like +1868 before +1)
   const phone = (data.phone || '').trim().replace(/[^0-9+]/g, '')
-  if (phone.startsWith('+44')) return 'UK'
-  if (phone.startsWith('+1')) return 'USA'
-  if (phone.startsWith('+61')) return 'Australia'
-  if (phone.startsWith('+49')) return 'Germany'
+  if (phone.startsWith('+1868')) return 'Trinidad & Tobago'
   if (phone.startsWith('+353')) return 'Ireland'
   if (phone.startsWith('+966')) return 'Saudi Arabia'
-  if (phone.startsWith('+27')) return 'South Africa'
   if (phone.startsWith('+971')) return 'UAE'
+  if (phone.startsWith('+44')) return 'UK'
+  if (phone.startsWith('+61')) return 'Australia'
+  if (phone.startsWith('+49')) return 'Germany'
+  if (phone.startsWith('+27')) return 'South Africa'
   if (phone.startsWith('+91')) return 'India'
   if (phone.startsWith('+63')) return 'Philippines'
   if (phone.startsWith('+62')) return 'Indonesia'
   if (phone.startsWith('+45')) return 'Denmark'
   if (phone.startsWith('+31')) return 'Netherlands'
-  if (phone.startsWith('+1868')) return 'Trinidad & Tobago'
+  if (phone.startsWith('+1')) return 'USA'
 
   return 'Global'
 }

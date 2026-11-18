@@ -38,6 +38,8 @@ export interface DualTimeResult {
 const COUNTRY_TIMEZONE_MAP: Record<string, { timeZone: string; flag: string; label: string; countryName: string }> = {
   // UK
   '+44': { timeZone: 'Europe/London', flag: '🇬🇧', label: 'UK Time (London)', countryName: 'UK' },
+  // Caribbean (NANP +1868)
+  '+1868': { timeZone: 'America/Port_of_Spain', flag: '🇹🇹', label: 'Trinidad Time (AST)', countryName: 'Trinidad & Tobago' },
   // USA / Canada
   '+1': { timeZone: 'America/New_York', flag: '🇺🇸', label: 'US Time (Eastern)', countryName: 'USA' },
   // Europe
@@ -85,6 +87,8 @@ const COUNTRY_TIMEZONE_MAP: Record<string, { timeZone: string; flag: string; lab
   '+64': { timeZone: 'Pacific/Auckland', flag: '🇳🇿', label: 'NZ Time (NZST)', countryName: 'New Zealand' },
   '+65': { timeZone: 'Asia/Singapore', flag: '🇸🇬', label: 'Singapore (SGT)', countryName: 'Singapore' },
   '+60': { timeZone: 'Asia/Kuala_Lumpur', flag: '🇲🇾', label: 'Malaysia (MYT)', countryName: 'Malaysia' },
+  '+63': { timeZone: 'Asia/Manila', flag: '🇵🇭', label: 'Philippines Time (PHT)', countryName: 'Philippines' },
+  '+62': { timeZone: 'Asia/Jakarta', flag: '🇮🇩', label: 'Indonesia Time (WIB)', countryName: 'Indonesia' },
 }
 
 // In-memory caches for ultra-fast < 1ms render loops & 0ms INP
@@ -143,6 +147,20 @@ export function getStudentTimezone(phone?: string | null, countryHint?: string |
         countryName: 'UK',
         label: 'UK Time (London)',
         flag: '🇬🇧',
+        isIndia: false,
+      }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+
+    // Check Trinidad & Tobago (+1868) BEFORE generic +1
+    if (raw.startsWith('+1868')) {
+      const res: StudentTimezoneInfo = {
+        timeZone: 'America/Port_of_Spain',
+        countryCode: '+1868',
+        countryName: 'Trinidad & Tobago',
+        label: 'Trinidad Time (AST)',
+        flag: '🇹🇹',
         isIndia: false,
       }
       studentTimezoneCache.set(cacheKey, res)
@@ -235,6 +253,31 @@ export function getStudentTimezone(phone?: string | null, countryHint?: string |
     }
     if (cleanHint.includes('australia') || cleanHint.includes('sydney')) {
       const res = { timeZone: 'Australia/Sydney', countryCode: '+61', countryName: 'Australia', label: 'Australia Time (AEST)', flag: '🇦🇺', isIndia: false }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+    if (cleanHint.includes('philippines') || cleanHint === 'ph') {
+      const res = { timeZone: 'Asia/Manila', countryCode: '+63', countryName: 'Philippines', label: 'Philippines Time (PHT)', flag: '🇵🇭', isIndia: false }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+    if (cleanHint.includes('indonesia') || cleanHint === 'id') {
+      const res = { timeZone: 'Asia/Jakarta', countryCode: '+62', countryName: 'Indonesia', label: 'Indonesia Time (WIB)', flag: '🇮🇩', isIndia: false }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+    if (cleanHint.includes('denmark') || cleanHint === 'dk') {
+      const res = { timeZone: 'Europe/Copenhagen', countryCode: '+45', countryName: 'Denmark', label: 'Denmark Time (CET)', flag: '🇩🇰', isIndia: false }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+    if (cleanHint.includes('netherlands') || cleanHint.includes('holland') || cleanHint === 'nl') {
+      const res = { timeZone: 'Europe/Amsterdam', countryCode: '+31', countryName: 'Netherlands', label: 'Netherlands Time (CET)', flag: '🇳🇱', isIndia: false }
+      studentTimezoneCache.set(cacheKey, res)
+      return res
+    }
+    if (cleanHint.includes('trinidad') || cleanHint.includes('tobago') || cleanHint === 'tt') {
+      const res = { timeZone: 'America/Port_of_Spain', countryCode: '+1868', countryName: 'Trinidad & Tobago', label: 'Trinidad Time (AST)', flag: '🇹🇹', isIndia: false }
       studentTimezoneCache.set(cacheKey, res)
       return res
     }

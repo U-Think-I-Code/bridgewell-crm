@@ -43,6 +43,7 @@ export const ISO_COUNTRY_NAMES: Record<string, string> = {
   TZ: 'Tanzania',
   ZW: 'Zimbabwe',
   PH: 'Philippines',
+  ID: 'Indonesia',
   MY: 'Malaysia',
   SG: 'Singapore',
   NZ: 'New Zealand',
@@ -78,6 +79,11 @@ export function getCountryFlag(country?: string | null): string {
   if (u === 'ZA' || u === 'SOUTH AFRICA' || u === 'RSA') return '🇿🇦'
   if (u === 'EU' || u === 'EUROPE') return '🇪🇺'
   if (u === 'IN' || u === 'INDIA') return '🇮🇳'
+  if (u === 'PH' || u === 'PHILIPPINES') return '🇵🇭'
+  if (u === 'ID' || u === 'INDONESIA') return '🇮🇩'
+  if (u === 'DK' || u === 'DENMARK') return '🇩🇰'
+  if (u === 'NL' || u === 'NETHERLANDS' || u === 'HOLLAND') return '🇳🇱'
+  if (u === 'TT' || u === 'TRINIDAD' || u === 'TRINIDAD & TOBAGO' || u === 'TRINIDAD AND TOBAGO') return '🇹🇹'
   if (u.length === 2 && /^[A-Z]{2}$/.test(u)) {
     const codePoints = [...u].map(c => 127397 + c.charCodeAt(0))
     return String.fromCodePoint(...codePoints)
@@ -122,7 +128,7 @@ export const PHONE_DIAL_CODES: [string, string][] = [
   ['+1809', 'Dominican Republic'],
   ['+1829', 'Dominican Republic'],
   ['+1849', 'Dominican Republic'],
-  ['+1868', 'Trinidad and Tobago'],
+  ['+1868', 'Trinidad & Tobago'],
   ['+1869', 'Saint Kitts and Nevis'],
   ['+1876', 'Jamaica'],
   // 3-digit Middle East / Africa / Europe / Asia
@@ -471,8 +477,8 @@ export function matchesCountryFilter(
     }
 
     // Trinidad & Tobago
-    if (normFilter === 'trinidad & tobago' || normFilter === 'trinidad' || normFilter === 'tt') {
-      return d === 'trinidad & tobago'
+    if (normFilter === 'trinidad & tobago' || normFilter === 'trinidad and tobago' || normFilter === 'trinidad' || normFilter === 'tt') {
+      return d === 'trinidad & tobago' || d === 'trinidad and tobago'
     }
 
     // Europe (Excluding UK)
