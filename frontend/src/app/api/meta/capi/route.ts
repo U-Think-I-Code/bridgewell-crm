@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
           break
         case 'Qualified':
         case 'Counselling done':
+        case 'Future prospect':
           eventName = 'Qualified' // Meta standard event for qualified student
           break
         case 'Documents in progress':

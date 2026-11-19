@@ -20,7 +20,7 @@ import { notifyLeadAssigned } from '@/lib/notifications'
 const DEFAULT_STAGES = [
   'New', 'Ringing', 'Call back', 'Not connected', 'Connected', 'Qualified',
   'Counselling done', 'Documents in progress', 'Application submitted',
-  'Offer received', 'Enrolled', 'Not reachable', 'Not interested', 'Lost', 'Junk/duplicate'
+  'Offer received', 'Enrolled', 'Future prospect', 'Not reachable', 'Not interested', 'Lost', 'Junk/duplicate'
 ]
 
 const getStageEmoji = (s: string) => {
@@ -36,6 +36,7 @@ const getStageEmoji = (s: string) => {
     case 'Application submitted': return '📝'
     case 'Offer received': return '🎉'
     case 'Enrolled': return '🎓'
+    case 'Future prospect': return '🔮'
     case 'Not reachable': return '🚫'
     case 'Not interested': return '✖️'
     case 'Lost': return '📉'
@@ -777,6 +778,7 @@ function LeadsContent() {
     if (s === 'application submitted') return 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100/80'
     if (s === 'offer received') return 'bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100/80'
     if (s === 'enrolled') return 'bg-green-100 text-green-900 border-green-300 font-bold hover:bg-green-200/80'
+    if (s === 'future prospect') return 'bg-cyan-50 text-cyan-800 border-cyan-200 hover:bg-cyan-100/80 font-semibold'
     if (s === 'not reachable') return 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/80'
     if (s === 'not interested') return 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200/80'
     if (s === 'lost') return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/80'

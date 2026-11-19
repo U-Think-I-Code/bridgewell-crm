@@ -1859,6 +1859,9 @@ export default function LeadProfile() {
                   className="w-full bg-white border border-gray-200 text-gray-800 text-xs font-semibold px-3 py-2.5 rounded-xl outline-none hover:bg-gray-50 transition-all cursor-pointer focus:ring-2 focus:ring-gray-100"
                 >
                   {stages.map(s => <option key={s} value={s}>{s}</option>)}
+                  {lead.stage && !stages.includes(lead.stage) && (
+                    <option value={lead.stage}>{lead.stage}</option>
+                  )}
                 </select>
               </div>
             </div>
