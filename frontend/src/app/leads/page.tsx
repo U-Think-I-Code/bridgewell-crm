@@ -2,7 +2,8 @@
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef, Suspense } from 'react'
 import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers, Clock } from 'lucide-react'
+import { formatLastCall } from '@/lib/lastCallHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl, copyPhoneToClipboard, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { useCallHippoLine } from '@/lib/dialer'
@@ -723,12 +724,25 @@ function LeadsContent() {
 
   const handleUpdateCallOutcome = async (leadId: string, outcome: string) => {
     const val = outcome || null
+    const nowIso = new Date().toISOString()
+    const targetLead = leads.find(l => l.id === leadId)
+    const updatedMeta = {
+      ...(targetLead?.metadata || {}),
+      ...(val ? { last_call_at: nowIso, last_call_outcome: val } : {})
+    }
     
     // Optimistic UI update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, last_call_outcome: val } : l))
+    setLeads(prev => prev.map(l => l.id === leadId ? { 
+      ...l, 
+      last_call_outcome: val,
+      metadata: updatedMeta
+    } : l))
 
     // DB update
-    await supabase.from('leads').update({ last_call_outcome: val }).eq('id', leadId)
+    await supabase.from('leads').update({ 
+      last_call_outcome: val,
+      metadata: updatedMeta
+    }).eq('id', leadId)
 
     if (val) {
       const isUnanswered = ['No Answer', 'Busy', 'Not Connected', 'Not connected'].includes(val)
@@ -745,7 +759,7 @@ function LeadsContent() {
         type: 'call',
         outcome: val,
         text: `Call outcome marked as ${val}`,
-        time: new Date().toISOString()
+        time: nowIso
       }])
     }
   }
@@ -2092,7 +2106,7 @@ function LeadsContent() {
                   <th className="px-6 py-3 font-medium text-gray-500">Name & Source</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Priority / Temp</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Contact</th>
-                  <th className="px-6 py-3 font-medium text-gray-500">Call Outcome</th>
+                  <th className="px-6 py-3 font-medium text-gray-500">Last Call & Outcome</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Assigned To</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Stage</th>
                   <th className="px-6 py-3 font-medium text-gray-500">Added</th>
@@ -2252,50 +2266,70 @@ function LeadsContent() {
                       })()}
                     </td>
                     
-                    {/* Call Outcome Status Badge */}
+                    {/* Call Outcome & Exact Last Call Date/Time */}
                     <td className="px-6 py-4">
-                      <Link href={`/leads/${lead.id}`}>
-                        {lead.last_call_outcome === 'Connected' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-2xs">
-                            <PhoneCall size={12} className="text-emerald-600" />
-                            <span>Connected</span>
-                          </span>
-                        ) : lead.last_call_outcome === 'Ringing' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs">
-                            <span>🔔 Ringing</span>
-                          </span>
-                        ) : (lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback') ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors shadow-2xs">
-                            <PhoneCall size={12} className="text-purple-600" />
-                            <span>Call Back</span>
-                          </span>
-                        ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors shadow-2xs">
-                            <PhoneOff size={12} className="text-orange-600" />
-                            <span>Not Connected</span>
-                          </span>
-                        ) : lead.last_call_outcome === 'No Answer' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors shadow-2xs">
-                            <PhoneOff size={12} className="text-rose-600" />
-                            <span>No Answer</span>
-                          </span>
-                        ) : lead.last_call_outcome === 'Busy' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs">
-                            <XCircle size={12} className="text-amber-600" />
-                            <span>Busy</span>
-                          </span>
-                        ) : lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors shadow-2xs">
-                            <PhoneForwarded size={12} className="text-gray-500" />
-                            <span>Wrong Num</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors shadow-2xs" title="Pending Call — Counselor has not dialed yet">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            <span>Pending Call</span>
-                          </span>
-                        )}
-                      </Link>
+                      {(() => {
+                        const callInfo = formatLastCall(lead)
+                        return (
+                          <Link href={`/leads/${lead.id}`} className="group block" title={callInfo.fullTooltip}>
+                            <div className="flex flex-col gap-1 items-start">
+                              {lead.last_call_outcome === 'Connected' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-emerald-100 transition-colors shadow-2xs">
+                                  <PhoneCall size={12} className="text-emerald-600" />
+                                  <span>Connected</span>
+                                </span>
+                              ) : lead.last_call_outcome === 'Ringing' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
+                                  <span>🔔 Ringing</span>
+                                </span>
+                              ) : (lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback') ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 group-hover:bg-purple-100 transition-colors shadow-2xs">
+                                  <PhoneCall size={12} className="text-purple-600" />
+                                  <span>Call Back</span>
+                                </span>
+                              ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 group-hover:bg-orange-100 transition-colors shadow-2xs">
+                                  <PhoneOff size={12} className="text-orange-600" />
+                                  <span>Not Connected</span>
+                                </span>
+                              ) : lead.last_call_outcome === 'No Answer' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 group-hover:bg-rose-100 transition-colors shadow-2xs">
+                                  <PhoneOff size={12} className="text-rose-600" />
+                                  <span>No Answer</span>
+                                </span>
+                              ) : lead.last_call_outcome === 'Busy' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
+                                  <XCircle size={12} className="text-amber-600" />
+                                  <span>Busy</span>
+                                </span>
+                              ) : lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200 group-hover:bg-gray-200 transition-colors shadow-2xs">
+                                  <PhoneForwarded size={12} className="text-gray-500" />
+                                  <span>Wrong Num</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 group-hover:bg-blue-100 transition-colors shadow-2xs" title="Pending Call — Counselor has not dialed yet">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                  <span>Pending Call</span>
+                                </span>
+                              )}
+
+                              {callInfo.hasCall ? (
+                                <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-600 group-hover:text-blue-600 transition-colors">
+                                  <Clock size={11} className="text-gray-400 group-hover:text-blue-500 shrink-0" />
+                                  <span className="font-semibold text-gray-800 group-hover:text-blue-700">{callInfo.formatted}</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">({callInfo.relative})</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1 text-[10px] text-gray-400 italic">
+                                  <Clock size={10} className="text-gray-300 shrink-0" />
+                                  <span>Not called yet</span>
+                                </div>
+                              )}
+                            </div>
+                          </Link>
+                        )
+                      })()}
                     </td>
                     
                     {/* Owner / Reassign Inline */}
@@ -2525,6 +2559,15 @@ function LeadsContent() {
                                 Pending Call
                               </span>
                             )}
+                            {(() => {
+                              const callInfo = formatLastCall(lead)
+                              return callInfo.hasCall ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-700 border border-gray-200" title={callInfo.fullTooltip}>
+                                  <Clock size={10} className="text-gray-400 shrink-0" />
+                                  <span>{callInfo.formatted}</span>
+                                </span>
+                              ) : null
+                            })()}
                           </div>
                           {lead.owner?.name ? (
                             <span className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 truncate max-w-[120px]">

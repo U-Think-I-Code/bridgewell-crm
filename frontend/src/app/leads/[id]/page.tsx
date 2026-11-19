@@ -14,6 +14,7 @@ import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { formatCountryBadge, inferCountryFromPhone, resolveCountryName } from '@/lib/countryHelper'
 import { getLeadServiceType } from '@/lib/leadTypeHelper'
 import { canManageLeads, isCounselor, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
+import { formatLastCall } from '@/lib/lastCallHelper'
 
 function getLeadCampaignDetails(lead: any): { key: string, label: string, value: string, type: 'yes' | 'no' | 'campus' | 'program' | 'text' }[] {
   if (!lead) return []
@@ -803,11 +804,17 @@ export default function LeadProfile() {
 
     // Only set next_follow_up if the counselor MANUALLY selected one in the input; never auto-calculate
     const nextFollowUpIso = followUpDate ? new Date(followUpDate).toISOString() : (lead?.next_follow_up || null)
+    const nowIso = new Date().toISOString()
 
     const updateLeadData: any = { 
       attempts: newAttempts,
       last_call_outcome: outcome,
       next_follow_up: nextFollowUpIso,
+      metadata: {
+        ...(lead?.metadata || {}),
+        last_call_at: nowIso,
+        last_call_outcome: outcome
+      }
     }
 
     // Direct synchronization: Call Outcome directly drives Stage so counselors don't have to select both!
@@ -894,6 +901,14 @@ export default function LeadProfile() {
     else if (newStage === 'Ringing') updatePayload.last_call_outcome = 'Ringing'
     else if (newStage === 'Call back') updatePayload.last_call_outcome = 'Call back'
     else if (newStage === 'Not connected') updatePayload.last_call_outcome = 'Not Connected'
+
+    if (updatePayload.last_call_outcome) {
+      updatePayload.metadata = {
+        ...(updatePayload.metadata || lead.metadata || {}),
+        last_call_at: new Date().toISOString(),
+        last_call_outcome: updatePayload.last_call_outcome
+      }
+    }
 
     if (newStage === 'Enrolled') {
       updatePayload.next_follow_up = null
@@ -1663,7 +1678,7 @@ export default function LeadProfile() {
               </h1>
             </div>
 
-            {/* Badges row - outcome, priority, service track */}
+            {/* Badges row - outcome, last call time, priority, service track */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {lead.last_call_outcome && (
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 ${
@@ -1683,6 +1698,30 @@ export default function LeadProfile() {
                    lead.last_call_outcome === 'Busy' ? '⏳ Busy' : '↪️ ' + lead.last_call_outcome}
                 </span>
               )}
+
+              {/* Exact Last Call Date & Time Badge */}
+              {(() => {
+                const callInfo = formatLastCall(lead)
+                return callInfo.hasCall ? (
+                  <span 
+                    className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-800 border-blue-200 inline-flex items-center gap-1.5 shadow-2xs"
+                    title={callInfo.fullTooltip}
+                  >
+                    <Clock size={12} className="text-blue-600 shrink-0" />
+                    <span>Last Call: <strong className="font-bold text-blue-900">{callInfo.formatted}</strong></span>
+                    <span className="text-[10px] text-blue-600 font-normal">({callInfo.relative})</span>
+                  </span>
+                ) : (
+                  <span 
+                    className="text-[11px] font-medium px-2.5 py-0.5 rounded-full border bg-gray-50 text-gray-500 border-gray-200 inline-flex items-center gap-1 shadow-2xs"
+                    title="No calls made to this lead yet"
+                  >
+                    <Clock size={12} className="text-gray-400 shrink-0" />
+                    <span>Not called yet</span>
+                  </span>
+                )
+              })()}
+
               {lead.priority && (
                 <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 ${
                   lead.priority === 'Hot'
@@ -2704,7 +2743,21 @@ export default function LeadProfile() {
 
            <div className="flex justify-between items-end">
               <div className="flex flex-col gap-2 w-full">
-                 <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Log Call Outcome</div>
+                 <div className="flex items-center justify-between pb-1.5 mb-1 border-b border-gray-100 flex-wrap gap-2">
+                   <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Log Call Outcome</div>
+                   {(() => {
+                     const callInfo = formatLastCall(lead)
+                     return callInfo.hasCall ? (
+                       <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-200 px-2.5 py-0.5 rounded-md" title={callInfo.fullTooltip}>
+                         <Clock size={11} className="text-blue-600 shrink-0" />
+                         <span>Last Called: <strong className="text-gray-900">{callInfo.formatted}</strong></span>
+                         <span className="text-[11px] text-gray-500 font-normal">({callInfo.relative})</span>
+                       </div>
+                     ) : (
+                       <span className="text-[11px] text-gray-400 italic">Not called yet</span>
+                     )
+                   })()}
+                 </div>
                   <div className="flex gap-2 flex-wrap">
                      <button 
                        type="button"

@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
     // Find the student in Bridgewell CRM leads table
     const { data: leads, error: leadSearchError } = await supabase
       .from('leads')
-      .select('id, name, phone, attempts, stage, priority, owner_id')
+      .select('id, name, phone, attempts, stage, priority, owner_id, metadata')
       .or(orQuery)
       .limit(3)
 
@@ -339,9 +339,15 @@ export async function POST(request: NextRequest) {
 
     // 2. Update Lead record (attempts, outcome, last contact)
     const newAttempts = (matchedLead.attempts || 0) + 1
+    const nowIso = new Date().toISOString()
     const updatePayload: Record<string, any> = {
       last_call_outcome: outcome,
-      attempts: newAttempts
+      attempts: newAttempts,
+      metadata: {
+        ...((matchedLead as any)?.metadata || {}),
+        last_call_at: nowIso,
+        last_call_outcome: outcome
+      }
     }
 
     // Auto-update stage based on call outcome
