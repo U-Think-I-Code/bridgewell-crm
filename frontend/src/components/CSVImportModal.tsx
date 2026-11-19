@@ -1,10 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
   X, Upload, CheckCircle2, Users, Shuffle, Check, 
   AlertCircle, FileSpreadsheet, UserCheck, ChevronDown, ChevronUp,
-  Sparkles, Layers, Eye
+  Sparkles, Layers, Eye, Plus, Trash2, Files, FileText, ArrowRight
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { resolveCountryName, inferCountryFromPhone, getRegionCategory } from '@/lib/countryHelper'
@@ -16,6 +16,18 @@ interface Counselor {
   email: string
   role: string
   active: boolean
+}
+
+export interface ParsedFile {
+  id: string
+  file: File
+  name: string
+  headers: string[]
+  rows: string[][]
+  previewRows: string[][]
+  columnMapping: Record<string, number>
+  isValid: boolean
+  errorReason?: string
 }
 
 // Convert column header to clean human-readable title
@@ -57,13 +69,10 @@ function formatFieldValue(val: any): string {
 }
 
 export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [csvRows, setCsvRows] = useState<string[][]>([])
-  const [fileHeaders, setFileHeaders] = useState<string[]>([])
-  const [previewRows, setPreviewRows] = useState<string[][]>([])
-  
-  // Detected mappings (dbField -> headerIndex)
-  const [columnMapping, setColumnMapping] = useState<Record<string, number>>({})
+  const [parsedFiles, setParsedFiles] = useState<ParsedFile[]>([])
+  const [activeFileIndex, setActiveFileIndex] = useState<number>(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Counselors state
   const [counselors, setCounselors] = useState<Counselor[]>([])
@@ -75,10 +84,13 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
+  const [importStatusText, setImportStatusText] = useState('')
   const [successData, setSuccessData] = useState<{
     total: number
     newCount: number
     duplicateCount: number
+    fileCount: number
+    fileBreakdown: { name: string; total: number; newCount: number; duplicateCount: number }[]
     distributed: Record<string, number>
   } | null>(null)
 
@@ -128,6 +140,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
     const map: Record<string, number> = {}
     const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+    // 1. First pass: exact and common names
     headers.forEach((h, idx) => {
       const norm = normalize(h)
 
@@ -135,7 +148,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       if (map.name === undefined && (
         norm === 'name' || norm === 'fullname' || norm === 'studentname' || 
         norm === 'first_name' || norm === 'firstname' || norm === 'leadname' || 
-        norm === 'clientname' || norm === 'applicantname'
+        norm === 'clientname' || norm === 'applicantname' || norm === 'candidatename'
       )) {
         map.name = idx
       }
@@ -144,7 +157,8 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       else if (map.phone === undefined && (
         norm === 'phone' || norm === 'phonenumber' || norm === 'contact' || 
         norm === 'contactnumber' || norm === 'mobile' || norm === 'mobilenumber' || 
-        norm === 'whatsapp' || norm === 'telephone' || norm === 'cell'
+        norm === 'whatsapp' || norm === 'telephone' || norm === 'cell' ||
+        norm === 'phoneno' || norm === 'mobileno' || norm === 'contactno'
       )) {
         map.phone = idx
       }
@@ -198,20 +212,43 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       }
     })
 
+    // 2. Second pass: substring fallback if still not mapped
+    headers.forEach((h, idx) => {
+      const norm = normalize(h)
+      if (map.phone === undefined && (norm.includes('phone') || norm.includes('mobile') || norm.includes('contact'))) {
+        map.phone = idx
+      }
+      if (map.name === undefined && norm.includes('name') && !norm.includes('campaign') && !norm.includes('ad') && !norm.includes('form') && !norm.includes('user') && !norm.includes('file')) {
+        map.name = idx
+      }
+      if (map.email === undefined && norm.includes('email')) {
+        map.email = idx
+      }
+    })
+
     return map
   }
 
-  // File Upload Handler (Supports .xlsx, .xls, .csv)
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0]
-    if (!uploadedFile) return
-    setFile(uploadedFile)
-    setLoading(true)
-
+  // Parse a single File into ParsedFile object
+  const parseSingleFile = async (uploadedFile: File): Promise<ParsedFile> => {
+    const fileId = `${uploadedFile.name}_${uploadedFile.size}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     try {
       const buffer = await uploadedFile.arrayBuffer()
       const workbook = XLSX.read(buffer, { type: 'array' })
       const firstSheetName = workbook.SheetNames[0]
+      if (!firstSheetName) {
+        return {
+          id: fileId,
+          file: uploadedFile,
+          name: uploadedFile.name,
+          headers: [],
+          rows: [],
+          previewRows: [],
+          columnMapping: {},
+          isValid: false,
+          errorReason: 'No sheets found in file'
+        }
+      }
       const worksheet = workbook.Sheets[firstSheetName]
 
       // Convert to array of rows
@@ -221,31 +258,115 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         blankrows: false 
       })
 
-      if (rawRows.length > 1) {
-        // Headers are the first row, trimmed
-        const headers = (rawRows[0] || []).map((h: any) => String(h || '').trim())
-        // Data rows
-        const dataRows = rawRows.slice(1).filter((r: any[]) => r.some((c: any) => String(c || '').trim() !== ''))
-          .map(row => row.map(cell => String(cell || '').trim()))
+      if (rawRows.length <= 1) {
+        return {
+          id: fileId,
+          file: uploadedFile,
+          name: uploadedFile.name,
+          headers: (rawRows[0] || []).map((h: any) => String(h || '').trim()),
+          rows: [],
+          previewRows: [],
+          columnMapping: {},
+          isValid: false,
+          errorReason: 'File appears to be empty or has no data rows'
+        }
+      }
 
-        setFileHeaders(headers)
-        setCsvRows(dataRows)
-        setPreviewRows(dataRows.slice(0, 3))
+      // Headers are the first row, trimmed
+      const headers = (rawRows[0] || []).map((h: any) => String(h || '').trim())
+      // Data rows
+      const dataRows = rawRows.slice(1)
+        .filter((r: any[]) => r.some((c: any) => String(c || '').trim() !== ''))
+        .map(row => row.map(cell => String(cell || '').trim()))
 
-        // Run smart detection
-        const detected = detectMappings(headers)
-        setColumnMapping(detected)
-      } else {
-        alert('File appears to be empty or missing data rows.')
-        setFile(null)
+      const detected = detectMappings(headers)
+      const hasRequired = detected.name !== undefined && detected.phone !== undefined
+
+      return {
+        id: fileId,
+        file: uploadedFile,
+        name: uploadedFile.name,
+        headers,
+        rows: dataRows,
+        previewRows: dataRows.slice(0, 3),
+        columnMapping: detected,
+        isValid: hasRequired,
+        errorReason: hasRequired ? undefined : 'Please select Name and Phone columns manually'
+      }
+    } catch (err: any) {
+      return {
+        id: fileId,
+        file: uploadedFile,
+        name: uploadedFile.name,
+        headers: [],
+        rows: [],
+        previewRows: [],
+        columnMapping: {},
+        isValid: false,
+        errorReason: err.message || 'Failed to parse spreadsheet'
+      }
+    }
+  }
+
+  // Handle files added (from input or drop)
+  const handleFilesAdded = async (fileList: FileList | File[]) => {
+    const incoming = Array.from(fileList)
+    if (!incoming.length) return
+    setLoading(true)
+
+    try {
+      const parsedResults: ParsedFile[] = []
+      for (const f of incoming) {
+        // Skip duplicate files already added
+        if (parsedFiles.some(existing => existing.name === f.name && existing.file.size === f.size)) {
+          continue
+        }
+        const parsed = await parseSingleFile(f)
+        parsedResults.push(parsed)
+      }
+
+      if (parsedResults.length > 0) {
+        setParsedFiles(prev => {
+          const next = [...prev, ...parsedResults]
+          return next
+        })
       }
     } catch (err: any) {
       console.error('File parsing error:', err)
-      alert('Failed to parse spreadsheet: ' + (err.message || 'Unknown error'))
-      setFile(null)
+      alert('Error reading files: ' + (err.message || 'Unknown error'))
     } finally {
       setLoading(false)
     }
+  }
+
+  // Remove a single file from queue
+  const handleRemoveFile = (index: number) => {
+    setParsedFiles(prev => {
+      const next = prev.filter((_, i) => i !== index)
+      if (activeFileIndex >= next.length) {
+        setActiveFileIndex(Math.max(0, next.length - 1))
+      }
+      return next
+    })
+  }
+
+  // Update column mapping for a specific file
+  const handleUpdateFileMapping = (fileIndex: number, field: string, colIndex: number | undefined) => {
+    setParsedFiles(prev => {
+      const next = [...prev]
+      const target = { ...next[fileIndex] }
+      const newMap = { ...target.columnMapping }
+      if (colIndex === undefined || isNaN(colIndex)) {
+        delete newMap[field]
+      } else {
+        newMap[field] = colIndex
+      }
+      target.columnMapping = newMap
+      target.isValid = newMap.name !== undefined && newMap.phone !== undefined
+      target.errorReason = target.isValid ? undefined : 'Please select Name and Phone columns manually'
+      next[fileIndex] = target
+      return next
+    })
   }
 
   const handleToggleCounselor = (id: string) => {
@@ -260,18 +381,30 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
     }
   }
 
-  const handleSelectAllCounselors = () => {
-    if (selectedCounselorIds.length === counselors.length) {
-      setSelectedCounselorIds([counselors[0].id])
-    } else {
-      setSelectedCounselorIds(counselors.map(c => c.id))
-    }
-  }
+  // Aggregated totals
+  const totalLeadsCount = useMemo(() => {
+    return parsedFiles.reduce((acc, f) => acc + f.rows.length, 0)
+  }, [parsedFiles])
+
+  const validFilesCount = useMemo(() => {
+    return parsedFiles.filter(f => f.columnMapping.name !== undefined && f.columnMapping.phone !== undefined).length
+  }, [parsedFiles])
+
+  const activeFile = parsedFiles[activeFileIndex] || null
 
   const handleStartImport = async () => {
-    if (!csvRows.length) return
+    if (!parsedFiles.length) return
+
+    // Verify all files have required mappings
+    const unmapped = parsedFiles.filter(f => f.columnMapping.name === undefined || f.columnMapping.phone === undefined)
+    if (unmapped.length > 0) {
+      alert(`The following file(s) are missing Name or Phone column mapping:\n\n${unmapped.map(u => `• ${u.name}`).join('\n')}\n\nPlease click on the file and select Name and Phone columns.`)
+      return
+    }
+
     setImporting(true)
     setImportProgress(0)
+    setImportStatusText('Fetching existing records for deduplication...')
 
     try {
       const activeTargets = counselors.filter(c => selectedCounselorIds.includes(c.id))
@@ -281,15 +414,6 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       shuffledTargets.forEach(c => {
         distributionStats[c.id] = 0
       })
-
-      const nameIdx = columnMapping.name
-      const phoneIdx = columnMapping.phone
-
-      if (nameIdx === undefined || phoneIdx === undefined) {
-        alert('Please map at least Name and Phone columns before importing.')
-        setImporting(false)
-        return
-      }
 
       // 1. Fetch existing leads from DB to check for duplicate phone numbers and emails
       const { data: dbLeads, error: dbFetchErr } = await supabase
@@ -321,155 +445,184 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         activityText: string
       }[] = []
 
-      // 2. Iterate through rows: separate new leads vs duplicates
-      csvRows.forEach((row) => {
-        let rawName = row[nameIdx] || 'Lead'
-        let rawPhone = row[phoneIdx] || ''
-        const rawCountry = columnMapping.country !== undefined ? row[columnMapping.country] : ''
+      const fileBreakdown: { name: string; total: number; newCount: number; duplicateCount: number }[] = []
 
-        // Clean phone with strict E.164 standardization, dropping leading zeros (+44(0) / +440 -> +44)
-        const phoneResult = cleanPhoneE164(rawPhone, rawCountry)
-        const cleanedPhone = phoneResult.cleanedE164Phone
-        const corePhone = normalizePhone(cleanedPhone)
+      // 2. Iterate through each parsed file
+      for (let fIdx = 0; fIdx < parsedFiles.length; fIdx++) {
+        const pFile = parsedFiles[fIdx]
+        setImportStatusText(`Processing file ${fIdx + 1} of ${parsedFiles.length}: ${pFile.name}...`)
 
-        const rawEmail = columnMapping.email !== undefined ? row[columnMapping.email] : ''
-        const cleanEmail = rawEmail ? String(rawEmail).toLowerCase().trim() : ''
-        const rawCourse = columnMapping.course !== undefined ? row[columnMapping.course] : ''
-        const rawCampus = columnMapping.campus_mode !== undefined ? row[columnMapping.campus_mode] : ''
-        const rawQual = columnMapping.highest_qualification !== undefined ? row[columnMapping.highest_qualification] : ''
-        const rawSource = columnMapping.source !== undefined ? row[columnMapping.source] : (file?.name ? `CSV: ${file.name}` : 'CSV Import')
+        const fileHeaders = pFile.headers
+        const fileRows = pFile.rows
+        const columnMapping = pFile.columnMapping
+        const file = pFile.file
 
-        // Campaign form details dictionary
-        const campaignAnswers: Record<string, string> = {}
-        const rawMetadata: Record<string, any> = {}
+        const nameIdx = columnMapping.name
+        const phoneIdx = columnMapping.phone
 
-        fileHeaders.forEach((header, colIndex) => {
-          const val = row[colIndex]
-          if (val) {
-            const cleanTitle = cleanHeaderTitle(header)
-            const cleanVal = formatFieldValue(val)
-            campaignAnswers[cleanTitle] = cleanVal
-            rawMetadata[header] = val
-          }
-        })
+        let fileNewCount = 0
+        let fileDupCount = 0
 
-        const hasVisaServiceHeader = fileHeaders.some(h => {
-          const lh = h.toLowerCase()
-          return lh.includes('visa_service') || lh.includes('visa service') || lh.includes('which visa')
-        })
-        const isTrinidadLead =
-          (file?.name || '').toLowerCase().includes('trinidad') ||
-          String(rawSource || '').toLowerCase().includes('trinidad') ||
-          cleanedPhone.startsWith('+1868')
+        fileRows.forEach((row) => {
+          let rawName = row[nameIdx] || 'Lead'
+          let rawPhone = row[phoneIdx] || ''
+          const rawCountry = columnMapping.country !== undefined ? row[columnMapping.country] : ''
 
-        const isVisaFile = (file?.name || '').toLowerCase().includes('visa') || 
-                           String(rawSource || '').toLowerCase().includes('visa') ||
-                           isTrinidadLead ||
-                           hasVisaServiceHeader ||
-                           campaignAnswers['SEVIS I-901 Fee Paid?'] !== undefined ||
-                           campaignAnswers['I-20 Received From US University?'] !== undefined
-        const inferredServiceType = isVisaFile ? 'visa_process' : 'study_abroad'
+          // Clean phone with strict E.164 standardization, dropping leading zeros (+44(0) / +440 -> +44)
+          const phoneResult = cleanPhoneE164(rawPhone, rawCountry)
+          const cleanedPhone = phoneResult.cleanedE164Phone
+          const corePhone = normalizePhone(cleanedPhone)
 
-        // Check if lead already exists in DB or was already encountered in this CSV batch
-        const matchedExisting = (corePhone && corePhone.length >= 7 ? phoneMap.get(corePhone) : null) || 
-                                (cleanEmail ? emailMap.get(cleanEmail) : null)
+          const rawEmail = columnMapping.email !== undefined ? row[columnMapping.email] : ''
+          const cleanEmail = rawEmail ? String(rawEmail).toLowerCase().trim() : ''
+          const rawCourse = columnMapping.course !== undefined ? row[columnMapping.course] : ''
+          const rawCampus = columnMapping.campus_mode !== undefined ? row[columnMapping.campus_mode] : ''
+          const rawQual = columnMapping.highest_qualification !== undefined ? row[columnMapping.highest_qualification] : ''
+          const rawSource = columnMapping.source !== undefined ? row[columnMapping.source] : (file?.name ? `CSV: ${file.name}` : 'CSV Import')
 
-        if (matchedExisting) {
-          // DUPLICATE DETECTED: Merge into existing lead
-          const existingMeta = matchedExisting.metadata || {}
-          const existingEnquiries = Array.isArray(existingMeta.duplicate_enquiries) ? existingMeta.duplicate_enquiries : []
-          const newEnquiry = {
-            source: rawSource,
-            file: file?.name || 'Spreadsheet',
-            timestamp: new Date().toISOString(),
-            campaign_answers: campaignAnswers,
-            campus_mode: rawCampus ? formatFieldValue(rawCampus) : null
-          }
+          // Campaign form details dictionary
+          const campaignAnswers: Record<string, string> = {}
+          const rawMetadata: Record<string, any> = {}
 
-          const isJunkRevival = matchedExisting.stage === 'Junk/duplicate'
-          const updatePayload: any = {
-            metadata: {
-              ...existingMeta,
-              ...rawMetadata,
-              service_type: existingMeta.service_type || inferredServiceType,
-              duplicate_enquiries: [newEnquiry, ...existingEnquiries],
-              last_enquiry_date: new Date().toISOString(),
-              campaign_answers: { ...(existingMeta.campaign_answers || {}), ...campaignAnswers },
-              campus_mode: rawCampus ? formatFieldValue(rawCampus) : existingMeta.campus_mode
+          fileHeaders.forEach((header, colIndex) => {
+            const val = row[colIndex]
+            if (val) {
+              const cleanTitle = cleanHeaderTitle(header)
+              const cleanVal = formatFieldValue(val)
+              campaignAnswers[cleanTitle] = cleanVal
+              rawMetadata[header] = val
+            }
+          })
+
+          const hasVisaServiceHeader = fileHeaders.some(h => {
+            const lh = h.toLowerCase()
+            return lh.includes('visa_service') || lh.includes('visa service') || lh.includes('which visa')
+          })
+          const isTrinidadLead =
+            (file?.name || '').toLowerCase().includes('trinidad') ||
+            String(rawSource || '').toLowerCase().includes('trinidad') ||
+            cleanedPhone.startsWith('+1868')
+
+          const isVisaFile = (file?.name || '').toLowerCase().includes('visa') || 
+                             String(rawSource || '').toLowerCase().includes('visa') ||
+                             isTrinidadLead ||
+                             hasVisaServiceHeader ||
+                             campaignAnswers['SEVIS I-901 Fee Paid?'] !== undefined ||
+                             campaignAnswers['I-20 Received From US University?'] !== undefined
+          const inferredServiceType = isVisaFile ? 'visa_process' : 'study_abroad'
+
+          // Check if lead already exists in DB or was already encountered in this multi-file batch
+          const matchedExisting = (corePhone && corePhone.length >= 7 ? phoneMap.get(corePhone) : null) || 
+                                  (cleanEmail ? emailMap.get(cleanEmail) : null)
+
+          if (matchedExisting) {
+            // DUPLICATE DETECTED: Merge into existing lead
+            fileDupCount++
+            const existingMeta = matchedExisting.metadata || {}
+            const existingEnquiries = Array.isArray(existingMeta.duplicate_enquiries) ? existingMeta.duplicate_enquiries : []
+            const newEnquiry = {
+              source: rawSource,
+              file: file?.name || 'Spreadsheet',
+              timestamp: new Date().toISOString(),
+              campaign_answers: campaignAnswers,
+              campus_mode: rawCampus ? formatFieldValue(rawCampus) : null
+            }
+
+            const isJunkRevival = matchedExisting.stage === 'Junk/duplicate'
+            const updatePayload: any = {
+              metadata: {
+                ...existingMeta,
+                ...rawMetadata,
+                service_type: existingMeta.service_type || inferredServiceType,
+                duplicate_enquiries: [newEnquiry, ...existingEnquiries],
+                last_enquiry_date: new Date().toISOString(),
+                campaign_answers: { ...(existingMeta.campaign_answers || {}), ...campaignAnswers },
+                campus_mode: rawCampus ? formatFieldValue(rawCampus) : existingMeta.campus_mode
+              }
+            }
+
+            // Revive junk lead automatically to active pipeline
+            if (isJunkRevival) {
+              updatePayload.stage = 'New'
+              updatePayload.priority = 'Hot'
+            }
+
+            const activityText = isJunkRevival
+              ? `Lead revived from Junk to New due to fresh enquiry in CSV (${file?.name || 'File'}). Auto-merged into profile.`
+              : `Duplicate enquiry in CSV (${file?.name || 'File'}) auto-merged into profile without creating duplicate lead.`
+
+            duplicatesToMerge.push({
+              id: matchedExisting.id,
+              lead: matchedExisting,
+              updates: updatePayload,
+              activityText
+            })
+          } else {
+            // BRAND NEW LEAD: Round-robin counselor distribution
+            fileNewCount++
+            const phoneCountry = phoneResult.countryName && phoneResult.countryName !== 'Other'
+              ? phoneResult.countryName 
+              : (inferCountryFromPhone(cleanedPhone) || null)
+
+            const resolvedCountry = phoneCountry
+              ? (phoneCountry === 'USA' && rawCountry && (rawCountry.toLowerCase().includes('canada') || rawCountry.toLowerCase() === 'ca') ? 'Canada' : phoneCountry)
+              : (rawCountry ? resolveCountryName(rawCountry) : null)
+
+            const record: any = {
+              name: rawName,
+              phone: cleanedPhone,
+              email: rawEmail || null,
+              course: rawCourse ? formatFieldValue(rawCourse) : null,
+              programme_level: rawCourse ? formatFieldValue(rawCourse) : null,
+              country: resolvedCountry,
+              highest_qualification: rawQual || null,
+              source: rawSource,
+              stage: 'New',
+              metadata: {
+                ...rawMetadata,
+                service_type: inferredServiceType,
+                campaign_answers: campaignAnswers,
+                campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
+                phone_region: phoneResult.region,
+                phone_status: phoneResult.statusNotes,
+                imported_file: file?.name || 'Spreadsheet',
+                imported_at: new Date().toISOString()
+              },
+              created_at: new Date().toISOString()
+            }
+
+            if (distributeEqually && shuffledTargets.length > 0) {
+              const target = shuffledTargets[newLeadsToInsert.length % shuffledTargets.length]
+              record.owner_id = target.id
+              distributionStats[target.id] = (distributionStats[target.id] || 0) + 1
+            } else {
+              record.owner_id = null
+            }
+
+            newLeadsToInsert.push(record)
+
+            // Put into map so subsequent duplicate rows within same file or subsequent files in batch also auto-merge!
+            if (corePhone && corePhone.length >= 7) {
+              phoneMap.set(corePhone, record)
+            }
+            if (cleanEmail) {
+              emailMap.set(cleanEmail, record)
             }
           }
+        })
 
-          // Revive junk lead automatically to active pipeline
-          if (isJunkRevival) {
-            updatePayload.stage = 'New'
-            updatePayload.priority = 'Hot'
-          }
+        fileBreakdown.push({
+          name: pFile.name,
+          total: fileRows.length,
+          newCount: fileNewCount,
+          duplicateCount: fileDupCount
+        })
 
-          const activityText = isJunkRevival
-            ? `Lead revived from Junk to New due to fresh enquiry in CSV (${file?.name || 'File'}). Auto-merged into profile.`
-            : `Duplicate enquiry in CSV (${file?.name || 'File'}) auto-merged into profile without creating duplicate lead.`
-
-          duplicatesToMerge.push({
-            id: matchedExisting.id,
-            lead: matchedExisting,
-            updates: updatePayload,
-            activityText
-          })
-        } else {
-          // BRAND NEW LEAD: Round-robin counselor distribution
-          // Physical location is primarily determined by phone number country code (+44 UK, +1 USA, etc.)
-          const phoneCountry = phoneResult.countryName && phoneResult.countryName !== 'Other'
-            ? phoneResult.countryName 
-            : (inferCountryFromPhone(cleanedPhone) || null)
-
-          const resolvedCountry = phoneCountry
-            ? (phoneCountry === 'USA' && rawCountry && (rawCountry.toLowerCase().includes('canada') || rawCountry.toLowerCase() === 'ca') ? 'Canada' : phoneCountry)
-            : (rawCountry ? resolveCountryName(rawCountry) : null)
-
-          const record: any = {
-            name: rawName,
-            phone: cleanedPhone,
-            email: rawEmail || null,
-            course: rawCourse ? formatFieldValue(rawCourse) : null,
-            programme_level: rawCourse ? formatFieldValue(rawCourse) : null,
-            country: resolvedCountry,
-            highest_qualification: rawQual || null,
-            source: rawSource,
-            stage: 'New',
-            metadata: {
-              ...rawMetadata,
-              service_type: inferredServiceType,
-              campaign_answers: campaignAnswers,
-              campus_mode: rawCampus ? formatFieldValue(rawCampus) : null,
-              phone_region: phoneResult.region,
-              phone_status: phoneResult.statusNotes,
-              imported_file: file?.name || 'Spreadsheet',
-              imported_at: new Date().toISOString()
-            },
-            created_at: new Date().toISOString()
-          }
-
-          if (distributeEqually && shuffledTargets.length > 0) {
-            const target = shuffledTargets[newLeadsToInsert.length % shuffledTargets.length]
-            record.owner_id = target.id
-            distributionStats[target.id] = (distributionStats[target.id] || 0) + 1
-          } else {
-            record.owner_id = null
-          }
-
-          newLeadsToInsert.push(record)
-
-          // Put into map so subsequent duplicate rows within same CSV also auto-merge!
-          if (corePhone && corePhone.length >= 7) {
-            phoneMap.set(corePhone, record)
-          }
-          if (cleanEmail) {
-            emailMap.set(cleanEmail, record)
-          }
-        }
-      })
+        setImportProgress(Math.round(((fIdx + 1) / parsedFiles.length) * 30))
+      }
 
       // 3. Insert new leads in batches of 100
+      setImportStatusText(`Saving ${newLeadsToInsert.length} new leads to pipeline...`)
       const batchSize = 100
       const insertedLeads: any[] = []
 
@@ -486,30 +639,34 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         if (insertedBatch) {
           insertedLeads.push(...insertedBatch)
         }
-        setImportProgress(Math.round(((i + batch.length) / Math.max(csvRows.length, 1)) * 50))
+        setImportProgress(30 + Math.round(((i + batch.length) / Math.max(newLeadsToInsert.length, 1)) * 40))
       }
 
       // 4. Update duplicates and append timeline notes
-      for (let i = 0; i < duplicatesToMerge.length; i++) {
-        const dup = duplicatesToMerge[i]
-        await supabase
-          .from('leads')
-          .update(dup.updates)
-          .eq('id', dup.id)
+      if (duplicatesToMerge.length > 0) {
+        setImportStatusText(`Updating ${duplicatesToMerge.length} duplicate leads...`)
+        for (let i = 0; i < duplicatesToMerge.length; i++) {
+          const dup = duplicatesToMerge[i]
+          await supabase
+            .from('leads')
+            .update(dup.updates)
+            .eq('id', dup.id)
 
-        await supabase.from('activities').insert([{
-          lead: dup.id,
-          user_id: dup.lead.owner_id || null,
-          type: 'duplicate_merged',
-          text: dup.activityText,
-          time: new Date().toISOString()
-        }])
+          await supabase.from('activities').insert([{
+            lead: dup.id,
+            user_id: dup.lead.owner_id || null,
+            type: 'duplicate_merged',
+            text: dup.activityText,
+            time: new Date().toISOString()
+          }])
 
-        setImportProgress(50 + Math.round(((i + 1) / Math.max(duplicatesToMerge.length, 1)) * 50))
+          setImportProgress(70 + Math.round(((i + 1) / Math.max(duplicatesToMerge.length, 1)) * 20))
+        }
       }
 
       // 5. Log bulk assignment activities for new leads
       if (insertedLeads.length > 0 && distributeEqually && shuffledTargets.length > 0) {
+        setImportStatusText('Assigning leads to counselors...')
         const counselorMap: Record<string, string> = {}
         counselors.forEach(c => { counselorMap[c.id] = c.name })
 
@@ -519,7 +676,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
             lead: l.id,
             user_id: l.owner_id,
             type: 'assignment',
-            text: `Assigned to ${counselorMap[l.owner_id] || 'Counselor'} via auto-distribution on Excel/CSV upload`,
+            text: `Assigned to ${counselorMap[l.owner_id] || 'Counselor'} via auto-distribution on bulk Excel/CSV import`,
             time: new Date().toISOString()
           }))
 
@@ -528,10 +685,13 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         }
       }
 
+      setImportProgress(100)
       setSuccessData({
-        total: csvRows.length,
+        total: totalLeadsCount,
         newCount: newLeadsToInsert.length,
         duplicateCount: duplicatesToMerge.length,
+        fileCount: parsedFiles.length,
+        fileBreakdown,
         distributed: distributionStats
       })
 
@@ -539,6 +699,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
       alert('Error during lead import: ' + (err.message || 'Unknown error'))
     } finally {
       setImporting(false)
+      setImportStatusText('')
     }
   }
 
@@ -546,17 +707,22 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
 
   return (
     <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-gray-50/70">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center shadow-xs">
-              <FileSpreadsheet size={18} />
+              <Files size={18} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-gray-900">Import Leads from Excel / CSV</h3>
-              <p className="text-xs text-gray-500">Auto-detects campaign headings &amp; distributes leads to counselors</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-gray-900">Import Leads from Excel / CSV</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+                  Multiple Files Supported
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">Select multiple files at once • Auto-detects campaign headings &amp; distributes leads</p>
             </div>
           </div>
           <button 
@@ -577,7 +743,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
 
             <div>
               <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
-                {successData.total} Leads Processed!
+                {successData.total} Leads Processed Across {successData.fileCount} File{successData.fileCount > 1 ? 's' : ''}!
               </h2>
               
               <div className="flex items-center justify-center gap-2.5 mt-3 flex-wrap">
@@ -589,6 +755,9 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                     🛡️ {successData.duplicateCount} Duplicates Auto-Merged
                   </span>
                 )}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 shadow-2xs">
+                  📁 {successData.fileCount} Files Uploaded
+                </span>
               </div>
 
               <p className="text-sm text-gray-500 mt-3 max-w-md mx-auto leading-relaxed">
@@ -600,6 +769,39 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
               </p>
             </div>
 
+            {/* Per-File Breakdown */}
+            {successData.fileBreakdown.length > 0 && (
+              <div className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-left">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <Files size={14} className="text-gray-500" />
+                  <span>Files Processed Breakdown</span>
+                </h4>
+                <div className="divide-y divide-gray-200 max-h-40 overflow-y-auto">
+                  {successData.fileBreakdown.map((fb, idx) => (
+                    <div key={idx} className="py-2 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
+                        <span className="font-semibold text-gray-900 truncate">{fb.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="bg-white border border-gray-200 text-gray-700 px-2 py-0.5 rounded-md font-semibold text-[11px]">
+                          {fb.total} leads
+                        </span>
+                        <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                          +{fb.newCount} new
+                        </span>
+                        {fb.duplicateCount > 0 && (
+                          <span className="bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                            {fb.duplicateCount} merged
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Distribution Breakdown */}
             {distributeEqually && activeSelectedCounselors.length > 0 && successData.newCount > 0 && (
               <div className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-left">
@@ -607,13 +809,13 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                   <Users size={14} className="text-gray-500" />
                   <span>Counselor Distribution Breakdown (New Leads)</span>
                 </h4>
-                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
                   {activeSelectedCounselors.map(c => {
                     const count = successData.distributed[c.id] || 0
                     return (
                       <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center justify-between text-xs shadow-2xs">
                         <span className="font-semibold text-gray-900 truncate mr-2">{c.name}</span>
-                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold shrink-0">
                           {count} leads
                         </span>
                       </div>
@@ -636,164 +838,285 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
         ) : (
           <div className="p-6 space-y-5 overflow-y-auto flex-1">
             
-            {/* Step 1: File Upload */}
-            {!file ? (
-              <div className="border-2 border-dashed border-gray-300 hover:border-black rounded-2xl p-10 text-center hover:bg-gray-50/50 transition-all relative cursor-pointer group">
+            {/* Step 1: Multiple File Dropzone */}
+            {parsedFiles.length === 0 ? (
+              <div 
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsDragging(false)
+                  if (e.dataTransfer.files?.length) {
+                    handleFilesAdded(e.dataTransfer.files)
+                  }
+                }}
+                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all relative cursor-pointer group ${
+                  isDragging ? 'border-black bg-gray-100/70 scale-[1.01]' : 'border-gray-300 hover:border-black hover:bg-gray-50/50'
+                }`}
+              >
                 <input 
                   type="file" 
+                  multiple
                   accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
-                  onChange={handleFileUpload} 
+                  onChange={(e) => {
+                    if (e.target.files) handleFilesAdded(e.target.files)
+                  }} 
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
                 />
                 <div className="w-14 h-14 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:bg-black group-hover:text-white transition-all shadow-xs">
                   <Upload size={24} />
                 </div>
-                <h4 className="text-sm font-bold text-gray-900 mb-1">Click or drag your Excel (.xlsx / .xls) or CSV here</h4>
+                <h4 className="text-sm font-bold text-gray-900 mb-1">
+                  Click or drag multiple Excel (.xlsx / .xls) or CSV files here
+                </h4>
                 <p className="text-xs text-gray-500 max-w-md mx-auto leading-relaxed">
-                  Supports any sheet from Facebook Ads, Google Ads, or custom campaigns with columns like <em>Program Interested In</em>, <em>Online/Offline</em>, <em>I-20 status</em>, <em>Contact</em>, etc.
+                  Select 1, 5, 10 or more daily ad lead files at once. All files will be automatically parsed, deduplicated, and imported together in a single batch!
                 </p>
-                <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  <Sparkles size={12} />
-                  <span>All campaign headings &amp; questions are saved automatically</span>
+                <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    <Sparkles size={12} />
+                    <span>Upload multiple files together</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <Check size={12} />
+                    <span>Cross-file duplicate auto-merging</span>
+                  </span>
                 </div>
               </div>
             ) : (
-              /* File Loaded View */
+              /* Files Loaded View */
               <div className="space-y-4">
-                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 flex items-center justify-between">
+                
+                {/* Multi-File Summary Bar */}
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                      <FileSpreadsheet size={20} />
+                    <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center font-bold shrink-0">
+                      <Files size={20} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-gray-900">{file.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-gray-900">
+                          {parsedFiles.length} File{parsedFiles.length > 1 ? 's' : ''} Selected
+                        </h4>
+                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[11px] font-bold">
+                          {totalLeadsCount} Total Leads
+                        </span>
+                      </div>
                       <p className="text-xs text-gray-500">
-                        <strong>{csvRows.length}</strong> leads ready • <strong>{fileHeaders.length}</strong> sheet columns
+                        {validFilesCount === parsedFiles.length ? (
+                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                            <CheckCircle2 size={12} /> All {parsedFiles.length} files mapped and ready to import
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 font-semibold flex items-center gap-1">
+                            <AlertCircle size={12} /> {parsedFiles.length - validFilesCount} file(s) need column check
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFile(null)
-                      setCsvRows([])
-                      setFileHeaders([])
-                      setPreviewRows([])
-                    }}
-                    className="text-xs text-rose-600 hover:text-rose-800 font-semibold cursor-pointer px-2.5 py-1 rounded-lg hover:bg-rose-50"
-                  >
-                    Change File
-                  </button>
-                </div>
 
-                {/* Auto-detected Column Mapping Card */}
-                <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sparkles size={14} className="text-blue-600" />
-                      <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
-                        Auto-Detected Column Mapping
-                      </h4>
-                    </div>
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:border-black text-gray-800 text-xs font-bold cursor-pointer transition-colors shadow-2xs">
+                      <Plus size={14} />
+                      <span>Add More Files</span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                        onChange={(e) => {
+                          if (e.target.files) handleFilesAdded(e.target.files)
+                          e.target.value = ''
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+
                     <button
                       type="button"
-                      onClick={() => setShowMappingDetails(!showMappingDetails)}
-                      className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                      onClick={() => {
+                        setParsedFiles([])
+                        setActiveFileIndex(0)
+                      }}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-semibold cursor-pointer px-2.5 py-1.5 rounded-xl hover:bg-rose-50 border border-transparent transition-colors"
                     >
-                      <span>{showMappingDetails ? 'Hide Mapping' : 'Customize Mapping'}</span>
-                      {showMappingDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      Clear All
                     </button>
                   </div>
+                </div>
 
-                  {/* Summary Badges */}
-                  <div className="flex items-center gap-2 flex-wrap text-xs">
-                    <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-800 border border-gray-200 font-medium">
-                      👤 Name: <strong>{columnMapping.name !== undefined ? fileHeaders[columnMapping.name] : 'Not mapped'}</strong>
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
-                      📞 Phone: <strong>{columnMapping.phone !== undefined ? fileHeaders[columnMapping.phone] : 'Not mapped'}</strong>
-                    </span>
-                    {columnMapping.course !== undefined && (
-                      <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-medium">
-                        🎓 Program: <strong>{fileHeaders[columnMapping.course]}</strong>
-                      </span>
-                    )}
-                    {columnMapping.country !== undefined && (
-                      <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200 font-medium">
-                        🌍 Country: <strong>{fileHeaders[columnMapping.country]}</strong>
-                      </span>
-                    )}
-                    <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
-                      📋 {fileHeaders.length} Details Preserved in Profile
-                    </span>
+                {/* File Cards List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-gray-600 px-1">
+                    <span>Uploaded Files List (Click any file to preview columns):</span>
+                    <span>{parsedFiles.length} files</span>
                   </div>
 
-                  {/* Detailed Mapping Dropdowns */}
-                  {showMappingDetails && (
-                    <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-3 text-xs animate-fade-in">
-                      {CORE_FIELDS.map(f => (
-                        <div key={f.db}>
-                          <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                            {f.label} {f.required && <span className="text-rose-500">*</span>}
-                          </label>
-                          <select
-                            value={columnMapping[f.db] !== undefined ? columnMapping[f.db] : ''}
-                            onChange={(e) => {
-                              const rawVal = e.target.value
-                              setColumnMapping(prev => {
-                                const next = { ...prev }
-                                if (rawVal === '') {
-                                  delete next[f.db]
-                                } else {
-                                  next[f.db] = Number(rawVal)
-                                }
-                                return next
-                              })
-                            }}
-                            className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 outline-none focus:border-black"
-                          >
-                            <option value="">-- Do Not Map --</option>
-                            {fileHeaders.map((h, i) => (
-                              <option key={i} value={i}>{h}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {parsedFiles.map((pFile, idx) => {
+                      const isActive = activeFileIndex === idx
+                      const isMapped = pFile.columnMapping.name !== undefined && pFile.columnMapping.phone !== undefined
 
-                  {/* Sample Data Preview Table */}
-                  {previewRows.length > 0 && (
-                    <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden">
-                      <div className="bg-gray-50/80 px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1.5">
-                        <Eye size={12} />
-                        <span>Sheet Preview (First {previewRows.length} rows)</span>
+                      return (
+                        <div
+                          key={pFile.id}
+                          onClick={() => setActiveFileIndex(idx)}
+                          className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 shadow-2xs ${
+                            isActive 
+                              ? 'bg-blue-50/70 border-blue-400 ring-1 ring-blue-300' 
+                              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 truncate">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                              isMapped ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              <FileSpreadsheet size={15} />
+                            </div>
+                            <div className="truncate">
+                              <p className="font-bold text-gray-900 truncate" title={pFile.name}>
+                                {pFile.name}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                                <span>{pFile.rows.length} leads</span>
+                                <span>•</span>
+                                {isMapped ? (
+                                  <span className="text-emerald-700 font-semibold flex items-center gap-0.5">
+                                    <Check size={11} /> Ready
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-700 font-semibold flex items-center gap-0.5">
+                                    <AlertCircle size={11} /> Map Name/Phone
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRemoveFile(idx)
+                            }}
+                            className="text-gray-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-colors shrink-0"
+                            title="Remove file"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Active File Inspector & Mapping */}
+                {activeFile && (
+                  <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={14} className="text-blue-600" />
+                        <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider truncate">
+                          Column Mapping: <span className="text-blue-700">{activeFile.name}</span>
+                        </h4>
                       </div>
-                      <div className="overflow-x-auto max-h-36">
-                        <table className="w-full text-[11px] text-left">
-                          <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100">
-                            <tr>
-                              {fileHeaders.map((h, i) => (
-                                <th key={i} className="px-3 py-1.5 whitespace-nowrap">{h}</th>
+                      <button
+                        type="button"
+                        onClick={() => setShowMappingDetails(!showMappingDetails)}
+                        className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <span>{showMappingDetails ? 'Hide Mapping' : 'Customize Mapping'}</span>
+                        {showMappingDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+
+                    {/* Summary Badges for active file */}
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-800 border border-gray-200 font-medium">
+                        👤 Name: <strong>{activeFile.columnMapping.name !== undefined ? activeFile.headers[activeFile.columnMapping.name] : 'Not mapped'}</strong>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+                        📞 Phone: <strong>{activeFile.columnMapping.phone !== undefined ? activeFile.headers[activeFile.columnMapping.phone] : 'Not mapped'}</strong>
+                      </span>
+                      {activeFile.columnMapping.course !== undefined && (
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-medium">
+                          🎓 Program: <strong>{activeFile.headers[activeFile.columnMapping.course]}</strong>
+                        </span>
+                      )}
+                      {activeFile.columnMapping.country !== undefined && (
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200 font-medium">
+                          🌍 Country: <strong>{activeFile.headers[activeFile.columnMapping.country]}</strong>
+                        </span>
+                      )}
+                      <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
+                        📋 {activeFile.headers.length} Details Preserved
+                      </span>
+                    </div>
+
+                    {/* Detailed Mapping Dropdowns for active file */}
+                    {showMappingDetails && (
+                      <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-3 text-xs animate-fade-in">
+                        {CORE_FIELDS.map(f => (
+                          <div key={f.db}>
+                            <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                              {f.label} {f.required && <span className="text-rose-500">*</span>}
+                            </label>
+                            <select
+                              value={activeFile.columnMapping[f.db] !== undefined ? activeFile.columnMapping[f.db] : ''}
+                              onChange={(e) => {
+                                const rawVal = e.target.value
+                                handleUpdateFileMapping(
+                                  activeFileIndex, 
+                                  f.db, 
+                                  rawVal === '' ? undefined : Number(rawVal)
+                                )
+                              }}
+                              className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 outline-none focus:border-black cursor-pointer"
+                            >
+                              <option value="">-- Do Not Map --</option>
+                              {activeFile.headers.map((h, i) => (
+                                <option key={i} value={i}>{h}</option>
                               ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 font-mono text-[10px]">
-                            {previewRows.map((r, rIdx) => (
-                              <tr key={rIdx} className="hover:bg-gray-50/50">
-                                {fileHeaders.map((_, cIdx) => (
-                                  <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap max-w-[150px] truncate">
-                                    {r[cIdx] || '—'}
-                                  </td>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Sample Data Preview Table */}
+                    {activeFile.previewRows.length > 0 && (
+                      <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50/80 px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1.5">
+                          <Eye size={12} />
+                          <span>Sheet Preview: {activeFile.name} (First {activeFile.previewRows.length} rows)</span>
+                        </div>
+                        <div className="overflow-x-auto max-h-32">
+                          <table className="w-full text-[11px] text-left">
+                            <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100">
+                              <tr>
+                                {activeFile.headers.map((h, i) => (
+                                  <th key={i} className="px-3 py-1.5 whitespace-nowrap">{h}</th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 font-mono text-[10px]">
+                              {activeFile.previewRows.map((r, rIdx) => (
+                                <tr key={rIdx} className="hover:bg-gray-50/50">
+                                  {activeFile.headers.map((_, cIdx) => (
+                                    <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap max-w-[150px] truncate">
+                                      {r[cIdx] || '—'}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Step 2: Auto-Distribution to Counselors */}
                 <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-3">
@@ -805,7 +1128,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                       <div>
                         <h4 className="text-xs font-bold text-gray-900">Equal Round-Robin Distribution</h4>
                         <p className="text-[11px] text-gray-500">
-                          Automatically divide leads equally among selected counselors
+                          Automatically divide all {totalLeadsCount} leads from all {parsedFiles.length} files equally among selected counselors
                         </p>
                       </div>
                     </div>
@@ -836,7 +1159,7 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                       </div>
 
                       {showCounselorList && (
-                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-xl border border-gray-200 animate-fade-in">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-xl border border-gray-200 animate-fade-in">
                           {counselors.map(c => (
                             <label key={c.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white cursor-pointer text-xs">
                               <input
@@ -852,9 +1175,9 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                       )}
 
                       <div className="bg-purple-50/70 border border-purple-100 rounded-xl p-2.5 text-xs text-purple-900 flex items-center justify-between">
-                        <span>Distribution Preview:</span>
+                        <span>Total Distribution Preview:</span>
                         <strong className="font-mono">
-                          ~{activeSelectedCounselors.length > 0 ? Math.floor(csvRows.length / activeSelectedCounselors.length) : 0} leads / counselor
+                          ~{activeSelectedCounselors.length > 0 ? Math.floor(totalLeadsCount / activeSelectedCounselors.length) : 0} leads / counselor
                         </strong>
                       </div>
                     </div>
@@ -862,25 +1185,38 @@ export default function CSVImportModal({ onClose, onSuccess }: { onClose: () => 
                 </div>
 
                 {/* Import Action Button */}
-                <div className="pt-2">
+                <div className="pt-2 space-y-2">
                   <button
                     type="button"
                     onClick={handleStartImport}
-                    disabled={importing || !csvRows.length || columnMapping.name === undefined || columnMapping.phone === undefined}
+                    disabled={importing || !parsedFiles.length || validFilesCount !== parsedFiles.length}
                     className="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-all disabled:opacity-50 text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                   >
                     {importing ? (
                       <>
                         <Sparkles size={14} className="animate-spin" />
-                        <span>Importing {csvRows.length} Leads ({importProgress}%)...</span>
+                        <span>
+                          {importStatusText || `Importing ${totalLeadsCount} Leads from ${parsedFiles.length} Files (${importProgress}%)...`}
+                        </span>
                       </>
                     ) : (
                       <>
                         <Upload size={14} />
-                        <span>Start Importing {csvRows.length} Leads</span>
+                        <span>
+                          Start Importing {totalLeadsCount} Leads ({parsedFiles.length} File{parsedFiles.length > 1 ? 's' : ''})
+                        </span>
                       </>
                     )}
                   </button>
+
+                  {importing && (
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="bg-black h-full transition-all duration-300 ease-out" 
+                        style={{ width: `${importProgress}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
