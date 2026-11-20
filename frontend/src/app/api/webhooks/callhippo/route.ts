@@ -105,18 +105,24 @@ export async function POST(request: NextRequest) {
                      payload.from || 
                      ''
 
-    // Extract call duration in seconds
+    // Extract call duration in seconds (check talk_time first as it represents actual conversation time)
     let durationSeconds = 0
-    if (typeof payload.duration === 'number') {
+    if (typeof payload.talk_time === 'number') {
+      durationSeconds = payload.talk_time
+    } else if (typeof payload.duration === 'number') {
       durationSeconds = payload.duration
     } else if (typeof payload.call_duration === 'number') {
       durationSeconds = payload.call_duration
-    } else if (typeof payload.talk_time === 'number') {
-      durationSeconds = payload.talk_time
+    } else if (typeof payload.bill_seconds === 'number') {
+      durationSeconds = payload.bill_seconds
+    } else if (payload.talk_time !== undefined) {
+      durationSeconds = parseInt(String(payload.talk_time), 10) || 0
     } else if (payload.duration !== undefined) {
       durationSeconds = parseInt(String(payload.duration), 10) || 0
     } else if (payload.call_duration !== undefined) {
       durationSeconds = parseInt(String(payload.call_duration), 10) || 0
+    } else if (payload.bill_seconds !== undefined) {
+      durationSeconds = parseInt(String(payload.bill_seconds), 10) || 0
     }
 
     // Extract Call Status / Outcome
@@ -145,8 +151,19 @@ export async function POST(request: NextRequest) {
     const callNotes = payload.notes || payload.call_notes || payload.note || ''
 
     // Determine normalized outcome for Bridgewell CRM
-    let outcome = 'Connected'
+    // CRITICAL FIX: A call is ONLY 'Connected' if client ACTUALLY answered and spoke (durationSeconds > 0)!
+    // If duration is 0 seconds (0s Not Answered), outcome is strictly 'No Answer' or 'Busy'.
+    // In SIP/CallHippo, 'completed' merely means call session ended, NEVER that client picked up.
+    let outcome = 'No Answer'
     if (
+      rawStatus.includes('busy') || 
+      rawStatus.includes('rejected') || 
+      rawStatus.includes('declined') ||
+      rawStatus.includes('failed') || 
+      rawStatus.includes('cancelled')
+    ) {
+      outcome = 'Busy'
+    } else if (
       rawStatus.includes('no-answer') || 
       rawStatus.includes('no answer') || 
       rawStatus.includes('missed') || 
@@ -154,18 +171,13 @@ export async function POST(request: NextRequest) {
       rawStatus.includes('ring')
     ) {
       outcome = 'No Answer'
-    } else if (
-      rawStatus.includes('busy') || 
-      rawStatus.includes('rejected') || 
-      rawStatus.includes('failed') || 
-      rawStatus.includes('cancelled')
-    ) {
-      outcome = 'Busy'
     } else if (rawStatus.includes('callback') || rawStatus.includes('call back')) {
-      outcome = 'Callback'
-    } else if (durationSeconds > 0 || rawStatus.includes('answered') || rawStatus.includes('completed')) {
+      outcome = 'Call back'
+    } else if (durationSeconds > 0) {
+      // Legitimate answered conversation with client
       outcome = 'Connected'
     } else {
+      // 0 seconds with status "completed" or "call.completed" is strictly No Answer
       outcome = 'No Answer'
     }
 
@@ -350,19 +362,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Auto-update stage based on call outcome
+    // Auto-update stage based on verified call outcome
+    // IMPORTANT: 'Connected' stage is ONLY allowed if durationSeconds > 0 (client actually answered and spoke)
     if ((outcome === 'Ringing' || outcome === 'No Answer') && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact')) {
       updatePayload.stage = 'Ringing'
     } else if ((outcome === 'Callback' || outcome === 'Call back') && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing')) {
       updatePayload.stage = 'Call back'
-    } else if (outcome === 'Connected' && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing' || matchedLead.stage === 'Call back')) {
+    } else if (outcome === 'Connected' && durationSeconds > 0 && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing' || matchedLead.stage === 'Call back')) {
       updatePayload.stage = 'Connected'
     }
 
-    // If answered, make sure priority reflects engagement
-    if (outcome === 'Connected' && (!matchedLead.priority || matchedLead.priority === 'Unset')) {
-      updatePayload.priority = 'Warm'
-    }
+    // CRITICAL: Priority is strictly preserved and NEVER automatically forced to 'Warm'.
+    // Only counselors assess and assign lead temperature (Hot, Warm, Cold).
 
     await supabase.from('leads').update(updatePayload).eq('id', matchedLead.id)
 
