@@ -63,6 +63,13 @@ export const ISO_COUNTRY_NAMES: Record<string, string> = {
   UZ: 'Uzbekistan',
   KZ: 'Kazakhstan',
   TT: 'Trinidad & Tobago',
+  JP: 'Japan',
+  SD: 'Sudan',
+  AL: 'Albania',
+  MK: 'North Macedonia',
+  GA: 'Gabon',
+  CD: 'DR Congo',
+  MM: 'Myanmar',
 }
 
 export function getCountryFlag(country?: string | null): string {
@@ -84,6 +91,28 @@ export function getCountryFlag(country?: string | null): string {
   if (u === 'DK' || u === 'DENMARK') return '🇩🇰'
   if (u === 'NL' || u === 'NETHERLANDS' || u === 'HOLLAND') return '🇳🇱'
   if (u === 'TT' || u === 'TRINIDAD' || u === 'TRINIDAD & TOBAGO' || u === 'TRINIDAD AND TOBAGO') return '🇹🇹'
+  if (u === 'FR' || u === 'FRANCE') return '🇫🇷'
+  if (u === 'IT' || u === 'ITALY') return '🇮🇹'
+  if (u === 'YE' || u === 'YEMEN') return '🇾🇪'
+  if (u === 'OM' || u === 'OMAN') return '🇴🇲'
+  if (u === 'BD' || u === 'BANGLADESH') return '🇧🇩'
+  if (u === 'NP' || u === 'NEPAL') return '🇳🇵'
+  if (u === 'GH' || u === 'GHANA') return '🇬🇭'
+  if (u === 'PK' || u === 'PAKISTAN') return '🇵🇰'
+  if (u === 'QA' || u === 'QATAR') return '🇶🇦'
+  if (u === 'EG' || u === 'EGYPT') return '🇪🇬'
+  if (u === 'ET' || u === 'ETHIOPIA') return '🇪🇹'
+  if (u === 'JP' || u === 'JAPAN') return '🇯🇵'
+  if (u === 'SD' || u === 'SUDAN') return '🇸🇩'
+  if (u === 'KW' || u === 'KUWAIT') return '🇰🇼'
+  if (u === 'LB' || u === 'LEBANON') return '🇱🇧'
+  if (u === 'TR' || u === 'TURKEY') return '🇹🇷'
+  if (u === 'ZW' || u === 'ZIMBABWE') return '🇿🇼'
+  if (u === 'AL' || u === 'ALBANIA') return '🇦🇱'
+  if (u === 'MK' || u === 'NORTH MACEDONIA') return '🇲🇰'
+  if (u === 'GA' || u === 'GABON') return '🇬🇦'
+  if (u === 'CD' || u === 'DR CONGO' || u === 'CONGO') return '🇨🇩'
+  if (u === 'MM' || u === 'MYANMAR') return '🇲🇲'
   if (u.length === 2 && /^[A-Z]{2}$/.test(u)) {
     const codePoints = [...u].map(c => 127397 + c.charCodeAt(0))
     return String.fromCodePoint(...codePoints)
@@ -149,6 +178,14 @@ export const PHONE_DIAL_CODES: [string, string][] = [
   ['+254', 'Kenya'],
   ['+234', 'Nigeria'],
   ['+233', 'Ghana'],
+  ['+249', 'Sudan'],
+  ['+263', 'Zimbabwe'],
+  ['+243', 'DR Congo'],
+  ['+241', 'Gabon'],
+  ['+355', 'Albania'],
+  ['+389', 'North Macedonia'],
+  ['+670', 'Timor-Leste'],
+  ['+689', 'French Polynesia'],
   ['+353', 'Ireland'],
   ['+358', 'Finland'],
   ['+420', 'Czech Republic'],
@@ -164,6 +201,7 @@ export const PHONE_DIAL_CODES: [string, string][] = [
   ['+92', 'Pakistan'],
   ['+93', 'Afghanistan'],
   ['+94', 'Sri Lanka'],
+  ['+95', 'Myanmar'],
   ['+90', 'Turkey'],
   ['+44', 'UK'],
   ['+49', 'Germany'],
@@ -378,6 +416,23 @@ const ID_REGEX = /\b(indonesia|indonesian|jakarta)\b/i
 const DK_REGEX = /\b(denmark|danish|copenhagen)\b/i
 const NL_REGEX = /\b(netherlands|dutch|holland|amsterdam)\b/i
 const TT_REGEX = /\b(trinidad|tobago|port of spain)\b/i
+const FRA_REGEX = /\b(france|french|paris)\b/i
+const IT_REGEX = /\b(italy|italian|rome|milan)\b/i
+const YE_REGEX = /\b(yemen|sanaa|aden)\b/i
+const OM_REGEX = /\b(oman|muscat)\b/i
+const BD_REGEX = /\b(bangladesh|bengali|dhaka)\b/i
+const NP_REGEX = /\b(nepal|nepali|kathmandu)\b/i
+const GH_REGEX = /\b(ghana|accra)\b/i
+const PK_REGEX = /\b(pakistan|pakistani|karachi|lahore)\b/i
+const QA_REGEX = /\b(qatar|doha)\b/i
+const EG_REGEX = /\b(egypt|cairo)\b/i
+const ET_REGEX = /\b(ethiopia|addis)\b/i
+const JP_REGEX = /\b(japan|japanese|tokyo)\b/i
+const SD_REGEX = /\b(sudan|khartoum)\b/i
+const KW_REGEX = /\b(kuwait)\b/i
+const LB_REGEX = /\b(lebanon|beirut)\b/i
+const TR_REGEX = /\b(turkey|turkish|istanbul)\b/i
+const ZW_REGEX = /\b(zimbabwe|harare)\b/i
 
 const MASTER_REGEX = /\b(mba|msc|ma|mtech|mca|mcom|llm|m\.sc|m\.a|m\.tech|pg)\b/i
 const BACHELOR_REGEX = /\b(bsc|bba|ba|btech|bca|bcom|llb|b\.sc|b\.a|b\.tech|b\.e|ug)\b/i
@@ -546,6 +601,57 @@ export function matchesCountryFilter(
   }
   if (normFilter === 'trinidad & tobago' || normFilter === 'trinidad' || normFilter === 'tt') {
     return TT_REGEX.test(sourceText)
+  }
+  if (normFilter === 'france' || normFilter === 'fr') {
+    return FRA_REGEX.test(sourceText)
+  }
+  if (normFilter === 'italy' || normFilter === 'it') {
+    return IT_REGEX.test(sourceText)
+  }
+  if (normFilter === 'yemen' || normFilter === 'ye') {
+    return YE_REGEX.test(sourceText)
+  }
+  if (normFilter === 'oman' || normFilter === 'om') {
+    return OM_REGEX.test(sourceText)
+  }
+  if (normFilter === 'bangladesh' || normFilter === 'bd') {
+    return BD_REGEX.test(sourceText)
+  }
+  if (normFilter === 'nepal' || normFilter === 'np') {
+    return NP_REGEX.test(sourceText)
+  }
+  if (normFilter === 'ghana' || normFilter === 'gh') {
+    return GH_REGEX.test(sourceText)
+  }
+  if (normFilter === 'pakistan' || normFilter === 'pk') {
+    return PK_REGEX.test(sourceText)
+  }
+  if (normFilter === 'qatar' || normFilter === 'qa') {
+    return QA_REGEX.test(sourceText)
+  }
+  if (normFilter === 'egypt' || normFilter === 'eg') {
+    return EG_REGEX.test(sourceText)
+  }
+  if (normFilter === 'ethiopia' || normFilter === 'et') {
+    return ET_REGEX.test(sourceText)
+  }
+  if (normFilter === 'japan' || normFilter === 'jp') {
+    return JP_REGEX.test(sourceText)
+  }
+  if (normFilter === 'sudan' || normFilter === 'sd') {
+    return SD_REGEX.test(sourceText)
+  }
+  if (normFilter === 'kuwait' || normFilter === 'kw') {
+    return KW_REGEX.test(sourceText)
+  }
+  if (normFilter === 'lebanon' || normFilter === 'lb') {
+    return LB_REGEX.test(sourceText)
+  }
+  if (normFilter === 'turkey' || normFilter === 'tr') {
+    return TR_REGEX.test(sourceText)
+  }
+  if (normFilter === 'zimbabwe' || normFilter === 'zw') {
+    return ZW_REGEX.test(sourceText)
   }
   if (normFilter === 'europe' || normFilter === 'eu') {
     return EU_REGEX.test(sourceText)

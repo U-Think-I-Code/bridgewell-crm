@@ -7,7 +7,7 @@ import { formatLastCall } from '@/lib/lastCallHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl, copyPhoneToClipboard, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { useCallHippoLine } from '@/lib/dialer'
-import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter } from '@/lib/countryHelper'
+import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter, getLeadEffectiveCountry, getCountryFlag } from '@/lib/countryHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
 import AddLeadModal from '@/components/AddLeadModal'
 import CSVImportModal from '@/components/CSVImportModal'
@@ -1063,6 +1063,27 @@ function LeadsContent() {
     return map
   }, [filteredLeads])
 
+  // Dynamically detect any other countries present in leads that are not in the predefined dropdown
+  const dynamicExtraCountries = useMemo(() => {
+    const known = new Set([
+      'usa', 'uk', 'canada', 'australia', 'germany', 'ireland', 'europe',
+      'saudi arabia', 'south africa', 'philippines', 'indonesia', 'denmark',
+      'netherlands', 'trinidad & tobago', 'trinidad and tobago', 'uae', 'india',
+      'france', 'yemen', 'oman', 'bangladesh', 'nepal', 'ghana', 'pakistan',
+      'qatar', 'egypt', 'ethiopia', 'italy', 'japan', 'sudan', 'kuwait',
+      'lebanon', 'turkey', 'zimbabwe', 'albania', 'north macedonia', 'gabon',
+      'dr congo', 'myanmar'
+    ])
+    const extra = new Set<string>()
+    for (let i = 0; i < leads.length; i++) {
+      const c = getLeadEffectiveCountry(leads[i])
+      if (c && !known.has(c.toLowerCase().trim())) {
+        extra.add(c.trim())
+      }
+    }
+    return Array.from(extra).sort()
+  }, [leads])
+
   return (
     <div className="flex flex-col h-full bg-[#FDFDFD]">
       {/* Top Header */}
@@ -1500,6 +1521,31 @@ function LeadsContent() {
               <option value="Trinidad & Tobago">🇹🇹 Trinidad &amp; Tobago Leads</option>
               <option value="UAE">🇦🇪 UAE Ad Leads</option>
               <option value="India">🇮🇳 India Leads</option>
+              <option value="France">🇫🇷 France Leads</option>
+              <option value="Yemen">🇾🇪 Yemen Leads</option>
+              <option value="Oman">🇴🇲 Oman Leads</option>
+              <option value="Bangladesh">🇧🇩 Bangladesh Leads</option>
+              <option value="Nepal">🇳🇵 Nepal Leads</option>
+              <option value="Ghana">🇬🇭 Ghana Leads</option>
+              <option value="Pakistan">🇵🇰 Pakistan Leads</option>
+              <option value="Qatar">🇶🇦 Qatar Leads</option>
+              <option value="Egypt">🇪🇬 Egypt Leads</option>
+              <option value="Ethiopia">🇪🇹 Ethiopia Leads</option>
+              <option value="Italy">🇮🇹 Italy Leads</option>
+              <option value="Japan">🇯🇵 Japan Leads</option>
+              <option value="Sudan">🇸🇩 Sudan Leads</option>
+              <option value="Kuwait">🇰🇼 Kuwait Leads</option>
+              <option value="Lebanon">🇱🇧 Lebanon Leads</option>
+              <option value="Turkey">🇹🇷 Turkey Leads</option>
+              <option value="Zimbabwe">🇿🇼 Zimbabwe Leads</option>
+              <option value="Albania">🇦🇱 Albania Leads</option>
+              <option value="North Macedonia">🇲🇰 North Macedonia Leads</option>
+              <option value="Gabon">🇬🇦 Gabon Leads</option>
+              <option value="DR Congo">🇨🇩 DR Congo Leads</option>
+              <option value="Myanmar">🇲🇲 Myanmar Leads</option>
+              {dynamicExtraCountries.map(c => (
+                <option key={c} value={c}>{getCountryFlag(c)} {c} Leads</option>
+              ))}
             </select>
           </div>
 
