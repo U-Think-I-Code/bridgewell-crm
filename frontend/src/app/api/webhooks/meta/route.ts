@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+
+export const dynamic = 'force-dynamic'
 import { normalizePhone, cleanPhoneE164 } from '@/lib/phoneHelper'
 import { notifyLeadAssigned } from '@/lib/notifications'
 import { sendMetaCrmEvent } from '@/lib/metaConversions'

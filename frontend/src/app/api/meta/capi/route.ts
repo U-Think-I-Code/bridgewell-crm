@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendMetaCrmEvent } from '@/lib/metaConversions'
 import { supabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const datasetId = process.env.META_DATASET_ID || '1035625342113755'

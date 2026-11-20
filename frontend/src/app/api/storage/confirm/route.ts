@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * POST /api/storage/confirm
  * Saves document metadata into the database after direct upload completes.

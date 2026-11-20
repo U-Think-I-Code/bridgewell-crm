@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * Format duration in seconds into human-readable text (e.g. "3m 45s" or "45s")
  */
