@@ -116,9 +116,14 @@ function TodayCallsContent() {
         .order('time', { ascending: false })
         .limit(3000)
 
-      // Counselor Scoping: if user is counselor, they see their calls
+      // Role Scoping: counselors see only their own calls, team leaders see their team
       if (isCounselor(user)) {
         actQuery = actQuery.eq('user_id', user.id)
+      } else if (isTeamLeader(user)) {
+        const meta = parseUserTeamMeta(user?.languages)
+        const allowedIds = new Set<string>(meta.member_ids || [])
+        if (user?.id) allowedIds.add(user.id)
+        actQuery = actQuery.in('user_id', Array.from(allowedIds))
       }
 
       const { data: actData, error: actError } = await actQuery
@@ -665,7 +670,7 @@ function TodayCallsContent() {
                   <th className="px-6 py-3 font-semibold text-gray-600 text-xs">Call Outcome</th>
                   <th className="px-6 py-3 font-semibold text-gray-600 text-xs">Call Time</th>
                   <th className="px-6 py-3 font-semibold text-gray-600 text-xs">Stage</th>
-                  <th className="px-6 py-3 font-semibold text-gray-600 text-xs">Counselor</th>
+                  {canManageLeads(user) && <th className="px-6 py-3 font-semibold text-gray-600 text-xs">Counselor</th>}
                   <th className="px-6 py-3"></th>
                 </tr>
               </thead>
@@ -838,13 +843,15 @@ function TodayCallsContent() {
                         </select>
                       </td>
 
-                      {/* Counselor Name */}
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                          {row.counselorName || row.leadOwnerName || 'Counselor'}
-                        </span>
-                      </td>
+                      {/* Counselor Name (only for TL and Managers) */}
+                      {canManageLeads(user) && (
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            {row.counselorName || row.leadOwnerName || 'Counselor'}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Details view link */}
                       <td className="px-6 py-4 text-right">

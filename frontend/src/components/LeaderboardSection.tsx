@@ -9,6 +9,7 @@ import {
 import Link from 'next/link'
 import { useAuth } from '@/components/AuthWrapper'
 import { deduplicateCallActivities } from '@/lib/callDeduplicator'
+import { isManager, isTeamLeader, isCounselor, parseUserTeamMeta } from '@/lib/teamHelper'
 
 interface CounselorStat {
   id: string
@@ -68,20 +69,45 @@ export default function LeaderboardSection() {
   const fetchLeaderboard = async () => {
     setLoading(true)
     try {
-      // 1. Fetch counselors
-      const { data: counselorsData } = await supabase
+      if (!currentUser) return
+
+      const userIsCounselor = isCounselor(currentUser)
+      const userIsTL = isTeamLeader(currentUser)
+
+      // 1. Fetch counselors based on role permissions
+      let counselorsQuery = supabase
         .from('users')
         .select('*')
         .eq('role', 'counselor')
         .order('name', { ascending: true })
 
+      if (userIsCounselor) {
+        counselorsQuery = counselorsQuery.eq('id', currentUser.id)
+      } else if (userIsTL) {
+        const meta = parseUserTeamMeta(currentUser?.languages)
+        const allowedIds = new Set<string>(meta.member_ids || [])
+        allowedIds.add(currentUser.id)
+        counselorsQuery = counselorsQuery.in('id', Array.from(allowedIds))
+      }
+
+      const { data: counselorsData } = await counselorsQuery
       const counselors = counselorsData || []
 
-      // 2. Fetch all leads
-      const { data: leadsData } = await supabase
+      // 2. Fetch leads based on role permissions
+      let leadsQuery = supabase
         .from('leads')
         .select('id, owner_id, stage, priority, last_call_outcome, attempts, created_at')
 
+      if (userIsCounselor) {
+        leadsQuery = leadsQuery.eq('owner_id', currentUser.id)
+      } else if (userIsTL) {
+        const meta = parseUserTeamMeta(currentUser?.languages)
+        const allowedIds = new Set<string>(meta.member_ids || [])
+        allowedIds.add(currentUser.id)
+        leadsQuery = leadsQuery.in('owner_id', Array.from(allowedIds))
+      }
+
+      const { data: leadsData } = await leadsQuery
       const leads = leadsData || []
 
       // Map lead ID to owner_id for fallback activity matching
@@ -105,12 +131,21 @@ export default function LeaderboardSection() {
         startTimeISO = startOfWeek.toISOString()
       }
 
-      // 4. Fetch activities for the timeframe
+      // 4. Fetch activities for the timeframe based on role permissions
       let actQuery = supabase
         .from('activities')
         .select('id, user_id, lead, type, outcome, text, time')
         .eq('type', 'call')
         .order('time', { ascending: false })
+
+      if (userIsCounselor) {
+        actQuery = actQuery.eq('user_id', currentUser.id)
+      } else if (userIsTL) {
+        const meta = parseUserTeamMeta(currentUser?.languages)
+        const allowedIds = new Set<string>(meta.member_ids || [])
+        allowedIds.add(currentUser.id)
+        actQuery = actQuery.in('user_id', Array.from(allowedIds))
+      }
 
       if (startTimeISO) {
         actQuery = actQuery.gte('time', startTimeISO)
@@ -297,6 +332,172 @@ export default function LeaderboardSection() {
     return new Date(isoString).toLocaleDateString()
   }
 
+  // Counselors / Employees: Show ONLY their own calling performance card (Hide team leaderboard)
+  if (isCounselor(currentUser)) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
+        {/* Top Header */}
+        <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-blue-50/70 via-white to-indigo-50/40">
+          <div>
+            <div className="flex items-center gap-2.5 mb-1 flex-wrap">
+              <span className="p-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg">
+                <PhoneCall size={18} />
+              </span>
+              <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                My Calling Performance
+              </h2>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Live Realtime Sync
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Your personal daily activity tracking, call volume, and lead conversions
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Timeframe selector */}
+            <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 shadow-2xs">
+              <button
+                onClick={() => setTimeframe('today')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  timeframe === 'today'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setTimeframe('week')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  timeframe === 'week'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                This Week
+              </button>
+              <button
+                onClick={() => setTimeframe('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  timeframe === 'all'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                All Time
+              </button>
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              title="Refresh Stats"
+              className="p-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-xl transition-all shadow-2xs cursor-pointer"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin text-black' : ''} />
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center">
+            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-xs text-gray-500">Loading your performance metrics...</p>
+          </div>
+        ) : (
+          <>
+            {/* 4 Personal Metric Cards */}
+            <div className="p-6 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border-b border-gray-100">
+              {/* Calls Made */}
+              <div className="p-4 rounded-xl border border-blue-200/80 bg-blue-50/40">
+                <div className="flex items-center justify-between text-xs text-blue-800 mb-1 font-medium">
+                  <span>Calls Made ({timeframe === 'today' ? 'Today' : timeframe === 'week' ? 'Week' : 'All Time'})</span>
+                  <PhoneCall size={14} className="text-blue-600" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-blue-900">{myStat?.callsCount || 0}</span>
+                  <span className="text-xs text-blue-700">calls</span>
+                </div>
+              </div>
+
+              {/* Connected */}
+              <div className="p-4 rounded-xl border border-emerald-200/80 bg-emerald-50/40">
+                <div className="flex items-center justify-between text-xs text-emerald-800 mb-1 font-medium">
+                  <span>Connected Calls</span>
+                  <CheckCircle2 size={14} className="text-emerald-600" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-emerald-700">{myStat?.connectedCount || 0}</span>
+                  <span className="text-xs font-semibold text-emerald-600">
+                    ({myStat?.connectRate || 0}% connect rate)
+                  </span>
+                </div>
+              </div>
+
+              {/* Hot Leads */}
+              <div className="p-4 rounded-xl border border-rose-200/80 bg-rose-50/40">
+                <div className="flex items-center justify-between text-xs text-rose-800 mb-1 font-medium">
+                  <span>Hot Leads</span>
+                  <Flame size={14} className="text-rose-600" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-rose-600">{myStat?.hotLeads || 0}</span>
+                  <span className="text-xs text-rose-700">high priority</span>
+                </div>
+              </div>
+
+              {/* Pending / Uncalled Leads */}
+              <div className="p-4 rounded-xl border border-amber-200/80 bg-amber-50/40">
+                <div className="flex items-center justify-between text-xs text-amber-800 mb-1 font-medium">
+                  <span>Pending / Uncalled</span>
+                  <Clock size={14} className="text-amber-600" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-amber-700">{myStat?.uncalledLeads || 0}</span>
+                  <span className="text-xs text-amber-600">of {myStat?.totalLeads || 0} total</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Personal Activity Breakdown & Quick Action */}
+            <div className="px-6 py-4 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-4 flex-wrap text-gray-600">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Connected: <strong className="text-gray-900">{myStat?.connectedCount || 0}</strong>
+                </span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                  No Answer: <strong className="text-gray-900">{myStat?.noAnswerCount || 0}</strong>
+                </span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Busy / Failed: <strong className="text-gray-900">{myStat?.busyCount || 0}</strong>
+                </span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                  Last Call: <strong className="text-gray-900">{formatTimeAgo(myStat?.lastCallTime || null)}</strong>
+                </span>
+              </div>
+
+              <Link
+                href="/leads"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2 shrink-0 cursor-pointer"
+              >
+                <PhoneCall size={14} />
+                <span>Start Calling My Leads</span>
+                <ArrowUpRight size={13} />
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
       {/* Top Header */}
@@ -373,37 +574,6 @@ export default function LeaderboardSection() {
           </button>
         </div>
       </div>
-
-      {/* Counselor Personal Score Banner */}
-      {currentUser?.role === 'counselor' && myStat && (
-        <div className="mx-6 mt-6 p-4 rounded-xl bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-              #{myRank || '-'}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-900">Your Live Calling Score</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              </div>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">
-                {currentUser.name} • Team Rank #{myRank} of {stats.length} Telecallers
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 text-xs flex-wrap">
-            <span className="bg-white/90 border border-blue-200 px-3 py-1.5 rounded-lg font-bold text-gray-800 shadow-2xs">
-              📞 {myStat.callsCount} Calls Today
-            </span>
-            <span className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-bold text-emerald-800 shadow-2xs">
-              ✅ {myStat.connectedCount} Connected ({myStat.connectRate}%)
-            </span>
-            <span className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg font-bold text-rose-800 shadow-2xs">
-              🔥 {myStat.hotLeads} Hot Leads
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* KPI Cards Row */}
       <div className="p-6 border-b border-gray-100 bg-white grid grid-cols-2 lg:grid-cols-4 gap-4">

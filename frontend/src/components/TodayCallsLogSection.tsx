@@ -24,7 +24,7 @@ import { supabase } from '@/lib/supabase'
 import { deduplicateCallActivities } from '@/lib/callDeduplicator'
 import { openCallHippoDialer, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
-import { isTeamLeader, isManager, parseUserTeamMeta } from '@/lib/teamHelper'
+import { isTeamLeader, isManager, isCounselor, parseUserTeamMeta } from '@/lib/teamHelper'
 
 export interface TodayCallRecord {
   id: string
@@ -65,6 +65,7 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
 
   const userIsTL = isTeamLeader(currentUser)
   const userIsManager = isManager(currentUser)
+  const userIsCounselor = isCounselor(currentUser)
 
   const fetchTodayCalls = useCallback(async () => {
     try {
@@ -83,13 +84,24 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
       })
       setCounselorsList((usersData || []).map(u => ({ id: u.id, name: u.name || u.email })))
 
-      // 2. Fetch all call activities from start of today
-      const { data: actsData, error: actsErr } = await supabase
+      // 2. Fetch call activities based on role permissions
+      let actsQuery = supabase
         .from('activities')
         .select('id, user_id, lead, type, outcome, text, time')
         .eq('type', 'call')
         .gte('time', startOfTodayISO)
         .order('time', { ascending: false })
+
+      if (userIsCounselor) {
+        actsQuery = actsQuery.eq('user_id', currentUser?.id)
+      } else if (userIsTL) {
+        const meta = parseUserTeamMeta(currentUser?.languages)
+        const allowedIds = new Set<string>(meta.member_ids || [])
+        if (currentUser?.id) allowedIds.add(currentUser.id)
+        actsQuery = actsQuery.in('user_id', Array.from(allowedIds))
+      }
+
+      const { data: actsData, error: actsErr } = await actsQuery
 
       if (actsErr) throw actsErr
       const rawActs = actsData || []
@@ -217,6 +229,11 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
   // Filtered Calls list
   const filteredCalls = useMemo(() => {
     return calls.filter(call => {
+      // Role scoping: Counselors only ever see their own calls
+      if (userIsCounselor && call.user_id !== currentUser?.id) {
+        return false
+      }
+
       // 1. Counselor filter
       if (selectedCounselorId !== 'all') {
         if (call.user_id !== selectedCounselorId) return false
@@ -312,7 +329,7 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
               <PhoneCall size={18} />
             </span>
             <h2 className="text-lg font-bold text-gray-900 tracking-tight">
-              Today&apos;s Calls Log • आज की कॉलिंग
+              {userIsCounselor ? "My Calls Today Log • मेरी कॉलिंग" : "Today's Calls Log • आज की कॉलिंग"}
             </h2>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -320,7 +337,9 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
             </span>
           </div>
           <p className="text-xs text-gray-500">
-            Real-time record of all calls made today — including repeated calls, follow-ups, and calls to existing leads.
+            {userIsCounselor
+              ? "Real-time chronological record of every call you made today with outcomes and quick redial."
+              : "Real-time record of all calls made today — including repeated calls, follow-ups, and calls to existing leads."}
           </p>
         </div>
 
@@ -341,7 +360,9 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
       {/* ── Summary Stats Pills ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4 bg-gray-50/70 border-b border-gray-200 text-xs">
         <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
-          <span className="text-[11px] font-semibold text-gray-500 block">Total Calls Today</span>
+          <span className="text-[11px] font-semibold text-gray-500 block">
+            {userIsCounselor ? "My Calls Today" : "Total Calls Today"}
+          </span>
           <span className="text-xl font-bold text-gray-900">{totalCallsToday}</span>
         </div>
 
@@ -381,29 +402,31 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
       <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
         {/* Filter Pills */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setOutcomeFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              outcomeFilter === 'all'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            All Calls ({totalCallsToday})
-          </button>
+          {!userIsCounselor && (
+            <button
+              type="button"
+              onClick={() => setOutcomeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                outcomeFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All Calls ({totalCallsToday})
+            </button>
+          )}
 
           <button
             type="button"
-            onClick={() => setOutcomeFilter('my_calls')}
+            onClick={() => setOutcomeFilter(userIsCounselor ? 'all' : 'my_calls')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-              outcomeFilter === 'my_calls'
+              (userIsCounselor ? outcomeFilter === 'all' || outcomeFilter === 'my_calls' : outcomeFilter === 'my_calls')
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             <User size={12} />
-            <span>My Calls ({myCallsTodayCount})</span>
+            <span>{userIsCounselor ? `My Calls (${totalCallsToday})` : `My Calls (${myCallsTodayCount})`}</span>
           </button>
 
           <button
@@ -459,7 +482,7 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
 
         {/* Right side: Counselor dropdown + search */}
         <div className="flex items-center gap-2 flex-wrap">
-          {(userIsManager || userIsTL) && (
+          {!userIsCounselor && (userIsManager || userIsTL) && (
             <select
               value={selectedCounselorId}
               onChange={e => setSelectedCounselorId(e.target.value)}
@@ -495,7 +518,7 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
               <th className="px-4 py-3">Time</th>
               <th className="px-4 py-3">Student / Lead</th>
               <th className="px-4 py-3">Call Type</th>
-              <th className="px-4 py-3">Counselor</th>
+              {!userIsCounselor && <th className="px-4 py-3">Counselor</th>}
               <th className="px-4 py-3">Outcome & Duration</th>
               <th className="px-4 py-3">Details & Notes</th>
               <th className="px-4 py-3 text-right">Quick Action</th>
@@ -504,14 +527,14 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={userIsCounselor ? 6 : 7} className="px-4 py-12 text-center text-gray-400">
                   <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mb-2"></div>
                   <p>Loading today&apos;s calling history...</p>
                 </td>
               </tr>
             ) : filteredCalls.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={userIsCounselor ? 6 : 7} className="px-4 py-12 text-center text-gray-400">
                   <PhoneCall size={32} className="mx-auto text-gray-300 mb-2" />
                   <p className="font-semibold text-gray-600">No calls found for the selected filter.</p>
                   <p className="text-[11px] text-gray-400 mt-0.5">Calls placed via CallHippo or manual timer will appear here live.</p>
@@ -590,19 +613,21 @@ export default function TodayCallsLogSection({ currentUser }: TodayCallsLogSecti
                     </td>
 
                     {/* Counselor Column */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="font-semibold text-gray-800 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold flex items-center justify-center">
-                          {call.counselor_name.slice(0, 2).toUpperCase()}
-                        </span>
-                        <span>{call.counselor_name}</span>
-                        {isCurrentUser && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 text-white">
-                            You
+                    {!userIsCounselor && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="font-semibold text-gray-800 flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold flex items-center justify-center">
+                            {call.counselor_name.slice(0, 2).toUpperCase()}
                           </span>
-                        )}
-                      </div>
-                    </td>
+                          <span>{call.counselor_name}</span>
+                          {isCurrentUser && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 text-white">
+                              You
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
 
                     {/* Outcome & Duration Column */}
                     <td className="px-4 py-3 whitespace-nowrap">
