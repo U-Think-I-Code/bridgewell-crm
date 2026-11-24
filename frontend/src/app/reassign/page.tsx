@@ -313,11 +313,11 @@ export default function LeadReassignmentPage() {
         : 'Assigned User'
 
     const isJunkLead = lead.stage === 'Junk/duplicate'
-    const newStage = isJunkLead ? 'New' : lead.stage
+    const newStage = 'New'
 
     // Optimistic UI update
     setLeads(prev =>
-      prev.map(l => (l.id === draggedLeadId ? { ...l, owner_id: newOwnerId, stage: newStage } : l))
+      prev.map(l => (l.id === draggedLeadId ? { ...l, owner_id: newOwnerId, stage: 'New', last_call_outcome: null, attempts: 0, next_follow_up: null } : l))
     )
     setLastMovedLead({ leadName: lead.name, toName: targetName })
     setTimeout(() => setLastMovedLead(null), 4000)
@@ -327,10 +327,14 @@ export default function LeadReassignmentPage() {
     setIsProcessing(true)
 
     try {
-      // 1. Update Lead table (Auto-revive to 'New' if lead was in Junk/duplicate)
-      const updatePayload: any = { owner_id: newOwnerId }
-      if (isJunkLead) {
-        updatePayload.stage = 'New'
+      // 1. Update Lead table: stage resets to 'New', attempts to 0, last_call_outcome to null for the new counselor
+      // Existing metadata and notes are completely preserved and untouched!
+      const updatePayload: any = { 
+        owner_id: newOwnerId,
+        stage: 'New',
+        last_call_outcome: null,
+        attempts: 0,
+        next_follow_up: null
       }
       await supabase.from('leads').update(updatePayload).eq('id', lead.id)
 
@@ -358,7 +362,7 @@ export default function LeadReassignmentPage() {
           type: isJunkLead ? 'STAGE_CHANGE' : 'assignment',
           text: isJunkLead
             ? `Lead revived from Junk/duplicate and reassigned to ${targetName}. Stage reset to New.`
-            : `Reassigned to ${targetName} via Drag & Drop distribution board.`,
+            : `Reassigned to ${targetName} via Drag & Drop distribution board. Stage reset to New.`,
           time: new Date().toISOString(),
         },
       ])
@@ -402,8 +406,13 @@ export default function LeadReassignmentPage() {
           const lead = unassignedList[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
-          const updatePayload: any = { owner_id: targetCounselor.id }
-          if (isJunk) updatePayload.stage = 'New'
+          const updatePayload: any = { 
+            owner_id: targetCounselor.id,
+            stage: 'New',
+            last_call_outcome: null,
+            attempts: 0,
+            next_follow_up: null
+          }
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
 
@@ -425,7 +434,7 @@ export default function LeadReassignmentPage() {
               type: isJunk ? 'STAGE_CHANGE' : 'assignment',
               text: isJunk
                 ? `Lead revived from Junk/duplicate and assigned to ${targetCounselor.name}. Stage reset to New.`
-                : `Assigned to ${targetCounselor.name} via Auto-Distribution.`,
+                : `Assigned to ${targetCounselor.name} via Auto-Distribution. Stage reset to New.`,
               time: new Date().toISOString(),
             },
           ])
@@ -470,8 +479,13 @@ export default function LeadReassignmentPage() {
           const lead = myPool[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
-          const updatePayload: any = { owner_id: targetCounselor.id }
-          if (isJunk) updatePayload.stage = 'New'
+          const updatePayload: any = { 
+            owner_id: targetCounselor.id,
+            stage: 'New',
+            last_call_outcome: null,
+            attempts: 0,
+            next_follow_up: null
+          }
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
 
@@ -493,7 +507,7 @@ export default function LeadReassignmentPage() {
               type: isJunk ? 'STAGE_CHANGE' : 'assignment',
               text: isJunk
                 ? `Lead revived from Junk/duplicate and assigned to ${targetCounselor.name}. Stage reset to New.`
-                : `Assigned to ${targetCounselor.name} by Team Leader.`,
+                : `Assigned to ${targetCounselor.name} by Team Leader. Stage reset to New.`,
               time: new Date().toISOString(),
             },
           ])
@@ -505,7 +519,7 @@ export default function LeadReassignmentPage() {
             senderName: user?.name || 'Team Leader',
           }).catch(console.error)
         }
-
+        
         await fetchData()
         setLastMovedLead({
           leadName: `${myPool.length} Leads`,
@@ -535,8 +549,13 @@ export default function LeadReassignmentPage() {
       for (const leadId of selectedLeadIds) {
         const lead = leads.find(l => l.id === leadId)
         const isJunk = lead?.stage === 'Junk/duplicate'
-        const updatePayload: any = { owner_id: bulkTargetCounselorId }
-        if (isJunk) updatePayload.stage = 'New'
+        const updatePayload: any = { 
+          owner_id: bulkTargetCounselorId,
+          stage: 'New',
+          last_call_outcome: null,
+          attempts: 0,
+          next_follow_up: null
+        }
         await supabase.from('leads').update(updatePayload).eq('id', leadId)
 
         await supabase.from('assignments').insert([
@@ -557,7 +576,7 @@ export default function LeadReassignmentPage() {
             type: isJunk ? 'STAGE_CHANGE' : 'assignment',
             text: isJunk
               ? `Lead revived from Junk/duplicate and bulk reassigned to ${targetName}. Stage reset to New.`
-              : `Bulk reassigned to ${targetName}.`,
+              : `Bulk reassigned to ${targetName}. Stage reset to New.`,
             time: new Date().toISOString(),
           },
         ])

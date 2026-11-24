@@ -417,14 +417,17 @@ function LeadsContent() {
   // Inline lead reassignment handler
   const handleReassignLead = async (leadId: string, newOwnerId: string) => {
     const targetOwnerId = newOwnerId || null
+    const targetLead = leads.find(l => l.id === leadId)
+    if (targetLead?.owner_id === targetOwnerId) return
+
     const targetCounselor = counselors.find(c => c.id === targetOwnerId)
     const targetName = targetCounselor ? targetCounselor.name : targetOwnerId === user?.id ? (user?.name || 'My Pool') : 'Unassigned'
 
     setReassigningId(leadId)
 
-    const targetLead = leads.find(l => l.id === leadId)
     const isJunkRevival = targetLead?.stage === 'Junk/duplicate'
-    const newStage = isJunkRevival ? 'New' : targetLead?.stage
+    // Whenever reassigned to a new counselor (due to not connected, ringing, or any reason), stage resets to New so it appears in new counselor's New Leads
+    const newStage = 'New'
 
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
@@ -433,6 +436,9 @@ function LeadsContent() {
           ...l,
           owner_id: targetOwnerId,
           stage: newStage,
+          last_call_outcome: null,
+          attempts: 0,
+          next_follow_up: null,
           owner: targetOwnerId ? { name: targetName } : null
         }
       }
@@ -440,10 +446,13 @@ function LeadsContent() {
     }))
 
     try {
-      // 1. Update lead in DB (auto-revive stage to 'New' if junk!)
-      const updatePayload: any = { owner_id: targetOwnerId }
-      if (isJunkRevival) {
-        updatePayload.stage = 'New'
+      // 1. Update lead in DB (resets stage to 'New', resets last_call_outcome and attempts for new counselor, while preserving all existing notes/metadata)
+      const updatePayload: any = { 
+        owner_id: targetOwnerId,
+        stage: newStage,
+        last_call_outcome: null,
+        attempts: 0,
+        next_follow_up: null
       }
 
       const { error } = await supabase
@@ -460,15 +469,14 @@ function LeadsContent() {
         type: isJunkRevival ? 'lead_revived' : 'reassigned',
         text: isJunkRevival
           ? `Lead revived from Junk/duplicate and reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
-          : `Lead reassigned to ${targetName} by ${user?.name || 'Leader'}`
+          : `Lead reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
       }])
 
       // 3. Insert assignment history record
       if (targetOwnerId) {
-        const currentLead = leads.find(l => l.id === leadId)
         await supabase.from('assignments').insert([{
           lead_id: leadId,
-          from_user: currentLead?.owner_id || null,
+          from_user: targetLead?.owner_id || null,
           to_user: targetOwnerId,
           assigned_by: user?.id,
           reason: isTeamLeader(user) ? 'Team Leader Reassignment' : 'Manager Reassignment',
@@ -476,7 +484,6 @@ function LeadsContent() {
         }])
 
         // 4. Send notification
-        const targetLead = leads.find(l => l.id === leadId)
         await notifyLeadAssigned({
           recipientId: targetOwnerId,
           leadId,
@@ -544,11 +551,13 @@ function LeadsContent() {
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
       if (idsToReassign.includes(l.id)) {
-        const isJunk = l.stage === 'Junk/duplicate'
         return {
           ...l,
           owner_id: targetOwnerId,
-          stage: isJunk ? 'New' : l.stage,
+          stage: 'New',
+          last_call_outcome: null,
+          attempts: 0,
+          next_follow_up: null,
           owner: targetOwnerId ? { name: targetName } : null
         }
       }
@@ -556,29 +565,20 @@ function LeadsContent() {
     }))
 
     try {
-      // 1. Separate regular leads and junk leads needing revival
-      const junkIds = idsToReassign.filter(id => {
-        const l = leads.find(lead => lead.id === id)
-        return l?.stage === 'Junk/duplicate'
-      })
-      const nonJunkIds = idsToReassign.filter(id => !junkIds.includes(id))
+      // 1. Reassign leads in DB: stage resets to 'New', attempts to 0, last_call_outcome to null for the new counselor
+      // Existing notes/metadata remain completely untouched and preserved!
+      const { error } = await supabase
+        .from('leads')
+        .update({ 
+          owner_id: targetOwnerId,
+          stage: 'New',
+          last_call_outcome: null,
+          attempts: 0,
+          next_follow_up: null
+        })
+        .in('id', idsToReassign)
 
-      if (nonJunkIds.length > 0) {
-        const { error } = await supabase
-          .from('leads')
-          .update({ owner_id: targetOwnerId })
-          .in('id', nonJunkIds)
-        if (error) throw error
-      }
-
-      if (junkIds.length > 0) {
-        // Auto-revive stage to 'New' when moving from Junk!
-        const { error } = await supabase
-          .from('leads')
-          .update({ owner_id: targetOwnerId, stage: 'New' })
-          .in('id', junkIds)
-        if (error) throw error
-      }
+      if (error) throw error
 
       // 2. Audit entries for assignments and activities
       const assignmentInserts = idsToReassign.map(leadId => {
@@ -603,7 +603,7 @@ function LeadsContent() {
           type: isJunkRevival ? 'lead_revived' : 'reassigned',
           text: isJunkRevival
             ? `Lead revived from Junk/duplicate and reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
-            : `Bulk reassigned to ${targetName} by ${user?.name || 'Leader'}`
+            : `Bulk reassigned to ${targetName} by ${user?.name || 'Leader'}. Stage reset to New.`
         }
       })
       await supabase.from('activities').insert(activityInserts)

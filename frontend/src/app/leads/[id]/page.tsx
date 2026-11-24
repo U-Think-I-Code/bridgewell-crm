@@ -1007,7 +1007,8 @@ export default function LeadProfile() {
     setSavingAction(true)
 
     const isJunkRevival = lead.stage === 'Junk/duplicate'
-    const newStage = isJunkRevival ? 'New' : lead.stage
+    // Whenever reassigned to a new counselor (due to not connected, ringing, or any reason), stage resets to New so it appears in new counselor's New Leads
+    const newStage = 'New'
     
     await supabase.from('assignments').insert([
       { lead_id: id, from_user: lead.owner_id, to_user: counselorId, assigned_by: currentUser.id, reason, time: new Date().toISOString() }
@@ -1015,7 +1016,7 @@ export default function LeadProfile() {
 
     const activityText = isJunkRevival
       ? `Lead revived from Junk/duplicate and assigned to ${counselorName}. Stage reset to New. ${reason ? `Reason: ${reason}` : ''}`
-      : `Assigned to ${counselorName}. ${reason ? `Reason: ${reason}` : ''}`
+      : `Assigned to ${counselorName}. Stage reset to New. ${reason ? `Reason: ${reason}` : ''}`
 
     await supabase.from('activities').insert([
       { 
@@ -1037,9 +1038,14 @@ export default function LeadProfile() {
       summary: activityText
     })
 
-    const updatePayload: any = { owner_id: counselorId }
-    if (isJunkRevival) {
-      updatePayload.stage = 'New'
+    // Resets stage to 'New', resets last_call_outcome and attempts for the new counselor
+    // Note: metadata and student_profile/notes are completely preserved and untouched!
+    const updatePayload: any = { 
+      owner_id: counselorId,
+      stage: 'New',
+      last_call_outcome: null,
+      attempts: 0,
+      next_follow_up: null
     }
     
     await supabase.from('leads').update(updatePayload).eq('id', id)
@@ -1055,7 +1061,10 @@ export default function LeadProfile() {
     setLead((prev: any) => ({
       ...prev,
       owner_id: counselorId,
-      stage: newStage,
+      stage: 'New',
+      last_call_outcome: null,
+      attempts: 0,
+      next_follow_up: null,
       owner: { name: counselorName }
     }))
 
