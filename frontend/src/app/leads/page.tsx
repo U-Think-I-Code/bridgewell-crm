@@ -4,6 +4,7 @@ import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers, Clock, AlertTriangle } from 'lucide-react'
 import { formatLastCall } from '@/lib/lastCallHelper'
+import { formatAssignedDate } from '@/lib/assignedDateHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl, copyPhoneToClipboard, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
 import { useCallHippoLine } from '@/lib/dialer'
@@ -426,6 +427,7 @@ function LeadsContent() {
     setReassigningId(leadId)
 
     const isJunkRevival = targetLead?.stage === 'Junk/duplicate'
+    const nowIso = new Date().toISOString()
     // Whenever reassigned to a new counselor (due to not connected, ringing, or any reason), stage resets to New so it appears in new counselor's New Leads
     const newStage = 'New'
 
@@ -439,20 +441,30 @@ function LeadsContent() {
           last_call_outcome: null,
           attempts: 0,
           next_follow_up: null,
-          owner: targetOwnerId ? { name: targetName } : null
+          owner: targetOwnerId ? { name: targetName } : null,
+          metadata: {
+            ...(l.metadata || {}),
+            assigned_at: targetOwnerId ? nowIso : null,
+            assigned_by: user?.name || 'Leader'
+          }
         }
       }
       return l
     }))
 
     try {
-      // 1. Update lead in DB (resets stage to 'New', resets last_call_outcome and attempts for new counselor, while preserving all existing notes/metadata)
+      // 1. Update lead in DB (resets stage to 'New', resets last_call_outcome and attempts, stamps assigned_at, while preserving all existing notes)
       const updatePayload: any = { 
         owner_id: targetOwnerId,
         stage: newStage,
         last_call_outcome: null,
         attempts: 0,
-        next_follow_up: null
+        next_follow_up: null,
+        metadata: {
+          ...(targetLead?.metadata || {}),
+          assigned_at: targetOwnerId ? nowIso : null,
+          assigned_by: user?.name || 'Leader'
+        }
       }
 
       const { error } = await supabase
@@ -548,6 +560,8 @@ function LeadsContent() {
 
     setBulkProcessing(true)
 
+    const nowIso = new Date().toISOString()
+
     // Optimistic UI update
     setLeads(prev => prev.map(l => {
       if (idsToReassign.includes(l.id)) {
@@ -558,27 +572,38 @@ function LeadsContent() {
           last_call_outcome: null,
           attempts: 0,
           next_follow_up: null,
-          owner: targetOwnerId ? { name: targetName } : null
+          owner: targetOwnerId ? { name: targetName } : null,
+          metadata: {
+            ...(l.metadata || {}),
+            assigned_at: targetOwnerId ? nowIso : null,
+            assigned_by: user?.name || 'Leader'
+          }
         }
       }
       return l
     }))
 
     try {
-      // 1. Reassign leads in DB: stage resets to 'New', attempts to 0, last_call_outcome to null for the new counselor
-      // Existing notes/metadata remain completely untouched and preserved!
-      const { error } = await supabase
-        .from('leads')
-        .update({ 
-          owner_id: targetOwnerId,
-          stage: 'New',
-          last_call_outcome: null,
-          attempts: 0,
-          next_follow_up: null
-        })
-        .in('id', idsToReassign)
-
-      if (error) throw error
+      // 1. Reassign leads in DB: stage resets to 'New', attempts to 0, last_call_outcome to null, stamps assigned_at
+      // Existing notes remain completely preserved!
+      for (const leadId of idsToReassign) {
+        const currentLead = leads.find(l => l.id === leadId)
+        await supabase
+          .from('leads')
+          .update({ 
+            owner_id: targetOwnerId,
+            stage: 'New',
+            last_call_outcome: null,
+            attempts: 0,
+            next_follow_up: null,
+            metadata: {
+              ...(currentLead?.metadata || {}),
+              assigned_at: targetOwnerId ? nowIso : null,
+              assigned_by: user?.name || 'Leader'
+            }
+          })
+          .eq('id', leadId)
+      }
 
       // 2. Audit entries for assignments and activities
       const assignmentInserts = idsToReassign.map(leadId => {
@@ -2234,6 +2259,19 @@ function LeadsContent() {
                               via {lead.source}
                             </span>
                           )}
+                          {/* Assigned Date Chip */}
+                          {(() => {
+                            const assignInfo = formatAssignedDate(lead)
+                            if (!assignInfo.hasAssigned || !lead.owner_id) return null
+                            return (
+                              <span 
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs"
+                                title={assignInfo.fullTooltip}
+                              >
+                                <span>📅 Assigned: {assignInfo.formatted}</span>
+                              </span>
+                            )
+                          })()}
                           {lead.next_follow_up && (() => {
                             const dual = formatDualTime(lead.next_follow_up, lead.phone, lead.country)
                             return (
@@ -2478,6 +2516,21 @@ function LeadsContent() {
                           </span>
                         )
                       )}
+
+                      {/* Assigned Date & Time */}
+                      {(() => {
+                        const assignInfo = formatAssignedDate(lead)
+                        if (!assignInfo.hasAssigned || !lead.owner_id) return null
+                        return (
+                          <div 
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-700 mt-1"
+                            title={assignInfo.fullTooltip}
+                          >
+                            <Calendar size={10} className="text-indigo-500 shrink-0" />
+                            <span>Assigned: <strong>{assignInfo.formatted}</strong></span>
+                          </div>
+                        )
+                      })()}
                     </td>
 
                     {/* Stage Name Column (Interactive Inline Dropdown) */}
@@ -2507,7 +2560,18 @@ function LeadsContent() {
                         </select>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">{new Date(lead.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-gray-500 text-xs">
+                      <div>Added: {new Date(lead.created_at).toLocaleDateString()}</div>
+                      {(() => {
+                        const assignInfo = formatAssignedDate(lead)
+                        if (!assignInfo.hasAssigned || !lead.owner_id) return null
+                        return (
+                          <div className="text-[10px] text-indigo-600 font-semibold mt-0.5" title={assignInfo.fullTooltip}>
+                            Assigned: {assignInfo.formatted}
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <Link href={`/leads/${lead.id}`} className="text-gray-400 hover:text-black opacity-0 group-hover:opacity-100 transition-all inline-flex items-center gap-1 text-xs font-medium">
                         View <ArrowRight size={14} />

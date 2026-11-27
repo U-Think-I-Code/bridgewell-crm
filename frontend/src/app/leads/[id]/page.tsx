@@ -2,7 +2,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones, Send, AlertCircle, ExternalLink, Key, Lock, Settings2 } from 'lucide-react'
+import { Phone, MessageCircle, Trash2, Copy, ArrowLeft, Clock, History, FileText, CheckCircle, CheckCircle2, Check, UserPlus, PhoneOff, PhoneCall, PhoneForwarded, XCircle, Mail, X, ClipboardList, ArrowRight, Calendar, GraduationCap, Sparkles, Save, ChevronDown, ChevronUp, Edit3, AlertTriangle, Headphones, Send, AlertCircle, ExternalLink, Key, Lock, Settings2, UserCheck } from 'lucide-react'
+import { formatAssignedDate } from '@/lib/assignedDateHelper'
 import { useAuth } from '@/components/AuthWrapper'
 import { notifyLeadAssigned, notifyHotLead, notifyLeadEnrolled } from '@/lib/notifications'
 import { calculateAutoFollowUp, toLocalDatetimeString } from '@/lib/followupRules'
@@ -1038,14 +1039,22 @@ export default function LeadProfile() {
       summary: activityText
     })
 
+    const nowIso = new Date().toISOString()
     // Resets stage to 'New', resets last_call_outcome and attempts for the new counselor
-    // Note: metadata and student_profile/notes are completely preserved and untouched!
+    // Stamps exact assignment date/time so counselor knows exactly when lead was given to them!
     const updatePayload: any = { 
       owner_id: counselorId,
       stage: 'New',
       last_call_outcome: null,
       attempts: 0,
-      next_follow_up: null
+      next_follow_up: null,
+      metadata: {
+        ...(lead?.metadata || {}),
+        assigned_at: nowIso,
+        assigned_by: currentUser?.name || 'Manager',
+        assigned_to_name: counselorName,
+        assignment_reason: reason || undefined
+      }
     }
     
     await supabase.from('leads').update(updatePayload).eq('id', id)
@@ -1065,7 +1074,14 @@ export default function LeadProfile() {
       last_call_outcome: null,
       attempts: 0,
       next_follow_up: null,
-      owner: { name: counselorName }
+      owner: { name: counselorName },
+      metadata: {
+        ...(prev?.metadata || {}),
+        assigned_at: nowIso,
+        assigned_by: currentUser?.name || 'Manager',
+        assigned_to_name: counselorName,
+        assignment_reason: reason || undefined
+      }
     }))
 
     fetchLeadAndActivities()
@@ -1817,6 +1833,20 @@ export default function LeadProfile() {
 
             <div className="text-gray-400 text-xs flex items-center gap-1.5 font-normal pt-0.5 flex-wrap">
               <span className="flex items-center gap-1"><Clock size={12} /> Added {new Date(lead.created_at).toLocaleDateString()}</span>
+              {/* Assigned Date Badge */}
+              {(() => {
+                const assignInfo = formatAssignedDate(lead)
+                if (!assignInfo.hasAssigned || !lead.owner_id) return null
+                return (
+                  <span 
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs"
+                    title={assignInfo.fullTooltip}
+                  >
+                    <UserCheck size={11} className="text-indigo-600 shrink-0" />
+                    <span>Assigned: <strong>{assignInfo.formatted}</strong> <span className="text-[10px] text-indigo-600 font-normal">({assignInfo.relative})</span></span>
+                  </span>
+                )
+              })()}
               {(lead.country || lead.phone) && formatCountryBadge(lead.country, lead.phone) && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
                   {formatCountryBadge(lead.country, lead.phone)} Ad
@@ -1953,6 +1983,18 @@ export default function LeadProfile() {
                   <span className="truncate">{lead.owner?.name || 'Unassigned'}</span>
                 </div>
               )}
+
+              {/* Exact Assignment Date & Time Pill */}
+              {(() => {
+                const assignInfo = formatAssignedDate(lead)
+                if (!assignInfo.hasAssigned || !lead.owner_id) return null
+                return (
+                  <div className="flex items-center gap-1.5 text-[11px] text-indigo-700 font-medium mt-1.5 px-2.5 py-1 bg-indigo-50/80 border border-indigo-200/70 rounded-lg shadow-2xs" title={assignInfo.fullTooltip}>
+                    <Calendar size={12} className="text-indigo-600 shrink-0" />
+                    <span>Assigned: <strong className="font-bold text-indigo-950">{assignInfo.formatted}</strong> <span className="text-[10px] text-indigo-600 font-normal">({assignInfo.relative})</span></span>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 

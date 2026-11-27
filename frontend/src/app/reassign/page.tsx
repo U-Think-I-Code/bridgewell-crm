@@ -15,6 +15,7 @@ import { notifyLeadAssigned } from '@/lib/notifications'
 import { formatCountryBadge, matchesCountryFilter, matchesProgrammeFilter, getLeadEffectiveCountry, getCountryFlag } from '@/lib/countryHelper'
 import { canManageLeads, isManager, isTeamLeader, getAssignableCounselors, getAllowedOwnerIds } from '@/lib/teamHelper'
 import { getLeadServiceType, getServiceBadgeInfo, ServiceTrack } from '@/lib/leadTypeHelper'
+import { formatAssignedDate } from '@/lib/assignedDateHelper'
 
 interface Counselor {
   id: string
@@ -329,12 +330,19 @@ export default function LeadReassignmentPage() {
     try {
       // 1. Update Lead table: stage resets to 'New', attempts to 0, last_call_outcome to null for the new counselor
       // Existing metadata and notes are completely preserved and untouched!
+      const nowIso = new Date().toISOString()
       const updatePayload: any = { 
         owner_id: newOwnerId,
         stage: 'New',
         last_call_outcome: null,
         attempts: 0,
-        next_follow_up: null
+        next_follow_up: null,
+        metadata: {
+          ...(lead.metadata || {}),
+          assigned_at: newOwnerId ? nowIso : null,
+          assigned_by: user?.name || user?.email || 'Leader',
+          assigned_to_name: targetName
+        }
       }
       await supabase.from('leads').update(updatePayload).eq('id', lead.id)
 
@@ -406,12 +414,19 @@ export default function LeadReassignmentPage() {
           const lead = unassignedList[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
+          const nowIso = new Date().toISOString()
           const updatePayload: any = { 
             owner_id: targetCounselor.id,
             stage: 'New',
             last_call_outcome: null,
             attempts: 0,
-            next_follow_up: null
+            next_follow_up: null,
+            metadata: {
+              ...(lead.metadata || {}),
+              assigned_at: nowIso,
+              assigned_by: user?.name || user?.email || 'Manager Auto-Distributed',
+              assigned_to_name: targetCounselor.name
+            }
           }
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
@@ -479,12 +494,19 @@ export default function LeadReassignmentPage() {
           const lead = myPool[i]
           const targetCounselor = counselors[i % counselors.length]
           const isJunk = lead.stage === 'Junk/duplicate'
+          const nowIso = new Date().toISOString()
           const updatePayload: any = { 
             owner_id: targetCounselor.id,
             stage: 'New',
             last_call_outcome: null,
             attempts: 0,
-            next_follow_up: null
+            next_follow_up: null,
+            metadata: {
+              ...(lead.metadata || {}),
+              assigned_at: nowIso,
+              assigned_by: user?.name || user?.email || 'Team Leader Auto-Distributed',
+              assigned_to_name: targetCounselor.name
+            }
           }
 
           await supabase.from('leads').update(updatePayload).eq('id', lead.id)
@@ -549,12 +571,19 @@ export default function LeadReassignmentPage() {
       for (const leadId of selectedLeadIds) {
         const lead = leads.find(l => l.id === leadId)
         const isJunk = lead?.stage === 'Junk/duplicate'
+        const nowIso = new Date().toISOString()
         const updatePayload: any = { 
           owner_id: bulkTargetCounselorId,
           stage: 'New',
           last_call_outcome: null,
           attempts: 0,
-          next_follow_up: null
+          next_follow_up: null,
+          metadata: {
+            ...(lead?.metadata || {}),
+            assigned_at: nowIso,
+            assigned_by: user?.name || user?.email || 'Leader',
+            assigned_to_name: targetName
+          }
         }
         await supabase.from('leads').update(updatePayload).eq('id', leadId)
 
@@ -1393,6 +1422,7 @@ export default function LeadReassignmentPage() {
     const isBeingDragged = draggedLeadId === lead.id
     const sType = getLeadServiceType(lead)
     const sInfo = getServiceBadgeInfo(sType)
+    const assignedInfo = formatAssignedDate(lead)
     const formattedDate = lead.created_at
       ? new Date(lead.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
       : null
@@ -1489,23 +1519,31 @@ export default function LeadReassignmentPage() {
         )}
 
         {/* Footer: Stage + Date + Action Link */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px]">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px] gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            <span className="font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded shrink-0">
               {lead.stage}
             </span>
-            {formattedDate && (
-              <span className="text-[10px] text-gray-400 font-medium flex items-center gap-0.5">
+            {assignedInfo ? (
+              <span
+                className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded font-semibold flex items-center gap-1 truncate"
+                title={`Assigned to counselor on: ${assignedInfo.fullDateTime}`}
+              >
+                <Calendar size={10} className="text-emerald-600 shrink-0" />
+                <span className="truncate">Assigned {assignedInfo.formatted}</span>
+              </span>
+            ) : formattedDate ? (
+              <span className="text-[10px] text-gray-400 font-medium flex items-center gap-0.5 shrink-0" title={`Added: ${formattedDate}`}>
                 <Calendar size={10} />
                 {formattedDate}
               </span>
-            )}
+            ) : null}
           </div>
 
           <Link
             href={`/leads/${lead.id}`}
             onClick={e => e.stopPropagation()}
-            className="text-gray-400 hover:text-black inline-flex items-center gap-0.5 font-medium hover:underline"
+            className="text-gray-400 hover:text-black inline-flex items-center gap-0.5 font-medium hover:underline shrink-0"
           >
             Profile <ExternalLink size={10} />
           </Link>
