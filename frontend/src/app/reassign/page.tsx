@@ -206,7 +206,18 @@ export default function LeadReassignmentPage() {
       // Date Filter
       if (!matchesDateFilter(l.created_at)) return false
 
-      if (selectedStage !== 'all' && l.stage !== selectedStage) return false
+      if (selectedStage !== 'all') {
+        const leadStage = l.stage || 'New'
+        if (selectedStage === 'Connect 1' || selectedStage === 'Connected 1') {
+          if (leadStage !== 'Connect 1' && leadStage !== 'Connected 1' && leadStage !== 'Connected') return false
+        } else if (selectedStage === 'Connect 2' || selectedStage === 'Connected 2') {
+          if (leadStage !== 'Connect 2' && leadStage !== 'Connected 2') return false
+        } else if (selectedStage === 'Connect 3' || selectedStage === 'Connected 3') {
+          if (leadStage !== 'Connect 3' && leadStage !== 'Connected 3') return false
+        } else if (leadStage !== selectedStage) {
+          return false
+        }
+      }
       if (selectedPriority !== 'all' && l.priority !== selectedPriority) return false
       if (selectedCountry !== 'all') {
         if (!matchesCountryFilter(l, selectedCountry)) return false

@@ -749,8 +749,14 @@ export default function LeadProfile() {
         stageUpdates.stage = 'Ringing'
       } else if ((outcome === 'Callback' || outcome === 'Call back') && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing')) {
         stageUpdates.stage = 'Call back'
-      } else if (outcome === 'Connected' && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back')) {
-        stageUpdates.stage = 'Connected'
+      } else if (outcome === 'Connected') {
+        if (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back' || lead.stage === 'Connected') {
+          stageUpdates.stage = 'Connect 1'
+        } else if (lead.stage === 'Connect 1' || lead.stage === 'Connected 1') {
+          stageUpdates.stage = 'Connect 2'
+        } else if (lead.stage === 'Connect 2' || lead.stage === 'Connected 2') {
+          stageUpdates.stage = 'Connect 3'
+        }
       }
 
       await supabase
@@ -820,7 +826,15 @@ export default function LeadProfile() {
 
     // Direct synchronization: Call Outcome directly drives Stage so counselors don't have to select both!
     let targetStage = lead.stage
-    if (outcome === 'Connected') targetStage = 'Connected'
+    if (outcome === 'Connected') {
+      if (!lead.stage || lead.stage === 'New' || lead.stage === 'Attempted contact' || lead.stage === 'Ringing' || lead.stage === 'Not connected' || lead.stage === 'Call back' || lead.stage === 'Connected') {
+        targetStage = 'Connect 1'
+      } else if (lead.stage === 'Connect 1' || lead.stage === 'Connected 1') {
+        targetStage = 'Connect 2'
+      } else if (lead.stage === 'Connect 2' || lead.stage === 'Connected 2') {
+        targetStage = 'Connect 3'
+      }
+    }
     else if (outcome === 'Ringing') targetStage = 'Ringing'
     else if (outcome === 'Call back' || outcome === 'Callback') targetStage = 'Call back'
     else if (outcome === 'Not Connected' || outcome === 'Not connected') targetStage = 'Not connected'

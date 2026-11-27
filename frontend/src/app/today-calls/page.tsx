@@ -315,7 +315,15 @@ function TodayCallsContent() {
 
       if (selectedStage !== 'ALL') {
         const rowStage = r.leadStage || 'New'
-        if (rowStage !== selectedStage) return false
+        if (selectedStage === 'Connect 1' || selectedStage === 'Connected 1') {
+          if (rowStage !== 'Connect 1' && rowStage !== 'Connected 1' && rowStage !== 'Connected') return false
+        } else if (selectedStage === 'Connect 2' || selectedStage === 'Connected 2') {
+          if (rowStage !== 'Connect 2' && rowStage !== 'Connected 2') return false
+        } else if (selectedStage === 'Connect 3' || selectedStage === 'Connected 3') {
+          if (rowStage !== 'Connect 3' && rowStage !== 'Connected 3') return false
+        } else if (rowStage !== selectedStage) {
+          return false
+        }
       }
 
       if (serviceFilter !== 'all') {
@@ -391,7 +399,7 @@ function TodayCallsContent() {
     if (s === 'ringing' || s === 'attempted contact') return 'bg-amber-50 text-amber-800 border-amber-200 font-semibold'
     if (s === 'call back' || s === 'callback') return 'bg-purple-50 text-purple-800 border-purple-200 font-semibold'
     if (s === 'not connected') return 'bg-orange-50 text-orange-800 border-orange-200 font-semibold'
-    if (s === 'connected') return 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+    if (s.startsWith('connect')) return 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
     if (s === 'qualified') return 'bg-teal-50 text-teal-800 border-teal-200'
     if (s === 'enrolled') return 'bg-green-100 text-green-900 border-green-300 font-bold'
     return 'bg-gray-100 text-gray-700 border-gray-200'

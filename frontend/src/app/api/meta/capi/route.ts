@@ -53,6 +53,12 @@ export async function POST(request: NextRequest) {
 
       switch (stage) {
         case 'Connected':
+        case 'Connect 1':
+        case 'Connected 1':
+        case 'Connect 2':
+        case 'Connected 2':
+        case 'Connect 3':
+        case 'Connected 3':
           eventName = 'Contact' // Meta standard event for call/contact established
           break
         case 'Call back':

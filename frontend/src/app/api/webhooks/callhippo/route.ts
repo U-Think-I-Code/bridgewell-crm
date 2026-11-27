@@ -368,8 +368,14 @@ export async function POST(request: NextRequest) {
       updatePayload.stage = 'Ringing'
     } else if ((outcome === 'Callback' || outcome === 'Call back') && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing')) {
       updatePayload.stage = 'Call back'
-    } else if (outcome === 'Connected' && durationSeconds > 0 && (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing' || matchedLead.stage === 'Call back')) {
-      updatePayload.stage = 'Connected'
+    } else if (outcome === 'Connected' && durationSeconds > 0) {
+      if (!matchedLead.stage || matchedLead.stage === 'New' || matchedLead.stage === 'Attempted contact' || matchedLead.stage === 'Ringing' || matchedLead.stage === 'Not connected' || matchedLead.stage === 'Call back' || matchedLead.stage === 'Connected') {
+        updatePayload.stage = 'Connect 1'
+      } else if (matchedLead.stage === 'Connect 1' || matchedLead.stage === 'Connected 1') {
+        updatePayload.stage = 'Connect 2'
+      } else if (matchedLead.stage === 'Connect 2' || matchedLead.stage === 'Connected 2') {
+        updatePayload.stage = 'Connect 3'
+      }
     }
 
     // CRITICAL: Priority is strictly preserved and NEVER automatically forced to 'Warm'.

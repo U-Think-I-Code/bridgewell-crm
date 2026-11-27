@@ -19,7 +19,7 @@ import { canManageLeads, isCounselor, isTeamLeader, isManager, parseUserTeamMeta
 import { notifyLeadAssigned } from '@/lib/notifications'
 
 const DEFAULT_STAGES = [
-  'New', 'Ringing', 'Call back', 'Not connected', 'Connected', 'Qualified',
+  'New', 'Ringing', 'Call back', 'Not connected', 'Connect 1', 'Connect 2', 'Connect 3', 'Qualified',
   'Counselling done', 'Documents in progress', 'Application submitted',
   'Offer received', 'Enrolled', 'Future prospect', 'Not reachable', 'Not interested', 'Lost', 'Junk/duplicate'
 ]
@@ -30,7 +30,13 @@ const getStageEmoji = (s: string) => {
     case 'Ringing': return '🔔'
     case 'Call back': return '📞'
     case 'Not connected': return '📵'
+    case 'Connect 1':
+    case 'Connected 1':
     case 'Connected': return '🟢'
+    case 'Connect 2':
+    case 'Connected 2': return '🟢'
+    case 'Connect 3':
+    case 'Connected 3': return '🟢'
     case 'Qualified': return '🎯'
     case 'Counselling done': return '🗣️'
     case 'Documents in progress': return '📁'
@@ -796,7 +802,7 @@ function LeadsContent() {
     if (s === 'ringing' || s === 'attempted contact') return 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80 font-semibold'
     if (s === 'call back' || s === 'callback') return 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/80 font-semibold'
     if (s === 'not connected') return 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100/80 font-semibold'
-    if (s === 'connected') return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80 font-semibold'
+    if (s.startsWith('connect')) return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80 font-semibold'
     if (s === 'qualified') return 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100/80'
     if (s === 'counselling done') return 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/80'
     if (s === 'documents in progress') return 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/80'
@@ -902,6 +908,13 @@ function LeadsContent() {
     for (let i = 0; i < counselorFilteredAllLeads.length; i++) {
       const s = counselorFilteredAllLeads[i].stage || 'New'
       counts[s] = (counts[s] || 0) + 1
+      if (s === 'Connected' || s === 'Connected 1') {
+        counts['Connect 1'] = (counts['Connect 1'] || 0) + 1
+      } else if (s === 'Connected 2') {
+        counts['Connect 2'] = (counts['Connect 2'] || 0) + 1
+      } else if (s === 'Connected 3') {
+        counts['Connect 3'] = (counts['Connect 3'] || 0) + 1
+      }
     }
     return counts
   }, [counselorFilteredAllLeads])
@@ -1027,7 +1040,15 @@ function LeadsContent() {
 
       if (selectedStage !== 'ALL') {
         const leadStage = l.stage || 'New'
-        if (leadStage !== selectedStage) return false
+        if (selectedStage === 'Connect 1' || selectedStage === 'Connected 1') {
+          if (leadStage !== 'Connect 1' && leadStage !== 'Connected 1' && leadStage !== 'Connected') return false
+        } else if (selectedStage === 'Connect 2' || selectedStage === 'Connected 2') {
+          if (leadStage !== 'Connect 2' && leadStage !== 'Connected 2') return false
+        } else if (selectedStage === 'Connect 3' || selectedStage === 'Connected 3') {
+          if (leadStage !== 'Connect 3' && leadStage !== 'Connected 3') return false
+        } else if (leadStage !== selectedStage) {
+          return false
+        }
       }
 
       if (selectedCountry !== 'ALL') {
