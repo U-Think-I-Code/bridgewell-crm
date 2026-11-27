@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef, Suspense } from 'react'
 import { formatDualTime } from '@/lib/timezoneHelper'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers, Clock } from 'lucide-react'
+import { Plus, Search, Filter, LayoutList, Kanban, Users, ArrowRight, Upload, Flame, SunMedium, Snowflake, Phone, PhoneCall, PhoneOff, XCircle, PhoneForwarded, ArrowLeftRight, GraduationCap, Globe, Calendar, Check, CheckSquare, Trash2, Sparkles, Layers, Clock, AlertTriangle } from 'lucide-react'
 import { formatLastCall } from '@/lib/lastCallHelper'
 import { openCallHippoDialer, getCallHippoDialerUrl, copyPhoneToClipboard, CallHippoLine } from '@/lib/callhippo'
 import { cleanPhoneE164 } from '@/lib/phoneHelper'
@@ -2309,6 +2309,17 @@ function LeadsContent() {
                                 🇺🇸 USA
                               </button>
                             </div>
+
+                            {/* Prominent High Call Count Warning Pill beside phone */}
+                            {(lead.attempts || 0) >= 3 && (
+                              <span 
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs animate-pulse"
+                                title={`⚠️ Already called ${lead.attempts} times! Avoid repeated calling.`}
+                              >
+                                <AlertTriangle size={9} className="text-rose-600" />
+                                <span>{lead.attempts}x calls</span>
+                              </span>
+                            )}
                           </div>
                         )
                       })()}
@@ -2321,46 +2332,83 @@ function LeadsContent() {
                         return (
                           <Link href={`/leads/${lead.id}`} className="group block" title={callInfo.fullTooltip}>
                             <div className="flex flex-col gap-1 items-start">
-                              {lead.last_call_outcome === 'Connected' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-emerald-100 transition-colors shadow-2xs">
-                                  <PhoneCall size={12} className="text-emerald-600" />
-                                  <span>Connected</span>
-                                </span>
-                              ) : lead.last_call_outcome === 'Ringing' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
-                                  <span>🔔 Ringing</span>
-                                </span>
-                              ) : (lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback') ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 group-hover:bg-purple-100 transition-colors shadow-2xs">
-                                  <PhoneCall size={12} className="text-purple-600" />
-                                  <span>Call Back</span>
-                                </span>
-                              ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 group-hover:bg-orange-100 transition-colors shadow-2xs">
-                                  <PhoneOff size={12} className="text-orange-600" />
-                                  <span>Not Connected</span>
-                                </span>
-                              ) : lead.last_call_outcome === 'No Answer' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 group-hover:bg-rose-100 transition-colors shadow-2xs">
-                                  <PhoneOff size={12} className="text-rose-600" />
-                                  <span>No Answer</span>
-                                </span>
-                              ) : lead.last_call_outcome === 'Busy' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
-                                  <XCircle size={12} className="text-amber-600" />
-                                  <span>Busy</span>
-                                </span>
-                              ) : lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200 group-hover:bg-gray-200 transition-colors shadow-2xs">
-                                  <PhoneForwarded size={12} className="text-gray-500" />
-                                  <span>Wrong Num</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 group-hover:bg-blue-100 transition-colors shadow-2xs" title="Pending Call — Counselor has not dialed yet">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                  <span>Pending Call</span>
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {lead.last_call_outcome === 'Connected' ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-emerald-100 transition-colors shadow-2xs">
+                                    <PhoneCall size={12} className="text-emerald-600" />
+                                    <span>Connected</span>
+                                  </span>
+                                ) : lead.last_call_outcome === 'Ringing' ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
+                                    <span>🔔 Ringing</span>
+                                  </span>
+                                ) : (lead.last_call_outcome === 'Call back' || lead.last_call_outcome === 'Callback') ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 group-hover:bg-purple-100 transition-colors shadow-2xs">
+                                    <PhoneCall size={12} className="text-purple-600" />
+                                    <span>Call Back</span>
+                                  </span>
+                                ) : (lead.last_call_outcome === 'Not Connected' || lead.last_call_outcome === 'Not connected') ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 group-hover:bg-orange-100 transition-colors shadow-2xs">
+                                    <PhoneOff size={12} className="text-orange-600" />
+                                    <span>Not Connected</span>
+                                  </span>
+                                ) : lead.last_call_outcome === 'No Answer' ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 group-hover:bg-rose-100 transition-colors shadow-2xs">
+                                    <PhoneOff size={12} className="text-rose-600" />
+                                    <span>No Answer</span>
+                                  </span>
+                                ) : lead.last_call_outcome === 'Busy' ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors shadow-2xs">
+                                    <XCircle size={12} className="text-amber-600" />
+                                    <span>Busy</span>
+                                  </span>
+                                ) : lead.last_call_outcome === 'Wrong Num' || lead.last_call_outcome === 'Wrong Number' ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200 group-hover:bg-gray-200 transition-colors shadow-2xs">
+                                    <PhoneForwarded size={12} className="text-gray-500" />
+                                    <span>Wrong Num</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 group-hover:bg-blue-100 transition-colors shadow-2xs" title="Pending Call — Counselor has not dialed yet">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                    <span>Pending Call</span>
+                                  </span>
+                                )}
+
+                                {/* Call Count Badge */}
+                                {(() => {
+                                  const attempts = lead.attempts || 0
+                                  if (attempts === 0) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-500 border border-gray-200" title="Total calls: 0 (Not called yet)">
+                                        <Phone size={9} className="text-gray-400" />
+                                        <span>0 calls</span>
+                                      </span>
+                                    )
+                                  }
+                                  if (attempts === 1) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title="Called 1 time">
+                                        <PhoneCall size={9} className="text-blue-500" />
+                                        <span>1 call</span>
+                                      </span>
+                                    )
+                                  }
+                                  if (attempts <= 3) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={`Called ${attempts} times`}>
+                                        <PhoneForwarded size={9} className="text-amber-600" />
+                                        <span>{attempts} calls</span>
+                                      </span>
+                                    )
+                                  }
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs" title={`⚠️ Warning: Already called ${attempts} times! Avoid repeated calling.`}>
+                                      <AlertTriangle size={9} className="text-rose-600" />
+                                      <span>⚠️ {attempts} calls</span>
+                                    </span>
+                                  )
+                                })()}
+                              </div>
 
                               {callInfo.hasCall ? (
                                 <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-600 group-hover:text-blue-600 transition-colors">

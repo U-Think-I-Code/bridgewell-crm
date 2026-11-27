@@ -263,10 +263,7 @@ export default function RemindersPage() {
     setSavingAction(true)
 
     const nextFollowUpIso = customNextDate ? new Date(customNextDate).toISOString() : null
-    const isUnanswered = ['No Answer', 'Busy'].includes(callOutcome)
-    const newAttempts = isUnanswered
-      ? (selectedLeadForCall.attempts || 0) + 1
-      : selectedLeadForCall.attempts || 0
+    const newAttempts = (selectedLeadForCall.attempts || 0) + 1
 
     // 1. Log Call Activity
     await supabase.from('activities').insert([

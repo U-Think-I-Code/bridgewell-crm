@@ -311,8 +311,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Update Lead stats (attempts, last_call_outcome, metadata)
-    const isUnanswered = ['No Answer', 'Busy'].includes(outcome)
-    const newAttempts = isUnanswered ? (matchingLead.attempts || 0) + 1 : matchingLead.attempts
+    const newAttempts = (matchingLead.attempts || 0) + 1
 
     const currentMetadata = matchingLead.metadata || {}
     const updatedMetadata = {

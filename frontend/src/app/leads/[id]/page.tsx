@@ -740,8 +740,8 @@ export default function LeadProfile() {
         ])
       }
 
-      const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
-      const newAttempts = isUnanswered ? (lead?.attempts || 0) + 1 : (lead?.attempts || 0)
+      // Every call attempt increments total attempts
+      const newAttempts = (lead?.attempts || 0) + 1
 
       const stageUpdates: Record<string, any> = {}
       if ((outcome === 'Ringing' || outcome === 'No Answer') && (!lead?.stage || lead.stage === 'New' || lead.stage === 'Attempted contact')) {
@@ -775,8 +775,8 @@ export default function LeadProfile() {
 
   const logCallOutcome = async (outcome: string) => {
     setSavingAction(true)
-    const isUnanswered = ['No Answer', 'Busy', 'Ringing', 'Not Connected', 'Not connected'].includes(outcome)
-    const newAttempts = isUnanswered ? (lead.attempts || 0) + 1 : lead.attempts
+    // Every logged call increments total attempts
+    const newAttempts = (lead.attempts || 0) + 1
 
     const actId = activeCallActIdRef.current
     const callText = note 
@@ -1731,6 +1731,65 @@ export default function LeadProfile() {
                 )
               })()}
 
+              {/* Call Count Badge (Prominently shows how many times this lead was called so counselors don't call repeatedly) */}
+              {(() => {
+                const callActivities = activities.filter(a => a.type === 'call')
+                const totalCalls = Math.max(callActivities.length, lead?.attempts || 0)
+
+                const todayStart = new Date()
+                todayStart.setHours(0, 0, 0, 0)
+                const callsToday = callActivities.filter(a => {
+                  if (!a.time) return false
+                  return new Date(a.time).getTime() >= todayStart.getTime()
+                }).length
+
+                if (totalCalls === 0) {
+                  return (
+                    <span 
+                      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border bg-gray-100 text-gray-700 border-gray-300 inline-flex items-center gap-1.5 shadow-2xs"
+                      title="Total calls: 0. Student has not been dialed yet."
+                    >
+                      <Phone size={11} className="text-gray-500 shrink-0" />
+                      <span><strong>0 Calls Made</strong></span>
+                    </span>
+                  )
+                }
+
+                if (totalCalls === 1) {
+                  return (
+                    <span 
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-800 border-blue-200 inline-flex items-center gap-1.5 shadow-2xs"
+                      title={`Total calls: 1${callsToday > 0 ? ' (made today)' : ''}.`}
+                    >
+                      <PhoneCall size={11} className="text-blue-600 shrink-0" />
+                      <span><strong>1 Call Made</strong>{callsToday > 0 ? ' (Today)' : ''}</span>
+                    </span>
+                  )
+                }
+
+                if (totalCalls <= 3) {
+                  return (
+                    <span 
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-amber-50 text-amber-900 border-amber-300 inline-flex items-center gap-1.5 shadow-2xs"
+                      title={`Total calls: ${totalCalls}${callsToday > 0 ? ` (${callsToday} today)` : ''}. Review previous call notes before dialing.`}
+                    >
+                      <PhoneForwarded size={11} className="text-amber-700 shrink-0" />
+                      <span><strong>{totalCalls} Calls Made</strong>{callsToday > 0 ? ` (${callsToday} today)` : ''}</span>
+                    </span>
+                  )
+                }
+
+                return (
+                  <span 
+                    className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300 inline-flex items-center gap-1.5 shadow-2xs"
+                    title={`⚠️ High Call Volume: Already called ${totalCalls} times${callsToday > 0 ? ` (${callsToday} today)` : ''}! Please check notes to avoid spamming the student.`}
+                  >
+                    <AlertTriangle size={11} className="text-rose-600 shrink-0" />
+                    <span>⚠️ <strong>Called {totalCalls} Times</strong>{callsToday > 0 ? ` (${callsToday} today)` : ''}</span>
+                  </span>
+                )
+              })()}
+
               {lead.priority && (
                 <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 ${
                   lead.priority === 'Hot'
@@ -1972,6 +2031,21 @@ export default function LeadProfile() {
               </div>
             </div>
           )}
+
+          {/* High Call Count Alert Banner (Prevents repeatedly calling) */}
+          {(() => {
+            const callActs = activities.filter(a => a.type === 'call')
+            const totalCalls = Math.max(callActs.length, lead?.attempts || 0)
+            if (totalCalls < 3) return null
+            return (
+              <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-2xs mb-2">
+                <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                <div className="leading-snug">
+                  <strong>Notice:</strong> This student has already been called <strong>{totalCalls} times</strong>. Please check notes below before dialing again to prevent repeat calling.
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Quick Action Buttons (UK Line vs USA Line vs WhatsApp vs Email) */}
           <div className="grid grid-cols-3 gap-2 pt-1">
